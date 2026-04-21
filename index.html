@@ -19,7 +19,8 @@
       </div>
     </div>
 
-    <div class="auth-card">
+    <!-- LOGIN FORM (default) -->
+    <div class="auth-card" id="card-login">
       <h1 class="auth-title">Sign in to your account</h1>
       <p class="auth-subtitle">Use your Growthic email and password</p>
 
@@ -46,6 +47,35 @@
       </form>
     </div>
 
+    <!-- SET PASSWORD FORM (shown when invite link is opened) -->
+    <div class="auth-card" id="card-set-password" style="display:none;">
+      <h1 class="auth-title">Set your password</h1>
+      <p class="auth-subtitle">Choose a password to activate your account</p>
+
+      <div id="set-pw-error" class="alert alert-danger" style="display:none;"></div>
+      <div id="set-pw-success" class="alert alert-success" style="display:none;"></div>
+
+      <form id="set-password-form" novalidate>
+        <div class="form-group">
+          <label class="form-label" for="new-password">New password</label>
+          <div class="input-wrapper">
+            <input class="form-input" type="password" id="new-password" placeholder="At least 8 characters" autocomplete="new-password" required>
+            <button type="button" class="input-suffix" id="toggle-new-pw" title="Show password">
+              <svg id="icon-eye-2" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              <svg id="icon-eye-off-2" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:20px;">
+          <label class="form-label" for="confirm-password">Confirm password</label>
+          <input class="form-input" type="password" id="confirm-password" placeholder="Re-enter your password" autocomplete="new-password" required>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-full btn-lg" id="set-pw-btn">Activate Account</button>
+      </form>
+    </div>
+
     <p class="auth-footer">Growthic (Apinzo Technologies) &middot; Internal use only</p>
   </div>
 
@@ -53,19 +83,31 @@
   <script src="./assets/js/config.js"></script>
   <script src="./assets/js/auth.js"></script>
   <script>
-    Auth.requireGuest()
+    // Detect invite token in URL hash before doing anything else
+    const hashParams = new URLSearchParams(window.location.hash.slice(1))
+    const isInvite   = hashParams.get('type') === 'invite'
 
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('reason') === 'deactivated') {
-      const e = document.getElementById('auth-error')
-      e.textContent = 'Your account has been deactivated. Contact your admin.'
-      e.style.display = 'block'
+    if (isInvite) {
+      // Show set-password card, hide login card
+      document.getElementById('card-login').style.display        = 'none'
+      document.getElementById('card-set-password').style.display = 'block'
+    } else {
+      // Normal login flow — redirect if already signed in
+      Auth.requireGuest()
+
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('reason') === 'deactivated') {
+        const e = document.getElementById('auth-error')
+        e.textContent   = 'Your account has been deactivated. Contact your admin.'
+        e.style.display = 'block'
+      }
     }
 
+    // ── Login form ────────────────────────────────────────────
     document.getElementById('toggle-pw').addEventListener('click', () => {
-      const input  = document.getElementById('password')
-      const eyeOn  = document.getElementById('icon-eye')
-      const eyeOff = document.getElementById('icon-eye-off')
+      const input   = document.getElementById('password')
+      const eyeOn   = document.getElementById('icon-eye')
+      const eyeOff  = document.getElementById('icon-eye-off')
       const showing = input.type === 'text'
       input.type           = showing ? 'password' : 'text'
       eyeOn.style.display  = showing ? 'block' : 'none'
@@ -102,6 +144,58 @@
         btn.textContent = 'Sign In'
       } else {
         window.location.href = '/home'
+      }
+    })
+
+    // ── Set-password form (invite flow) ───────────────────────
+    document.getElementById('toggle-new-pw').addEventListener('click', () => {
+      const input   = document.getElementById('new-password')
+      const eyeOn   = document.getElementById('icon-eye-2')
+      const eyeOff  = document.getElementById('icon-eye-off-2')
+      const showing = input.type === 'text'
+      input.type           = showing ? 'password' : 'text'
+      eyeOn.style.display  = showing ? 'block' : 'none'
+      eyeOff.style.display = showing ? 'none'  : 'block'
+    })
+
+    document.getElementById('set-password-form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const errEl   = document.getElementById('set-pw-error')
+      const succEl  = document.getElementById('set-pw-success')
+      const btn     = document.getElementById('set-pw-btn')
+      const pw      = document.getElementById('new-password').value
+      const confirm = document.getElementById('confirm-password').value
+
+      errEl.style.display  = 'none'
+      succEl.style.display = 'none'
+
+      if (pw.length < 8) {
+        errEl.textContent   = 'Password must be at least 8 characters.'
+        errEl.style.display = 'block'
+        return
+      }
+      if (pw !== confirm) {
+        errEl.textContent   = 'Passwords do not match.'
+        errEl.style.display = 'block'
+        return
+      }
+
+      btn.disabled    = true
+      btn.textContent = 'Activating…'
+
+      // Supabase picks up the invite session from the URL hash automatically.
+      // updateUser sets the password for the already-established session.
+      const { error } = await Config.supabase.auth.updateUser({ password: pw })
+
+      if (error) {
+        errEl.textContent   = error.message
+        errEl.style.display = 'block'
+        btn.disabled        = false
+        btn.textContent     = 'Activate Account'
+      } else {
+        succEl.textContent   = 'Password set! Redirecting you to the app…'
+        succEl.style.display = 'block'
+        setTimeout(() => { window.location.href = '/home' }, 1500)
       }
     })
   </script>
