@@ -71,15 +71,15 @@ const API = (() => {
       .order('date')
   }
 
-  async function getTeamTimesheetEntries(teamLeadId, from, to) {
+  async function getTeamTimesheetEntries(from, to) {
+    // RLS policy on timesheets filters to the team lead's reports automatically.
     return supabase
       .from('timesheets')
       .select('*, employees(name), clients(client_name, project_code)')
-      .eq('team_lead_id', teamLeadId)
       .gte('date', from)
       .lte('date', to)
       .in('status', ['submitted', 'approved', 'rejected'])
-      .order('date')
+      .order('date', { ascending: false })
   }
 
   async function upsertTimesheetEntry(entry) {
