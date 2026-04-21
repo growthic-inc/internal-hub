@@ -18,21 +18,21 @@ const Auth = (() => {
     return session
   }
 
-  /* Called from app/home/index.html — redirects up one level to app/ (login) */
+  /* Called from app/home/index.html — redirects to login */
   async function requireAuth() {
     const session = await getSession()
     if (!session) {
-      window.location.href = '../'
+      window.location.href = '/app'
       return null
     }
     return session
   }
 
-  /* Called from app/index.html — redirects into app/home/ if already signed in */
+  /* Called from app/index.html — redirects to app shell if already signed in */
   async function requireGuest() {
     const session = await getSession()
     if (session) {
-      window.location.href = './home/'
+      window.location.href = '/app/home'
     }
   }
 
@@ -53,7 +53,7 @@ const Auth = (() => {
 
     if (data.status === 'inactive') {
       await signOut()
-      window.location.href = '../?reason=deactivated'
+      window.location.href = '/app?reason=deactivated'
       return null
     }
 
