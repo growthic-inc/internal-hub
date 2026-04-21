@@ -22,7 +22,7 @@ const Auth = (() => {
   async function requireAuth() {
     const session = await getSession()
     if (!session) {
-      window.location.href = '/app'
+      window.location.href = '/'
       return null
     }
     return session
@@ -32,7 +32,7 @@ const Auth = (() => {
   async function requireGuest() {
     const session = await getSession()
     if (session) {
-      window.location.href = '/app/home'
+      window.location.href = '/home'
     }
   }
 
@@ -53,7 +53,7 @@ const Auth = (() => {
 
     if (data.status === 'inactive') {
       await signOut()
-      window.location.href = '/app?reason=deactivated'
+      window.location.href = '/?reason=deactivated'
       return null
     }
 

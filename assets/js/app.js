@@ -38,7 +38,7 @@ const App = (() => {
     currentUser = await Auth.getCurrentUser()
     if (!currentUser) {
       await Auth.signOut()
-      window.location.href = '/app'
+      window.location.href = '/'
       return
     }
 
@@ -108,7 +108,7 @@ const App = (() => {
       btn.textContent = 'Signing out…'
       btn.disabled = true
       await Auth.signOut()
-      window.location.href = '/app'
+      window.location.href = '/'
     })
   }
 
