@@ -1,0 +1,25 @@
+/* ============================================================
+   CLIENT DIRECTORY — Phase 1
+   ============================================================ */
+
+const ClientDirectory = (() => {
+
+  const ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>`
+
+  function render(user) {
+    return `
+      <div class="page-inner">
+        <div class="stub-container">
+          <div class="stub-card">
+            <div class="stub-icon">${ICON}</div>
+            <h2>Client Directory</h2>
+            <p>Central reference for all clients, project codes, entities, platforms, SOW definitions, and assigned team members.</p>
+            <span class="badge badge--primary">Phase 1 — Coming next</span>
+          </div>
+        </div>
+      </div>
+    `
+  }
+
+  return { render }
+})()

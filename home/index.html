@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Growthic One</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <link rel="stylesheet" href="../assets/css/components.css">
+</head>
+<body class="app-body">
+
+  <div class="app-layout">
+
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <div class="sidebar-logo-mark">G1</div>
+        <div>
+          <span class="sidebar-brand">Growthic One</span>
+          <span class="sidebar-brand-sub">Internal Hub</span>
+        </div>
+      </div>
+      <nav class="sidebar-nav" id="sidebar-nav"></nav>
+      <div class="sidebar-footer" id="sidebar-footer"></div>
+    </aside>
+
+    <div class="main-wrapper">
+      <header class="app-header">
+        <h1 class="page-title" id="page-title">Loading…</h1>
+        <div class="header-actions">
+          <button class="btn-icon" id="notif-btn" title="Notifications">
+            <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+            <span class="notif-badge" id="notif-badge" style="display:none;">0</span>
+          </button>
+          <div class="user-menu-wrap" id="user-menu-wrap">
+            <button class="user-avatar-btn" id="user-avatar-btn" title="Account">
+              <div class="user-avatar" id="user-avatar">--</div>
+            </button>
+            <div class="user-dropdown" id="user-dropdown" style="display:none;">
+              <div class="user-dropdown-info" id="user-dropdown-info"></div>
+              <a class="user-dropdown-item" href="#settings">Settings</a>
+              <button class="user-dropdown-item user-dropdown-item--danger" id="logout-btn">Sign Out</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="page-content" id="page-content">
+        <div class="page-loading">Loading…</div>
+      </main>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="../assets/js/config.js"></script>
+  <script src="../assets/js/utils.js"></script>
+  <script src="../assets/js/auth.js"></script>
+  <script src="../assets/js/api.js"></script>
+  <script src="../assets/js/pages/client-dashboard.js"></script>
+  <script src="../assets/js/pages/client-directory.js"></script>
+  <script src="../assets/js/pages/master-folders.js"></script>
+  <script src="../assets/js/pages/timesheet.js"></script>
+  <script src="../assets/js/pages/reimbursements.js"></script>
+  <script src="../assets/js/pages/assets.js"></script>
+  <script src="../assets/js/pages/tools.js"></script>
+  <script src="../assets/js/pages/access-control.js"></script>
+  <script src="../assets/js/pages/settings.js"></script>
+  <script src="../assets/js/app.js"></script>
+
+</body>
+</html>
