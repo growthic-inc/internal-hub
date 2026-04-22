@@ -17,16 +17,18 @@ const App = (() => {
     settings:   `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>`,
   }
 
+  const ALL_ROLES = ['super_admin', 'founders_office', 'team_lead', 'delivery', 'hr', 'bde', 'finance']
+
   const NAV = [
     { id: 'client-dashboard', label: 'Client Dashboard', icon: ICONS.barChart,   module: () => ClientDashboard, roles: ['super_admin', 'founders_office', 'team_lead', 'delivery'] },
     { id: 'client-directory', label: 'Client Directory', icon: ICONS.briefcase,  module: () => ClientDirectory, roles: ['super_admin', 'founders_office', 'team_lead', 'delivery', 'bde'] },
     { id: 'master-folders',   label: 'Master Folders',   icon: ICONS.folder,     module: () => MasterFolders,   roles: ['super_admin', 'founders_office', 'team_lead', 'delivery'] },
     { id: 'timesheet',        label: 'Timesheet',         icon: ICONS.clock,      module: () => Timesheet,       roles: ['super_admin', 'founders_office', 'team_lead', 'delivery', 'hr', 'bde'] },
-    { id: 'reimbursements',   label: 'Reimbursements',   icon: ICONS.creditCard, module: () => Reimbursements,  roles: ['super_admin', 'founders_office', 'team_lead', 'delivery', 'hr', 'bde'] },
-    { id: 'assets',           label: 'Asset Management', icon: ICONS.box,        module: () => Assets,          roles: ['super_admin', 'founders_office', 'team_lead', 'delivery', 'hr', 'bde'] },
-    { id: 'tools',            label: 'Tools & Subs',     icon: ICONS.tool,       module: () => Tools,           roles: ['super_admin', 'founders_office', 'team_lead', 'delivery', 'hr', 'bde'] },
-    { id: 'access-control',   label: 'Access Control',   icon: ICONS.shield,     module: () => AccessControl,   roles: ['super_admin'] },
-    { id: 'settings',         label: 'Settings',          icon: ICONS.settings,   module: () => Settings,        roles: ['super_admin', 'founders_office', 'team_lead', 'delivery', 'hr', 'bde'] },
+    { id: 'reimbursements',   label: 'Reimbursements',   icon: ICONS.creditCard, module: () => Reimbursements,  roles: ALL_ROLES },
+    { id: 'assets',           label: 'Asset Management', icon: ICONS.box,        module: () => Assets,          roles: ALL_ROLES },
+    { id: 'tools',            label: 'Tools & Subs',     icon: ICONS.tool,       module: () => Tools,           roles: ALL_ROLES },
+    { id: 'access-control',   label: 'People',           icon: ICONS.shield,     module: () => AccessControl,   roles: ['super_admin', 'hr'] },
+    { id: 'settings',         label: 'Settings',          icon: ICONS.settings,   module: () => Settings,        roles: ALL_ROLES },
   ]
 
   let currentUser = null

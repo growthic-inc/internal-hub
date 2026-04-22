@@ -193,6 +193,100 @@ const API = (() => {
       .eq('read', false)
   }
 
+  /* ── Reimbursements (Phase 2) ────────────────────────────── */
+  async function getMyReimbursements(employeeId, type = null) {
+    let q = supabase
+      .from('reimbursements')
+      .select('*, clients(client_name, project_code), employees!approved_by(name)')
+      .eq('employee_id', employeeId)
+      .order('created_at', { ascending: false })
+    if (type) q = q.eq('type', type)
+    return q
+  }
+
+  async function getReimbursementInbox(type = null) {
+    let q = supabase
+      .from('reimbursements')
+      .select('*, employees!employee_id(name, role), clients(client_name, project_code)')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true })
+    if (type) q = q.eq('type', type)
+    return q
+  }
+
+  async function getApprovedClaims() {
+    return supabase
+      .from('reimbursements')
+      .select('*, employees!employee_id(name), clients(client_name, project_code)')
+      .eq('type', 'claim')
+      .in('status', ['approved', 'paid'])
+      .order('updated_at', { ascending: false })
+  }
+
+  async function insertReimbursement(record) {
+    return supabase.from('reimbursements').insert(record).select().single()
+  }
+
+  async function getMyPreApprovals(employeeId) {
+    return supabase
+      .from('reimbursements')
+      .select('id, expense_type, estimated_amount, expected_date, status, reason, client_id, clients(client_name, project_code)')
+      .eq('employee_id', employeeId)
+      .eq('type', 'pre_approval')
+      .eq('status', 'approved')
+      .order('created_at', { ascending: false })
+  }
+
+  /* ── Tools (Phase 2) ──────────────────────────────────────── */
+  async function getTools(activeOnly = true) {
+    let q = supabase
+      .from('tools')
+      .select('*, employees!owner_id(name)')
+      .order('name')
+    if (activeOnly) q = q.eq('status', 'active')
+    return q
+  }
+
+  async function getToolAccess(toolId) {
+    return supabase
+      .from('tool_access')
+      .select('*, employees(name, role, department)')
+      .eq('tool_id', toolId)
+      .order('granted_at', { ascending: false })
+  }
+
+  async function getMyToolAccess(employeeId) {
+    return supabase
+      .from('tool_access')
+      .select('*, tools(name, category, access_type, status)')
+      .eq('employee_id', employeeId)
+  }
+
+  async function getToolRequests(status = null) {
+    let q = supabase
+      .from('tool_requests')
+      .select('*, employees!employee_id(name, role, department), tools(name)')
+      .order('created_at', { ascending: false })
+    if (status) q = q.eq('status', status)
+    return q
+  }
+
+  async function getMyToolRequests(employeeId) {
+    return supabase
+      .from('tool_requests')
+      .select('*, tools(name)')
+      .eq('employee_id', employeeId)
+      .order('created_at', { ascending: false })
+  }
+
+  /* ── Employees (Phase 2 — People management) ─────────────── */
+  async function getAllEmployees() {
+    return supabase
+      .from('employees')
+      .select('id, name, email, role, department, status, joining_date, manager_id, employees!manager_id(name)')
+      .order('name')
+  }
+
   /* ── Performance Data (Client Dashboard) ─────────────────── */
   async function getPerformanceData(clientId, platform, from, to) {
     return supabase
@@ -208,12 +302,14 @@ const API = (() => {
 
   return {
     getClients, getClient, getClientByProjectCode,
-    getEmployees, getEmployee, getTeamLeads,
+    getEmployees, getEmployee, getTeamLeads, getAllEmployees,
     getTimesheetEntries, getTeamTimesheetEntries, upsertTimesheetEntry,
     getMasterFolderFiles, insertMasterFolderFile, softDeleteMasterFolderFile,
-    getReimbursements, getAllReimbursements, insertReimbursement,
+    getMyReimbursements, getReimbursementInbox, getApprovedClaims,
+    insertReimbursement, getMyPreApprovals,
     getAssets, getMyAssetRequests,
     getPendingApprovals, updateApproval,
+    getTools, getToolAccess, getMyToolAccess, getToolRequests, getMyToolRequests,
     getUnreadNotifications, markNotificationRead, markAllNotificationsRead,
     getPerformanceData,
   }

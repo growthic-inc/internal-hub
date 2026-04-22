@@ -57,9 +57,39 @@ const Utils = (() => {
     super_admin:     'Super Admin',
     founders_office: "Founder's Office",
     team_lead:       'Team Lead',
-    bde:             'BDE',
-    delivery:        'Delivery Team',
-    hr:              'HR',
+    bde:             'Business Development',
+    delivery:        'Delivery',
+    hr:              'People & Culture',
+    finance:         'Finance',
+  }
+
+  const DEPT_LABELS = {
+    'Management':          'Management',
+    'Operations & Growth': 'Operations & Growth',
+    'People & Culture':    'People & Culture',
+    'Business Development':'Business Development',
+    'Content Strategy':    'Content Strategy',
+    'Creative':            'Creative',
+    'Creators':            'Creators',
+    'Finance':             'Finance',
+  }
+
+  const EXPENSE_LABELS = {
+    travel:                  'Travel (Cab / Train / Flight)',
+    food_meals:              'Food & Meals',
+    printing_stationery:     'Printing & Stationery',
+    internet_communication:  'Internet & Communication',
+    photography_videography: 'Photography & Videography',
+    event_venue:             'Event & Venue',
+    software_tools:          'Software & Tools',
+    courier_delivery:        'Courier & Delivery',
+    marketing_materials:     'Marketing Materials',
+    accommodation:           'Accommodation',
+    other:                   'Other',
+  }
+
+  function getExpenseLabel(type) {
+    return EXPENSE_LABELS[type] || type
   }
 
   function getRoleLabel(role) {
@@ -167,6 +197,7 @@ const Utils = (() => {
     escapeHtml,
     truncate,
     getRoleLabel,
+    getExpenseLabel,
     showToast,
     openModal,
     closeModal,
