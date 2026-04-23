@@ -87,18 +87,6 @@ const API = (() => {
   }
 
   /* ── Master Folders ───────────────────────────────────────── */
-  async function getMasterFolderFiles(clientId, month, folderType) {
-    let query = supabase
-      .from('master_folder_files')
-      .select('*')
-      .eq('client_id', clientId)
-      .eq('month', month)
-      .is('deleted_at', null)
-      .order('uploaded_at', { ascending: false })
-    if (folderType) query = query.eq('folder_type', folderType)
-    return query
-  }
-
   async function insertMasterFolderFile(file) {
     return supabase.from('master_folder_files').insert(file).select().single()
   }
@@ -300,11 +288,47 @@ const API = (() => {
       .order('date')
   }
 
+  /* ── Client Dashboard ────────────────────────────────────── */
+  async function getClientDashboard(clientId) {
+    return supabase
+      .from('clients')
+      .select('*, client_entities(*), client_platforms(*), scope_of_work(*), account_manager:employees!am_id(id, name)')
+      .eq('id', clientId)
+      .single()
+  }
+
+  /* ── Master Folder Files (with uploader name + entity) ───── */
+  async function getMasterFolderFiles(clientId, month, folderType) {
+    let query = supabase
+      .from('master_folder_files')
+      .select('*, employees(name), client_entities(entity_name)')
+      .eq('client_id', clientId)
+      .eq('month', month)
+      .is('deleted_at', null)
+      .order('uploaded_at', { ascending: false })
+    if (folderType) query = query.eq('folder_type', folderType)
+    return query
+  }
+
+  /* ── Notification Preferences ────────────────────────────── */
+  async function getNotificationPreferences(employeeId) {
+    return supabase
+      .from('notification_preferences')
+      .select('*')
+      .eq('employee_id', employeeId)
+  }
+
+  async function upsertNotificationPreference(employeeId, module, eventType, enabled) {
+    return supabase
+      .from('notification_preferences')
+      .upsert({ employee_id: employeeId, module, event_type: eventType, enabled })
+  }
+
   return {
     getClients, getClient, getClientByProjectCode,
     getEmployees, getEmployee, getTeamLeads, getAllEmployees,
     getTimesheetEntries, getTeamTimesheetEntries, upsertTimesheetEntry,
-    getMasterFolderFiles, insertMasterFolderFile, softDeleteMasterFolderFile,
+    insertMasterFolderFile, softDeleteMasterFolderFile,
     getMyReimbursements, getReimbursementInbox, getApprovedClaims,
     insertReimbursement, getMyPreApprovals,
     getAssets, getMyAssetRequests,
@@ -312,5 +336,8 @@ const API = (() => {
     getTools, getToolAccess, getMyToolAccess, getToolRequests, getMyToolRequests,
     getUnreadNotifications, markNotificationRead, markAllNotificationsRead,
     getPerformanceData,
+    getClientDashboard,
+    getMasterFolderFiles,
+    getNotificationPreferences, upsertNotificationPreference,
   }
 })()
