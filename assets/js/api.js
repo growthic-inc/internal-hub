@@ -292,9 +292,20 @@ const API = (() => {
   async function getClientDashboard(clientId) {
     return supabase
       .from('clients')
-      .select('*, client_entities(*), client_platforms(*), scope_of_work(*), account_manager:employees!am_id(id, name)')
+      .select('*, client_entities(*), client_platforms(*), scope_of_work(*), account_manager:employees!am_id(id, name), status_updater:employees!client_status_updated_by(name)')
       .eq('id', clientId)
       .single()
+  }
+
+  async function updateClientStatus(clientId, status, updatedBy) {
+    return supabase
+      .from('clients')
+      .update({
+        client_status:            status,
+        client_status_updated_by: updatedBy,
+        client_status_updated_at: new Date().toISOString(),
+      })
+      .eq('id', clientId)
   }
 
   /* ── Master Folder Files (with uploader name + entity) ───── */
@@ -336,7 +347,7 @@ const API = (() => {
     getTools, getToolAccess, getMyToolAccess, getToolRequests, getMyToolRequests,
     getUnreadNotifications, markNotificationRead, markAllNotificationsRead,
     getPerformanceData,
-    getClientDashboard,
+    getClientDashboard, updateClientStatus,
     getMasterFolderFiles,
     getNotificationPreferences, upsertNotificationPreference,
   }
