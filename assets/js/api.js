@@ -312,7 +312,7 @@ const API = (() => {
   async function getMasterFolderFiles(clientId, month, folderType) {
     let query = supabase
       .from('master_folder_files')
-      .select('*, employees(name), client_entities(entity_name)')
+      .select('*, uploader:employees!uploaded_by(name), client_entities(entity_name)')
       .eq('client_id', clientId)
       .eq('month', month)
       .is('deleted_at', null)

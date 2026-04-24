@@ -292,7 +292,7 @@ const MasterFolders = (() => {
           </div>
         </td>
         <td><span class="badge badge--muted">${_fileTypeLabel(file.file_type)}</span></td>
-        <td>${Utils.escapeHtml(file.employees?.name || '—')}</td>
+        <td>${Utils.escapeHtml(file.uploader?.name || '—')}</td>
         <td style="white-space:nowrap;">${_formatDateTime(file.uploaded_at)}</td>
         <td>
           <div style="display:flex;align-items:center;gap:6px;">
