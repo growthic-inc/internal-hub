@@ -169,6 +169,7 @@ const MasterFolders = (() => {
     const results = await Promise.all(
       FOLDER_TYPES.map(ft => API.getMasterFolderFiles(_selectedClient.id, _selectedMonth, ft.value))
     )
+    console.log('[Repo] getMasterFolderFiles results:', results.map((r, i) => ({ folder: FOLDER_TYPES[i].value, count: r.data?.length, error: r.error?.message })))
 
     const monthLabel = _formatMonthDisplay(_selectedMonth)
 
@@ -474,7 +475,8 @@ const MasterFolders = (() => {
     fill.style.width = '100%'
 
     if (!res.ok || result.error) {
-      Utils.showToast('Upload failed: ' + (result.error || 'Unknown error'), 'error')
+      const msg = result.error || result.msg || result.message || `HTTP ${res.status}`
+      Utils.showToast('Upload failed: ' + msg, 'error')
       uploadBtn.disabled = false; uploadBtn.textContent = 'Upload'; progress.style.display = 'none'
       return
     }
