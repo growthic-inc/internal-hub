@@ -42,11 +42,13 @@ const Reimbursements = (() => {
       case 'approved': {
         const approver    = row.approver?.name
         const approvedAmt = row.hr_approved_amount
+        const remarks     = row.hr_remarks
         return `
           <div>
             <span class="badge badge--success">Approved by HR</span>
             ${approver    ? `<div class="text-sm text-muted" style="margin-top:3px;">by ${Utils.escapeHtml(approver)}</div>` : ''}
             ${approvedAmt ? `<div class="text-sm" style="margin-top:2px;font-weight:600;color:var(--success,#1D9E75);">${Utils.formatCurrency(approvedAmt)}</div>` : ''}
+            ${remarks     ? `<div class="text-sm text-muted" style="margin-top:3px;font-style:italic;">💬 "${Utils.escapeHtml(Utils.truncate(remarks, 60))}"</div>` : ''}
           </div>`
       }
 
@@ -242,10 +244,19 @@ const Reimbursements = (() => {
                 <td>${Utils.getExpenseLabel(r.expense_type)}</td>
                 <td>${Utils.escapeHtml(r.clients?.client_name || '—')}</td>
                 <td>
-                  ${Utils.formatCurrency(r.amount)}
-                  ${r.hr_approved_amount && r.hr_approved_amount != r.amount && isMineView
-                    ? `<div class="text-sm text-muted" style="margin-top:2px;">Approved: ${Utils.formatCurrency(r.hr_approved_amount)}</div>`
-                    : ''}
+                  ${showPayBtn && r.hr_approved_amount
+                    ? `<div style="font-weight:600;">${Utils.formatCurrency(r.hr_approved_amount)}</div>
+                       ${r.hr_approved_amount != r.amount
+                         ? `<div class="text-sm text-muted" style="margin-top:2px;">Submitted: ${Utils.formatCurrency(r.amount)}</div>`
+                         : ''}
+                       ${r.hr_remarks
+                         ? `<div class="text-sm text-muted" style="margin-top:3px;font-style:italic;">💬 "${Utils.escapeHtml(Utils.truncate(r.hr_remarks, 50))}"</div>`
+                         : ''}`
+                    : `${Utils.formatCurrency(r.amount)}
+                       ${isMineView && r.hr_approved_amount && r.hr_approved_amount != r.amount
+                         ? `<div class="text-sm text-muted" style="margin-top:2px;">Approved: ${Utils.formatCurrency(r.hr_approved_amount)}</div>`
+                         : ''}`
+                  }
                 </td>
                 <td style="white-space:nowrap;">${Utils.formatDate(r.expense_date)}</td>
                 ${showApproveBtn ? `
@@ -288,7 +299,7 @@ const Reimbursements = (() => {
       API.getReimbursementInbox('claim'),
     ])
 
-    const filterFn     = _user.role === 'hr' ? r => r.employees?.role !== 'hr' : () => true
+    const filterFn     = _user.role === 'hr' ? r => r.submitter?.role !== 'hr' : () => true
     const preApprovals = (paRes.data || []).filter(filterFn)
     const claims       = (clRes.data || []).filter(filterFn)
 
@@ -330,7 +341,7 @@ const Reimbursements = (() => {
       API.getReimbursementInbox('claim'),
     ])
 
-    const hrOnly       = r => r.employees?.role === 'hr'
+    const hrOnly       = r => r.submitter?.role === 'hr'
     const preApprovals = (paRes.data || []).filter(hrOnly)
     const claims       = (clRes.data || []).filter(hrOnly)
 
@@ -780,8 +791,20 @@ const Reimbursements = (() => {
       uploadBtn.textContent = 'Uploading…'
       if (statusEl) statusEl.textContent = 'Sending to Google Drive…'
 
+      // Gather context at upload time for Drive folder structure
+      const clientEl     = document.getElementById('cl-client')
+      const clientId     = clientEl?.value || _selectedPreApproval?.client_id || null
+      const client       = clientId ? _clients.find(c => c.id === clientId) : null
+      const clientName   = client?.client_name || _selectedPreApproval?.clients?.client_name || null
+      const entityEl     = document.getElementById('cl-entity')
+      const entityWrap   = document.getElementById('cl-entity-wrap')
+      const entityName   = (entityWrap && entityWrap.style.display !== 'none' && entityEl?.value)
+        ? entityEl.options[entityEl.selectedIndex]?.text
+        : (_selectedPreApproval?.entity?.entity_name || null)
+      const expenseDate  = document.getElementById('cl-date')?.value || null
+
       try {
-        const url   = await _uploadReceipt(file)
+        const url   = await _uploadReceipt(file, clientName, entityName, expenseDate)
         _receiptUrl = url
 
         document.getElementById('receipt-drop-zone').style.display  = 'none'
@@ -843,15 +866,16 @@ const Reimbursements = (() => {
     }
   }
 
-  /* Uploads receipt file to Google Drive via upload-receipt Edge Function */
-  async function _uploadReceipt(file) {
+  /* Uploads receipt to Google Drive under Reimbursements/Client/Entity/Month/Day/ */
+  async function _uploadReceipt(file, clientName = null, entityName = null, expenseDate = null) {
     const { data: { session } } = await Config.supabase.auth.getSession()
     if (!session?.access_token) throw new Error('Not authenticated')
 
-    const month    = new Date().toISOString().slice(0, 7)  // YYYY-MM
     const formData = new FormData()
-    formData.append('file',  file)
-    formData.append('month', month)
+    formData.append('file', file)
+    if (clientName)  formData.append('client_name',  clientName)
+    if (entityName)  formData.append('entity_name',  entityName)
+    if (expenseDate) formData.append('expense_date', expenseDate)
 
     const res    = await fetch(`${Config.SUPABASE_URL}/functions/v1/upload-receipt`, {
       method:  'POST',
