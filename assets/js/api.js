@@ -218,7 +218,7 @@ const API = (() => {
   async function getMyPreApprovals(employeeId) {
     return supabase
       .from('reimbursements')
-      .select('id, expense_type, estimated_amount, expected_date, status, reason, client_id, clients(client_name, project_code)')
+      .select('id, expense_type, estimated_amount, expected_date, status, reason, client_id, entity_id, clients(client_name, project_code), entity:client_entities!entity_id(entity_name)')
       .eq('employee_id', employeeId)
       .eq('type', 'pre_approval')
       .eq('status', 'approved')

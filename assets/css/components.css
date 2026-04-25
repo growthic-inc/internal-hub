@@ -1318,3 +1318,120 @@
 }
 .platform-pill--linkedin  { background: #EFF6FF; color: #1d4ed8; }
 .platform-pill--instagram { background: #FDF4FF; color: #7e22ce; }
+
+/* ── Reimbursements — Phase 5 UI ─────────────────────────── */
+
+/* Modal section label (divides form sections) */
+.modal-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin: 20px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-section-label:first-child { margin-top: 0; }
+
+/* Pre-Approval selectable cards */
+.pa-card {
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  margin-bottom: 10px;
+  user-select: none;
+}
+.pa-card:last-child { margin-bottom: 0; }
+.pa-card:hover {
+  border-color: var(--primary);
+  background: #f4f7fd;
+  box-shadow: 0 0 0 3px rgba(15,71,153,0.07);
+}
+.pa-card--selected {
+  border-color: var(--primary);
+  background: #eef3fc;
+  box-shadow: 0 0 0 3px rgba(15,71,153,0.12);
+}
+.pa-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.pa-card-type {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.pa-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.pa-card-meta span::before {
+  content: '';
+}
+
+/* Linked PA chip shown at top of claim step 2 */
+.pa-selected-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #eef3fc;
+  border: 1.5px solid #c8d9f5;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--primary);
+  margin-bottom: 4px;
+}
+.pa-selected-chip strong { font-weight: 600; }
+
+/* Skip pre-approval link */
+.skip-preapproval {
+  display: block;
+  width: 100%;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 14px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 6px 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.skip-preapproval:hover { color: var(--text); }
+
+/* Receipt preview after upload */
+.receipt-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #f4f7fd;
+  border: 1.5px solid #c8d9f5;
+  border-radius: 8px;
+}
+.receipt-preview-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Readonly project code field */
+.form-input[readonly] {
+  background: #f5f6f8;
+  color: var(--text-muted);
+  cursor: default;
+}
