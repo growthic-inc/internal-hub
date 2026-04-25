@@ -185,7 +185,7 @@ const API = (() => {
   async function getMyReimbursements(employeeId, type = null) {
     let q = supabase
       .from('reimbursements')
-      .select('*, clients(client_name, project_code), employees!approved_by(name)')
+      .select('*, clients(client_name, project_code), approver:employees!approved_by(name)')
       .eq('employee_id', employeeId)
       .order('created_at', { ascending: false })
     if (type) q = q.eq('type', type)
@@ -195,7 +195,7 @@ const API = (() => {
   async function getReimbursementInbox(type = null) {
     let q = supabase
       .from('reimbursements')
-      .select('*, employees!employee_id(name, role), clients(client_name, project_code)')
+      .select('*, submitter:employees!employee_id(name, role), clients(client_name, project_code)')
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
     if (type) q = q.eq('type', type)
@@ -205,7 +205,7 @@ const API = (() => {
   async function getApprovedClaims() {
     return supabase
       .from('reimbursements')
-      .select('*, employees!employee_id(name), clients(client_name, project_code)')
+      .select('*, submitter:employees!employee_id(name), clients(client_name, project_code)')
       .eq('type', 'claim')
       .in('status', ['approved', 'paid'])
       .order('updated_at', { ascending: false })

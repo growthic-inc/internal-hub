@@ -33,6 +33,46 @@ const Reimbursements = (() => {
     paid:     '<span class="badge badge--info">Paid</span>',
   }
 
+  /* Rich status badge for claims in employee My Requests view */
+  function _claimStatusBadge(row) {
+    switch (row.status) {
+      case 'pending':
+        return '<span class="badge badge--warning">Pending</span>'
+
+      case 'approved': {
+        const approver    = row.approver?.name
+        const approvedAmt = row.hr_approved_amount
+        return `
+          <div>
+            <span class="badge badge--success">Approved by HR</span>
+            ${approver    ? `<div class="text-sm text-muted" style="margin-top:3px;">by ${Utils.escapeHtml(approver)}</div>` : ''}
+            ${approvedAmt ? `<div class="text-sm" style="margin-top:2px;font-weight:600;color:var(--success,#1D9E75);">${Utils.formatCurrency(approvedAmt)}</div>` : ''}
+          </div>`
+      }
+
+      case 'rejected': {
+        const reason = row.rejection_comment
+        return `
+          <div>
+            <span class="badge badge--danger">Rejected</span>
+            ${reason ? `<div class="text-sm text-muted" style="margin-top:3px;">${Utils.escapeHtml(Utils.truncate(reason, 45))}</div>` : ''}
+          </div>`
+      }
+
+      case 'paid': {
+        const paidAt = row.paid_at
+        return `
+          <div>
+            <span class="badge badge--info">Paid</span>
+            ${paidAt ? `<div class="text-sm text-muted" style="margin-top:3px;">${Utils.formatDate(paidAt)}</div>` : ''}
+          </div>`
+      }
+
+      default:
+        return `<span class="badge">${row.status}</span>`
+    }
+  }
+
   const CAN_APPROVE = ['super_admin', 'hr']
 
   let _user                = null
@@ -153,17 +193,19 @@ const Reimbursements = (() => {
           <th>Expected Date</th>
           <th>Status</th>
           <th>Reason</th>
+          ${showEmployee ? '<th>Action</th>' : ''}
         </tr></thead>
         <tbody>
           ${rows.map(r => `
             <tr>
-              ${showEmployee ? `<td>${Utils.escapeHtml(r.employees?.name || '—')}</td>` : ''}
+              ${showEmployee ? `<td>${Utils.escapeHtml(r.submitter?.name || '—')}</td>` : ''}
               <td>${Utils.getExpenseLabel(r.expense_type)}</td>
               <td>${Utils.escapeHtml(r.clients?.client_name || '—')}</td>
               <td>${Utils.formatCurrency(r.estimated_amount)}</td>
               <td>${Utils.formatDate(r.expected_date)}</td>
               <td>${STATUS_BADGE[r.status] || r.status}</td>
               <td class="text-muted">${Utils.escapeHtml(Utils.truncate(r.reason || '—', 50))}</td>
+              ${showEmployee ? `<td><button class="btn btn--xs btn--primary" data-approve="${r.id}">Review</button></td>` : ''}
             </tr>
           `).join('')}
         </tbody>
@@ -173,36 +215,62 @@ const Reimbursements = (() => {
 
   function _renderClaimTable(rows, showEmployee, showApproveBtn = false, showPayBtn = false) {
     if (!rows.length) return '<p class="empty-state">No claims found.</p>'
+    // showApproveBtn = inbox view → show PA linkage column + generic status
+    // showPayBtn = payment view
+    // neither = My Requests → show rich status badge
+    const isMineView = !showApproveBtn && !showPayBtn
+
     return `
       <table class="data-table">
         <thead><tr>
-          ${showEmployee ? '<th>Employee</th>' : ''}
+          ${showEmployee    ? '<th>Employee</th>' : ''}
           <th>Expense Type</th>
           <th>Client</th>
           <th>Amount</th>
           <th>Date</th>
+          ${showApproveBtn  ? '<th>Pre-Approval</th>' : ''}
           <th>Status</th>
           <th>Receipt</th>
           ${showApproveBtn || showPayBtn ? '<th>Action</th>' : ''}
         </tr></thead>
         <tbody>
-          ${rows.map(r => `
-            <tr>
-              ${showEmployee ? `<td>${Utils.escapeHtml(r.employees?.name || '—')}</td>` : ''}
-              <td>${Utils.getExpenseLabel(r.expense_type)}</td>
-              <td>${Utils.escapeHtml(r.clients?.client_name || '—')}</td>
-              <td>${Utils.formatCurrency(r.amount)}</td>
-              <td>${Utils.formatDate(r.expense_date)}</td>
-              <td>${STATUS_BADGE[r.status] || r.status}</td>
-              <td>${r.drive_receipt_url
-                ? `<a href="${Utils.escapeHtml(r.drive_receipt_url)}" target="_blank" class="link">View</a>`
-                : '—'}</td>
-              ${showApproveBtn ? `<td><button class="btn btn--xs btn--primary" data-approve="${r.id}">Review</button></td>` : ''}
-              ${showPayBtn ? `<td>${r.status === 'approved'
-                ? `<button class="btn btn--xs btn--success" data-pay="${r.id}" data-name="${Utils.escapeHtml(r.employees?.name || '')}" data-amount="${r.hr_approved_amount || r.amount}">Mark Paid</button>`
-                : '<span class="text-muted text-sm">—</span>'}</td>` : ''}
-            </tr>
-          `).join('')}
+          ${rows.map(r => {
+            const employeeName = r.submitter?.name || '—'
+            return `
+              <tr>
+                ${showEmployee ? `<td>${Utils.escapeHtml(employeeName)}</td>` : ''}
+                <td>${Utils.getExpenseLabel(r.expense_type)}</td>
+                <td>${Utils.escapeHtml(r.clients?.client_name || '—')}</td>
+                <td>
+                  ${Utils.formatCurrency(r.amount)}
+                  ${r.hr_approved_amount && r.hr_approved_amount != r.amount && isMineView
+                    ? `<div class="text-sm text-muted" style="margin-top:2px;">Approved: ${Utils.formatCurrency(r.hr_approved_amount)}</div>`
+                    : ''}
+                </td>
+                <td style="white-space:nowrap;">${Utils.formatDate(r.expense_date)}</td>
+                ${showApproveBtn ? `
+                  <td>
+                    ${r.pre_approval_id
+                      ? '<span class="badge badge--info" title="Filed against a pre-approval">Linked</span>'
+                      : '<span class="text-muted text-sm">Direct</span>'}
+                  </td>` : ''}
+                <td>${isMineView ? _claimStatusBadge(r) : (STATUS_BADGE[r.status] || r.status)}</td>
+                <td>${r.drive_receipt_url
+                  ? `<a href="${Utils.escapeHtml(r.drive_receipt_url)}" target="_blank" class="link">View</a>`
+                  : '—'}</td>
+                ${showApproveBtn
+                  ? `<td><button class="btn btn--xs btn--primary" data-approve="${r.id}">Review</button></td>`
+                  : ''}
+                ${showPayBtn
+                  ? `<td>${r.status === 'approved'
+                      ? `<button class="btn btn--xs btn--success" data-pay="${r.id}"
+                            data-name="${Utils.escapeHtml(employeeName)}"
+                            data-amount="${r.hr_approved_amount || r.amount}">Mark Paid</button>`
+                      : '<span class="text-muted text-sm">—</span>'
+                    }</td>`
+                  : ''}
+              </tr>`
+          }).join('')}
         </tbody>
       </table>
     `
@@ -612,7 +680,11 @@ const Reimbursements = (() => {
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Actual Amount (₹) <span class="required">*</span></label>
-            <input class="form-input" type="number" id="cl-amount" min="0" placeholder="0" />
+            <input class="form-input" type="number" id="cl-amount" min="0" placeholder="0"
+              value="${isFromPA && pa.estimated_amount ? pa.estimated_amount : ''}" />
+            ${isFromPA && pa.estimated_amount
+              ? `<p class="form-hint">Pre-approved est: ${Utils.formatCurrency(pa.estimated_amount)}</p>`
+              : ''}
           </div>
           <div class="form-group">
             <label class="form-label">Expense Date <span class="required">*</span></label>
@@ -634,8 +706,7 @@ const Reimbursements = (() => {
             <div id="receipt-chosen-name"
               style="display:none;margin-top:8px;font-size:13px;font-weight:500;color:var(--primary);"></div>
           </div>
-          <div id="receipt-upload-row"
-            style="display:none;margin-top:10px;display:none;align-items:center;gap:10px;">
+          <div id="receipt-upload-row" style="display:none;margin-top:10px;">
             <button class="btn btn--secondary btn--sm" id="receipt-upload-btn">Upload to Drive</button>
             <span id="receipt-upload-status" class="text-sm text-muted"></span>
           </div>
@@ -692,7 +763,11 @@ const Reimbursements = (() => {
       if (chosenEl) { chosenEl.textContent = file.name; chosenEl.style.display = 'block' }
 
       const uploadRow = document.getElementById('receipt-upload-row')
-      if (uploadRow) uploadRow.style.display = 'flex'
+      if (uploadRow) {
+        uploadRow.style.display    = 'flex'
+        uploadRow.style.alignItems = 'center'
+        uploadRow.style.gap        = '10px'
+      }
     })
 
     document.getElementById('receipt-upload-btn')?.addEventListener('click', async () => {
@@ -854,7 +929,7 @@ const Reimbursements = (() => {
       </div>
       <div class="modal-body">
         <div class="info-grid mb-3">
-          <div><span class="info-label">Employee</span><span class="info-value">${Utils.escapeHtml(record.employees?.name || '—')}</span></div>
+          <div><span class="info-label">Employee</span><span class="info-value">${Utils.escapeHtml(record.submitter?.name || '—')}</span></div>
           <div><span class="info-label">Expense Type</span><span class="info-value">${Utils.getExpenseLabel(record.expense_type)}</span></div>
           <div><span class="info-label">Client</span><span class="info-value">${Utils.escapeHtml(record.clients?.client_name || '—')}</span></div>
           <div><span class="info-label">Reason</span><span class="info-value">${Utils.escapeHtml(record.reason || '—')}</span></div>
