@@ -62,11 +62,13 @@ const Reimbursements = (() => {
       }
 
       case 'paid': {
-        const paidAt = row.paid_at
+        const paidAmt = row.hr_approved_amount || row.amount
+        const paidAt  = row.paid_at
         return `
           <div>
-            <span class="badge badge--info">Paid</span>
-            ${paidAt ? `<div class="text-sm text-muted" style="margin-top:3px;">${Utils.formatDate(paidAt)}</div>` : ''}
+            <span class="badge badge--info">Paid ✓</span>
+            ${paidAmt ? `<div class="text-sm" style="margin-top:3px;font-weight:600;color:var(--primary);">${Utils.formatCurrency(paidAmt)} paid</div>` : ''}
+            ${paidAt  ? `<div class="text-sm text-muted" style="margin-top:2px;">${Utils.formatDate(paidAt)}</div>` : ''}
           </div>`
       }
 
@@ -238,26 +240,34 @@ const Reimbursements = (() => {
         <tbody>
           ${rows.map(r => {
             const employeeName = r.submitter?.name || '—'
+
+            // ── Amount cell logic ──────────────────────────────
+            let amtCell
+            if (showPayBtn && r.hr_approved_amount) {
+              // Finance view: show HR-approved amount as primary
+              amtCell = `<div style="font-weight:600;">${Utils.formatCurrency(r.hr_approved_amount)}</div>
+                ${r.hr_approved_amount != r.amount
+                  ? `<div class="text-sm text-muted" style="margin-top:2px;">Submitted: ${Utils.formatCurrency(r.amount)}</div>`
+                  : ''}
+                ${r.hr_remarks
+                  ? `<div class="text-sm text-muted" style="margin-top:3px;font-style:italic;">💬 "${Utils.escapeHtml(Utils.truncate(r.hr_remarks, 50))}"</div>`
+                  : ''}`
+            } else if (isMineView && r.hr_approved_amount && ['approved', 'paid'].includes(r.status)) {
+              // My Requests view: once HR approved / Finance paid, show approved amount as primary
+              amtCell = `<div style="font-weight:600;color:var(--success,#1D9E75);">${Utils.formatCurrency(r.hr_approved_amount)}</div>
+                ${r.hr_approved_amount != r.amount
+                  ? `<div class="text-sm text-muted" style="margin-top:2px;">Submitted: ${Utils.formatCurrency(r.amount)}</div>`
+                  : ''}`
+            } else {
+              amtCell = Utils.formatCurrency(r.amount)
+            }
+
             return `
               <tr>
                 ${showEmployee ? `<td>${Utils.escapeHtml(employeeName)}</td>` : ''}
                 <td>${Utils.getExpenseLabel(r.expense_type)}</td>
                 <td>${Utils.escapeHtml(r.clients?.client_name || '—')}</td>
-                <td>
-                  ${showPayBtn && r.hr_approved_amount
-                    ? `<div style="font-weight:600;">${Utils.formatCurrency(r.hr_approved_amount)}</div>
-                       ${r.hr_approved_amount != r.amount
-                         ? `<div class="text-sm text-muted" style="margin-top:2px;">Submitted: ${Utils.formatCurrency(r.amount)}</div>`
-                         : ''}
-                       ${r.hr_remarks
-                         ? `<div class="text-sm text-muted" style="margin-top:3px;font-style:italic;">💬 "${Utils.escapeHtml(Utils.truncate(r.hr_remarks, 50))}"</div>`
-                         : ''}`
-                    : `${Utils.formatCurrency(r.amount)}
-                       ${isMineView && r.hr_approved_amount && r.hr_approved_amount != r.amount
-                         ? `<div class="text-sm text-muted" style="margin-top:2px;">Approved: ${Utils.formatCurrency(r.hr_approved_amount)}</div>`
-                         : ''}`
-                  }
-                </td>
+                <td>${amtCell}</td>
                 <td style="white-space:nowrap;">${Utils.formatDate(r.expense_date)}</td>
                 ${showApproveBtn ? `
                   <td>
@@ -540,8 +550,39 @@ const Reimbursements = (() => {
     _selectedPreApproval = null
     _receiptUrl          = null
 
-    const { data: pas } = await API.getMyPreApprovals(_user.id)
-    const preApprovals  = pas || []
+    // Fetch approved PAs + existing claims in parallel
+    const [paRes, claimRes] = await Promise.all([
+      API.getMyPreApprovals(_user.id),
+      API.getMyReimbursements(_user.id, 'claim'),
+    ])
+
+    const allPAs    = paRes.data   || []
+    const allClaims = claimRes.data || []
+
+    // Filter 1: PAs with a non-rejected claim linked via pre_approval_id
+    const usedByLink = new Set(
+      allClaims
+        .filter(c => c.pre_approval_id && c.status !== 'rejected')
+        .map(c => c.pre_approval_id)
+    )
+
+    // Filter 2: Best-effort catch for old claims that predate pre_approval_id tracking.
+    // If a claim with the same expense_type + client_id is approved or paid and has no
+    // pre_approval_id set, treat the matching PA as consumed.
+    const resolvedByMatch = new Set(
+      allPAs
+        .filter(pa =>
+          allClaims.some(c =>
+            !c.pre_approval_id &&
+            ['approved', 'paid'].includes(c.status) &&
+            c.expense_type === pa.expense_type &&
+            c.client_id    === pa.client_id
+          )
+        )
+        .map(pa => pa.id)
+    )
+
+    const preApprovals = allPAs.filter(pa => !usedByLink.has(pa.id) && !resolvedByMatch.has(pa.id))
 
     Utils.openModal(_buildClaimModalHTML(preApprovals))
     _bindClaimStep1(preApprovals)

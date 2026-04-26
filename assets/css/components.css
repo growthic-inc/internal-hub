@@ -1435,3 +1435,54 @@
   color: var(--text-muted);
   cursor: default;
 }
+
+/* ── Timesheet — day-row layout ─────────────────────────────── */
+.ts-day {
+  border-bottom: 1px solid var(--border-light);
+  padding: 0;
+}
+.ts-day:last-child { border-bottom: none; }
+
+.ts-day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  background: var(--surface);
+}
+
+.ts-day-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ts-day-label--today { color: var(--primary); }
+
+.ts-today-tag {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--primary);
+  background: rgba(var(--primary-rgb, 67, 97, 238), 0.08);
+  padding: 2px 7px;
+  border-radius: 20px;
+}
+
+.ts-day-hours {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.ts-day-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 8px 20px 10px;
+}
+
+.ts-day .data-table th { display: none; } /* headers not needed in day rows */
+.ts-day .data-table td { border-top: none; }
+.ts-day .data-table tbody tr:first-child td { border-top: 1px solid var(--border-light); }
