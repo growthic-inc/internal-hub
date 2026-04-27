@@ -1676,20 +1676,6 @@
   vertical-align: middle;
 }
 
-/* Locked toggle — greyed out, not interactive */
-.toggle--locked {
-  opacity: 0.3;
-  pointer-events: none;
-}
-
-.perms-lock-icon {
-  display: block;
-  font-size: 14px;
-  color: var(--text-muted);
-  margin-top: 2px;
-  line-height: 1;
-  display: none;  /* hidden — the dimmed toggle communicates the lock */
-}
 
 /* ── Footer ───────────────────────────────────────────────── */
 .perms-right-footer {

@@ -26,7 +26,7 @@ const Permissions = (() => {
     { key: 'can_approve', label: 'Approve' },
   ]
 
-  // Feather-style SVG icons for each module
+  // Feather-style SVG icons per module key
   const MOD_ICON = {
     client_dashboard:    `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`,
     client_directory:    `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>`,
@@ -37,42 +37,40 @@ const Permissions = (() => {
     tools_subscriptions: `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`,
   }
 
-  const MODULES = [
-    { key: 'client_dashboard',    label: 'Client Dashboard'     },
-    { key: 'client_directory',    label: 'Client Directory'     },
-    { key: 'client_repository',   label: 'Client Repository'    },
-    { key: 'timesheet',           label: 'Timesheet'            },
-    { key: 'reimbursements',      label: 'Reimbursements'       },
-    { key: 'asset_management',    label: 'Asset Management'     },
-    { key: 'tools_subscriptions', label: 'Tools & Subscriptions'},
-  ]
-
-  // Permissions that are always OFF (locked) per module
-  const LOCKED_OFF = {
-    client_dashboard:    ['can_create', 'can_edit', 'can_approve'],
-    client_repository:   ['can_edit'],
-    tools_subscriptions: ['can_create'],
+  // Human-readable labels for module keys (used for rendering rows fetched from DB)
+  const MOD_LABEL = {
+    client_dashboard:    'Client Dashboard',
+    client_directory:    'Client Directory',
+    client_repository:   'Client Repository',
+    timesheet:           'Timesheet',
+    reimbursements:      'Reimbursements',
+    asset_management:    'Asset Management',
+    tools_subscriptions: 'Tools & Subscriptions',
   }
 
   // Default permission matrix — used by "Reset to Default"
+  // Create = "can create/submit records in this module"
+  // Edit   = "can modify/delete existing records (Client Repository: rename/delete/manage files)"
+  // Approve = "can approve others' submissions"
+  // Tools Create = "can request tool access" (everyone who can view can request)
   const DEFAULT_PERMISSIONS = {
     management: {
       client_dashboard:    { can_view: true,  can_create: false, can_edit: false, can_approve: false },
       client_directory:    { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
-      client_repository:   { can_view: true,  can_create: true,  can_edit: false, can_approve: true  },
+      client_repository:   { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
       timesheet:           { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
       reimbursements:      { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
       asset_management:    { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
-      tools_subscriptions: { can_view: true,  can_create: false, can_edit: true,  can_approve: true  },
+      tools_subscriptions: { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
     },
     operations_growth: {
       client_dashboard:    { can_view: true,  can_create: false, can_edit: false, can_approve: false },
       client_directory:    { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
-      client_repository:   { can_view: true,  can_create: true,  can_edit: false, can_approve: true  },
+      client_repository:   { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
       timesheet:           { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
       reimbursements:      { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
       asset_management:    { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
-      tools_subscriptions: { can_view: true,  can_create: false, can_edit: true,  can_approve: true  },
+      tools_subscriptions: { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
     },
     people_culture: {
       client_dashboard:    { can_view: true,  can_create: false, can_edit: false, can_approve: false },
@@ -81,7 +79,7 @@ const Permissions = (() => {
       timesheet:           { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
       reimbursements:      { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
       asset_management:    { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
-      tools_subscriptions: { can_view: true,  can_create: false, can_edit: true,  can_approve: true  },
+      tools_subscriptions: { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
     },
     business_development: {
       client_dashboard:    { can_view: true,  can_create: false, can_edit: false, can_approve: false },
@@ -90,7 +88,7 @@ const Permissions = (() => {
       timesheet:           { can_view: true,  can_create: true,  can_edit: true,  can_approve: false },
       reimbursements:      { can_view: true,  can_create: true,  can_edit: true,  can_approve: false },
       asset_management:    { can_view: true,  can_create: false, can_edit: false, can_approve: false },
-      tools_subscriptions: { can_view: true,  can_create: false, can_edit: false, can_approve: false },
+      tools_subscriptions: { can_view: true,  can_create: true,  can_edit: false, can_approve: false },
     },
     content_strategy: {
       client_dashboard:    { can_view: true,  can_create: false, can_edit: false, can_approve: false },
@@ -99,7 +97,7 @@ const Permissions = (() => {
       timesheet:           { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
       reimbursements:      { can_view: true,  can_create: true,  can_edit: true,  can_approve: false },
       asset_management:    { can_view: true,  can_create: false, can_edit: false, can_approve: false },
-      tools_subscriptions: { can_view: true,  can_create: false, can_edit: false, can_approve: false },
+      tools_subscriptions: { can_view: true,  can_create: true,  can_edit: false, can_approve: false },
     },
     creative: {
       client_dashboard:    { can_view: true,  can_create: false, can_edit: false, can_approve: false },
@@ -108,7 +106,7 @@ const Permissions = (() => {
       timesheet:           { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
       reimbursements:      { can_view: true,  can_create: true,  can_edit: true,  can_approve: false },
       asset_management:    { can_view: true,  can_create: false, can_edit: false, can_approve: false },
-      tools_subscriptions: { can_view: true,  can_create: false, can_edit: false, can_approve: false },
+      tools_subscriptions: { can_view: true,  can_create: true,  can_edit: false, can_approve: false },
     },
     creators: {
       client_dashboard:    { can_view: false, can_create: false, can_edit: false, can_approve: false },
@@ -117,7 +115,7 @@ const Permissions = (() => {
       timesheet:           { can_view: true,  can_create: true,  can_edit: true,  can_approve: false },
       reimbursements:      { can_view: true,  can_create: true,  can_edit: true,  can_approve: false },
       asset_management:    { can_view: true,  can_create: false, can_edit: false, can_approve: false },
-      tools_subscriptions: { can_view: true,  can_create: false, can_edit: false, can_approve: false },
+      tools_subscriptions: { can_view: true,  can_create: true,  can_edit: false, can_approve: false },
     },
     finance: {
       client_dashboard:    { can_view: true,  can_create: false, can_edit: false, can_approve: false },
@@ -126,13 +124,14 @@ const Permissions = (() => {
       timesheet:           { can_view: true,  can_create: true,  can_edit: true,  can_approve: false },
       reimbursements:      { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
       asset_management:    { can_view: true,  can_create: false, can_edit: false, can_approve: false },
-      tools_subscriptions: { can_view: true,  can_create: false, can_edit: true,  can_approve: true  },
+      tools_subscriptions: { can_view: true,  can_create: true,  can_edit: true,  can_approve: true  },
     },
   }
 
   /* ── State ───────────────────────────────────────────────── */
   let _selectedDept = 'management'
   let _state        = {}    // { [moduleKey]: { can_view, can_create, can_edit, can_approve } }
+  let _moduleKeys   = []    // ordered list of module keys as returned from DB
   let _saving       = false
 
   /* ── render ──────────────────────────────────────────────── */
@@ -171,7 +170,7 @@ const Permissions = (() => {
           <div class="perms-right-footer" id="perms-right-footer" style="display:none;">
             <p class="perms-footer-hint">
               Permissions apply at department level.
-              Some actions may be limited to user's own data.
+              Some actions may be limited to a user's own data.
             </p>
             <div style="display:flex;gap:10px;flex-shrink:0;">
               <button class="btn btn--secondary" id="perms-reset-btn">Reset to Default</button>
@@ -188,6 +187,7 @@ const Permissions = (() => {
   async function init(user) {
     _selectedDept = 'management'
     _state        = {}
+    _moduleKeys   = []
     _saving       = false
 
     // Bind department list clicks
@@ -221,6 +221,9 @@ const Permissions = (() => {
       return
     }
 
+    // Capture ordered module keys from DB response
+    _moduleKeys = (data || []).map(row => row.module)
+
     // Build local state from DB rows
     _state = {}
     ;(data || []).forEach(row => {
@@ -242,6 +245,18 @@ const Permissions = (() => {
     const footer    = document.getElementById('perms-right-footer')
     if (!rightBody) return
 
+    if (_moduleKeys.length === 0) {
+      rightBody.innerHTML = `
+        <div class="perms-right-header">
+          <h2 class="perms-dept-title">${deptInfo.label}</h2>
+          <p class="perms-dept-subtitle">Manage access for this department</p>
+        </div>
+        <p class="empty-state">No permission modules found for this department.</p>
+      `
+      if (footer) footer.style.display = 'none'
+      return
+    }
+
     rightBody.innerHTML = `
       <div class="perms-right-header">
         <h2 class="perms-dept-title">${deptInfo.label}</h2>
@@ -259,33 +274,28 @@ const Permissions = (() => {
               </tr>
             </thead>
             <tbody>
-              ${MODULES.map(mod => {
-                const locked = LOCKED_OFF[mod.key] || []
-                const perms  = _state[mod.key] || {}
+              ${_moduleKeys.map(moduleKey => {
+                const perms = _state[moduleKey] || {}
+                const label = MOD_LABEL[moduleKey] || moduleKey
+                const icon  = MOD_ICON[moduleKey]  || ''
                 return `
                   <tr class="perms-module-row">
                     <td class="perms-module-name">
-                      <span class="perms-mod-icon">${MOD_ICON[mod.key] || ''}</span>
-                      ${mod.label}
+                      <span class="perms-mod-icon">${icon}</span>
+                      ${label}
                     </td>
-                    ${PERMISSIONS.map(p => {
-                      const isLocked  = locked.includes(p.key)
-                      const isChecked = !isLocked && (perms[p.key] ?? false)
-                      return `
-                        <td class="perms-toggle-cell">
-                          <label class="toggle${isLocked ? ' toggle--locked' : ''}">
-                            <input type="checkbox"
-                              data-module="${mod.key}"
-                              data-perm="${p.key}"
-                              ${isChecked ? 'checked' : ''}
-                              ${isLocked  ? 'disabled' : ''}
-                            />
-                            <span class="toggle-slider"></span>
-                          </label>
-                          ${isLocked ? '<span class="perms-lock-icon" title="This permission is not applicable for this module">—</span>' : ''}
-                        </td>
-                      `
-                    }).join('')}
+                    ${PERMISSIONS.map(p => `
+                      <td class="perms-toggle-cell">
+                        <label class="toggle">
+                          <input type="checkbox"
+                            data-module="${moduleKey}"
+                            data-perm="${p.key}"
+                            ${perms[p.key] ? 'checked' : ''}
+                          />
+                          <span class="toggle-slider"></span>
+                        </label>
+                      </td>
+                    `).join('')}
                   </tr>
                 `
               }).join('')}
@@ -295,19 +305,42 @@ const Permissions = (() => {
       </div>
     `
 
-    // Bind toggles → update local state
+    // Bind toggles → update local state + enforce View dependency
     rightBody.querySelectorAll('input[data-module]').forEach(input => {
       input.addEventListener('change', () => {
         const mod  = input.dataset.module
         const perm = input.dataset.perm
         if (!_state[mod]) _state[mod] = {}
+
         _state[mod][perm] = input.checked
+
+        // Validation: Create/Edit/Approve ON → View must be ON
+        if (input.checked && perm !== 'can_view') {
+          if (!_state[mod].can_view) {
+            _state[mod].can_view = true
+            const viewInput = rightBody.querySelector(
+              `input[data-module="${mod}"][data-perm="can_view"]`
+            )
+            if (viewInput) viewInput.checked = true
+          }
+        }
+
+        // Validation: View OFF → Create/Edit/Approve must all be OFF
+        if (!input.checked && perm === 'can_view') {
+          ;['can_create', 'can_edit', 'can_approve'].forEach(dep => {
+            _state[mod][dep] = false
+            const depInput = rightBody.querySelector(
+              `input[data-module="${mod}"][data-perm="${dep}"]`
+            )
+            if (depInput) depInput.checked = false
+          })
+        }
       })
     })
 
     // Show footer + wire buttons
     if (footer) {
-      footer.style.display    = 'flex'
+      footer.style.display = 'flex'
       const saveBtn  = document.getElementById('perms-save-btn')
       const resetBtn = document.getElementById('perms-reset-btn')
       if (saveBtn)  saveBtn.onclick  = _saveChanges
@@ -318,19 +351,31 @@ const Permissions = (() => {
   /* ── Save changes to Supabase ────────────────────────────── */
   async function _saveChanges() {
     if (_saving) return
-    _saving = true
 
+    // Pre-save validation: ensure View is ON wherever Create/Edit/Approve is ON
+    let validationFailed = false
+    _moduleKeys.forEach(moduleKey => {
+      const perms = _state[moduleKey] || {}
+      if ((perms.can_create || perms.can_edit || perms.can_approve) && !perms.can_view) {
+        validationFailed = true
+        const label = MOD_LABEL[moduleKey] || moduleKey
+        Utils.showToast(`"${label}": View must be ON if Create, Edit, or Approve is ON.`, 'error')
+      }
+    })
+    if (validationFailed) return
+
+    _saving = true
     const saveBtn = document.getElementById('perms-save-btn')
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…' }
 
-    // Build rows for all modules in the current department
-    const rows = MODULES.map(m => ({
-      department:   _selectedDept,
-      module:       m.key,
-      can_view:     !!(_state[m.key]?.can_view),
-      can_create:   !!(_state[m.key]?.can_create),
-      can_edit:     !!(_state[m.key]?.can_edit),
-      can_approve:  !!(_state[m.key]?.can_approve),
+    // Build rows dynamically from DB-sourced module keys
+    const rows = _moduleKeys.map(moduleKey => ({
+      department:  _selectedDept,
+      module:      moduleKey,
+      can_view:    !!(_state[moduleKey]?.can_view),
+      can_create:  !!(_state[moduleKey]?.can_create),
+      can_edit:    !!(_state[moduleKey]?.can_edit),
+      can_approve: !!(_state[moduleKey]?.can_approve),
     }))
 
     const { error } = await API.saveDepartmentPermissions(rows)
@@ -354,16 +399,22 @@ const Permissions = (() => {
       return
     }
 
-    // Deep-copy defaults into state
-    _state = JSON.parse(JSON.stringify(defaults))
-
-    // Update DOM toggles (skip locked inputs)
-    document.querySelectorAll('input[data-module]').forEach(input => {
-      if (input.disabled) return
-      const mod  = input.dataset.module
-      const perm = input.dataset.perm
-      input.checked = !!(_state[mod]?.[perm])
+    // Deep-copy defaults into state (only for modules present in DB)
+    _moduleKeys.forEach(moduleKey => {
+      if (defaults[moduleKey]) {
+        _state[moduleKey] = { ...defaults[moduleKey] }
+      }
     })
+
+    // Update DOM toggles
+    const rightBody = document.getElementById('perms-right-body')
+    if (rightBody) {
+      rightBody.querySelectorAll('input[data-module]').forEach(input => {
+        const mod  = input.dataset.module
+        const perm = input.dataset.perm
+        input.checked = !!(_state[mod]?.[perm])
+      })
+    }
 
     Utils.showToast('Defaults restored — click Save Changes to apply.', 'success')
   }
