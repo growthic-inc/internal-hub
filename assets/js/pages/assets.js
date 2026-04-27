@@ -10,6 +10,7 @@ const Assets = (() => {
   let _assets    = []
   let _employees = []
   let _activeTab = 'all'
+  let _p         = null  // department permissions
 
   const CAN_MANAGE = ['super_admin', 'hr']
 
@@ -50,7 +51,8 @@ const Assets = (() => {
   /* ── init ────────────────────────────────────────────────── */
   async function init(user) {
     _user = user
-    const canManage = CAN_MANAGE.includes(user.role)
+    _p    = App.getPerms('asset_management')
+    const canManage = CAN_MANAGE.includes(user.role) && _p.can_edit
 
     const promises = [API.getAssets()]
     if (canManage) promises.push(API.getEmployees(true))
@@ -77,7 +79,7 @@ const Assets = (() => {
 
   function _loadTab(tab) {
     const toolbar   = document.getElementById('ast-toolbar-actions')
-    const canManage = CAN_MANAGE.includes(_user.role)
+    const canManage = CAN_MANAGE.includes(_user.role) && _p.can_edit
 
     if (toolbar) {
       toolbar.innerHTML = tab === 'all' && canManage
@@ -131,12 +133,14 @@ const Assets = (() => {
                       </td>
                       <td>${STATUS_BADGE[a.status] || `<span class="badge badge--muted">${a.status}</span>`}</td>
                       <td style="white-space:nowrap;">
-                        ${a.status === 'available'
-                          ? `<button class="btn btn--xs btn--secondary ast-assign"
-                               data-id="${a.id}" data-name="${Utils.escapeHtml(a.name)}">Assign</button>`
-                          : a.status === 'in_use'
-                          ? `<button class="btn btn--xs btn--ghost ast-return"
-                               data-id="${a.id}">Return</button>`
+                        ${_p.can_edit
+                          ? a.status === 'available'
+                            ? `<button class="btn btn--xs btn--secondary ast-assign"
+                                 data-id="${a.id}" data-name="${Utils.escapeHtml(a.name)}">Assign</button>`
+                            : a.status === 'in_use'
+                            ? `<button class="btn btn--xs btn--ghost ast-return"
+                                 data-id="${a.id}">Return</button>`
+                            : ''
                           : ''}
                       </td>
                     </tr>

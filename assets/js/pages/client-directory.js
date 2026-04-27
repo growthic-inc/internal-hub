@@ -7,6 +7,7 @@ const ClientDirectory = (() => {
   let _user    = null
   let _clients = []
   let _filter  = { category: 'all', status: 'active', search: '' }
+  let _p       = null  // department permissions
 
   const CAT_BADGE = {
     Shark:   'badge--primary',
@@ -123,15 +124,21 @@ const ClientDirectory = (() => {
   }
 
   async function init(user) {
-    _user = user
+    _user   = user
+    _p      = App.getPerms('client_directory')
     _filter = { category: 'all', status: 'active', search: '' }
     await _loadClients()
     _bindCategoryTabs()
     _bindSearch()
     _bindStatusFilter()
     _bindDrawer()
-    if (['super_admin', 'founders_office', 'bde'].includes(user.role)) {
+
+    const canWriteRole = ['super_admin', 'founders_office', 'bde'].includes(user.role)
+    if (canWriteRole && _p.can_create) {
       _bindAddModal()
+    } else {
+      // Remove the button if it was rendered but perms don't allow
+      document.getElementById('cd-add-btn')?.remove()
     }
   }
 

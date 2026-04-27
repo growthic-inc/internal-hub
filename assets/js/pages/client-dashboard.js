@@ -39,6 +39,7 @@ const ClientDashboard = (() => {
   const METRIC_KEYS = ['impressions', 'engagement', 'likes', 'followersGained', 'searchDiscovery', 'engagementRate']
 
   let _user            = null
+  let _p               = null  // department permissions
   let _clients         = []
   let _currentClient   = null
   let _currentEntity   = null
@@ -126,9 +127,10 @@ const ClientDashboard = (() => {
 
   /* ── init ────────────────────────────────────────────────── */
   async function init(user) {
-    _user = user
-    _trendChart = null
-    _pubChart   = null
+    _user          = user
+    _p             = App.getPerms('client_dashboard')
+    _trendChart    = null
+    _pubChart      = null
     _currentClient = null
 
     const { data } = await API.getClients()
@@ -136,7 +138,12 @@ const ClientDashboard = (() => {
 
     _bindClientDropdown()
     _bindFilters()
-    document.getElementById('db-upload-btn')?.addEventListener('click', _openUploadModal)
+
+    if (_p.can_create) {
+      document.getElementById('db-upload-btn')?.addEventListener('click', _openUploadModal)
+    } else {
+      document.getElementById('db-upload-btn')?.remove()
+    }
   }
 
   /* ── Client dropdown ─────────────────────────────────────── */
@@ -303,11 +310,13 @@ const ClientDashboard = (() => {
     return `
       <div class="client-status-card">
         <div class="client-status-badge ${s.cls}" id="status-badge">${s.label}</div>
-        <select class="client-status-select" id="status-select">
-          <option value="on_track"  ${statusVal === 'on_track'  ? 'selected' : ''}>On Track</option>
-          <option value="at_risk"   ${statusVal === 'at_risk'   ? 'selected' : ''}>At Risk</option>
-          <option value="off_track" ${statusVal === 'off_track' ? 'selected' : ''}>Off Track</option>
-        </select>
+        ${_p.can_edit ? `
+          <select class="client-status-select" id="status-select">
+            <option value="on_track"  ${statusVal === 'on_track'  ? 'selected' : ''}>On Track</option>
+            <option value="at_risk"   ${statusVal === 'at_risk'   ? 'selected' : ''}>At Risk</option>
+            <option value="off_track" ${statusVal === 'off_track' ? 'selected' : ''}>Off Track</option>
+          </select>
+        ` : ''}
         ${updatedBy && updatedAt
           ? `<div class="client-status-meta">Last updated by ${Utils.escapeHtml(updatedBy)} on ${updatedAt}</div>`
           : `<div class="client-status-meta">Status not yet updated</div>`}

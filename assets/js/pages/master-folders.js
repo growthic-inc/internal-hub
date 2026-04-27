@@ -20,6 +20,7 @@ const MasterFolders = (() => {
   let _selectedClient = null
   let _selectedMonth  = _currentMonthValue()
   let _activeFolder   = null   // null = Level 1, string = folder type (Level 2)
+  let _p              = null   // department permissions
 
   /* ── render ──────────────────────────────────────────────── */
   function render(user) {
@@ -66,7 +67,8 @@ const MasterFolders = (() => {
 
   /* ── init ────────────────────────────────────────────────── */
   async function init(user) {
-    _user = user
+    _user           = user
+    _p              = App.getPerms('client_repository')
     _selectedClient = null
     _activeFolder   = null
 
@@ -75,7 +77,14 @@ const MasterFolders = (() => {
 
     _bindClientDropdown()
     _bindMonthSelect()
-    document.getElementById('upload-file-btn')?.addEventListener('click', _openUploadModal)
+
+    // Hide upload button entirely if no create permission
+    if (!_p.can_create) {
+      const btn = document.getElementById('upload-file-btn')
+      if (btn) btn.style.display = 'none'
+    } else {
+      document.getElementById('upload-file-btn')?.addEventListener('click', _openUploadModal)
+    }
   }
 
   /* ── Client dropdown ─────────────────────────────────────── */
@@ -134,7 +143,7 @@ const MasterFolders = (() => {
             entitySel.style.display = 'none'
           }
 
-          document.getElementById('upload-file-btn').style.display = 'flex'
+          if (_p.can_create) document.getElementById('upload-file-btn').style.display = 'flex'
           _loadLevel1()
         })
       })
@@ -281,7 +290,7 @@ const MasterFolders = (() => {
     const isOwner    = file.uploaded_by === _user.id
     const hoursSince = (Date.now() - new Date(file.uploaded_at).getTime()) / 36e5
     const within24   = hoursSince < 24
-    const canDelete  = (isOwner && within24) || CAN_FORCE_DELETE.includes(_user.role)
+    const canDelete  = _p.can_edit && ((isOwner && within24) || CAN_FORCE_DELETE.includes(_user.role))
 
     return `
       <tr>

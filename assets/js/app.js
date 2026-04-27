@@ -20,6 +20,18 @@ const App = (() => {
 
   const ALL_ROLES = ['super_admin', 'founders_office', 'team_lead', 'delivery', 'hr', 'bde', 'finance']
 
+  // Maps NAV route IDs → department_permissions module keys
+  const PERM_MODULE = {
+    'client-dashboard': 'client_dashboard',
+    'client-directory': 'client_directory',
+    'master-folders':   'client_repository',
+    'timesheet':        'timesheet',
+    'reimbursements':   'reimbursements',
+    'assets':           'asset_management',
+    'tools':            'tools_subscriptions',
+    // access-control, permissions, settings: no perm check — role-gated only
+  }
+
   const NAV = [
     { id: 'client-dashboard', label: 'Client Dashboard', icon: ICONS.barChart,   module: () => ClientDashboard, roles: ['super_admin', 'founders_office', 'team_lead', 'delivery'] },
     { id: 'client-directory', label: 'Client Directory', icon: ICONS.briefcase,  module: () => ClientDirectory, roles: ['super_admin', 'founders_office', 'team_lead', 'delivery', 'bde'] },
@@ -34,6 +46,58 @@ const App = (() => {
   ]
 
   let currentUser = null
+  let _perms      = null  // null = super_admin bypass; {} = loaded dept perms
+
+  /* ── Permissions ─────────────────────────────────────────── */
+  async function _loadPermissions() {
+    if (currentUser.role === 'super_admin') {
+      _perms = null  // null = full access everywhere
+      return
+    }
+    if (!currentUser.department) {
+      _perms = {}    // no dept → deny by default (safety)
+      return
+    }
+    const { data } = await API.getDepartmentPermissions(currentUser.department)
+    _perms = {}
+    ;(data || []).forEach(row => { _perms[row.module] = row })
+  }
+
+  function getPerms(moduleKey) {
+    if (_perms === null) {
+      // super_admin — full access
+      return { can_view: true, can_create: true, can_edit: true, can_approve: true }
+    }
+    const p = _perms[moduleKey]
+    if (!p) {
+      // Module not in DB for this dept → open access (avoid accidental lockout)
+      return { can_view: true, can_create: true, can_edit: true, can_approve: true }
+    }
+    return {
+      can_view:    p.can_view    ?? false,
+      can_create:  p.can_create  ?? false,
+      can_edit:    p.can_edit    ?? false,
+      can_approve: p.can_approve ?? false,
+    }
+  }
+
+  function renderAccessDenied(label) {
+    return `
+      <div class="empty-state-full">
+        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--border)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+        <h3 style="font-size:16px;font-weight:600;color:var(--text);margin:0 0 6px;">Access Restricted</h3>
+        <p style="font-size:14px;color:var(--text-muted);margin:0;">
+          Your department doesn't have permission to view ${label}.
+        </p>
+        <p style="font-size:13px;color:var(--text-muted);margin:6px 0 0;">
+          Contact your Super Admin to request access.
+        </p>
+      </div>
+    `
+  }
 
   async function init() {
     const session = await Auth.requireAuth()
@@ -45,6 +109,8 @@ const App = (() => {
       window.location.href = '/'
       return
     }
+
+    await _loadPermissions()
 
     _renderSidebar()
     _renderHeaderUser()
@@ -61,7 +127,13 @@ const App = (() => {
     const footer = document.getElementById('sidebar-footer')
     if (!nav || !footer) return
 
-    const accessible = NAV.filter(item => item.roles.includes(currentUser.role))
+    const accessible = NAV.filter(item => {
+      if (!item.roles.includes(currentUser.role)) return false
+      if (currentUser.role === 'super_admin') return true
+      const permKey = PERM_MODULE[item.id]
+      if (!permKey) return true  // settings / permissions / people — role-gated only
+      return getPerms(permKey).can_view
+    })
 
     nav.innerHTML = accessible.map(item => `
       <a class="nav-item" data-route="${item.id}" href="#${item.id}">
@@ -133,7 +205,13 @@ const App = (() => {
   }
 
   function _getDefaultRoute() {
-    const accessible = NAV.filter(item => item.roles.includes(currentUser.role))
+    const accessible = NAV.filter(item => {
+      if (!item.roles.includes(currentUser.role)) return false
+      if (currentUser.role === 'super_admin') return true
+      const permKey = PERM_MODULE[item.id]
+      if (!permKey) return true
+      return getPerms(permKey).can_view
+    })
     return accessible.length ? accessible[0].id : 'settings'
   }
 
@@ -142,6 +220,15 @@ const App = (() => {
     if (!navItem || !navItem.roles.includes(currentUser.role)) {
       window.location.hash = _getDefaultRoute()
       return
+    }
+
+    // Permission check: redirect if can_view is false for this route
+    if (currentUser.role !== 'super_admin') {
+      const permKey = PERM_MODULE[route]
+      if (permKey && !getPerms(permKey).can_view) {
+        window.location.hash = _getDefaultRoute()
+        return
+      }
     }
 
     document.querySelectorAll('.nav-item').forEach(el => {
@@ -159,7 +246,7 @@ const App = (() => {
     if (pageModule.init) pageModule.init(currentUser)
   }
 
-  return { init }
+  return { init, getPerms, renderAccessDenied }
 })()
 
 document.addEventListener('DOMContentLoaded', App.init)

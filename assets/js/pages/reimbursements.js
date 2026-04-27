@@ -84,17 +84,19 @@ const Reimbursements = (() => {
   let _activeTab           = 'mine'
   let _selectedPreApproval = null   // PA object linked to current claim
   let _receiptUrl          = null   // Drive URL after receipt upload
+  let _p                   = null   // department permissions
 
   /* ── render ──────────────────────────────────────────────── */
   function render(user) {
+    const p            = App.getPerms('reimbursements')
     const isFinance    = user.role === 'finance'
     const isSuperAdmin = user.role === 'super_admin'
-    const canApprove   = CAN_APPROVE.includes(user.role)
+    const canApprove   = CAN_APPROVE.includes(user.role) && p.can_approve
 
     const tabs = [{ id: 'mine', label: 'My Requests' }]
     if (canApprove)              tabs.push({ id: 'inbox',       label: 'Inbox' })
     if (isSuperAdmin)            tabs.push({ id: 'hr-requests', label: 'HR Requests' })
-    if (isFinance || isSuperAdmin) tabs.push({ id: 'payment',   label: 'For Payment' })
+    if ((isFinance || isSuperAdmin) && p.can_approve) tabs.push({ id: 'payment', label: 'For Payment' })
 
     return `
       <div class="page-inner">
@@ -115,6 +117,7 @@ const Reimbursements = (() => {
   /* ── init ────────────────────────────────────────────────── */
   async function init(user) {
     _user                = user
+    _p                   = App.getPerms('reimbursements')
     _activeTab           = 'mine'
     _selectedPreApproval = null
     _receiptUrl          = null
@@ -158,11 +161,13 @@ const Reimbursements = (() => {
 
     if (toolbar) {
       toolbar.innerHTML = `
-        <button class="btn btn--primary" id="btn-new-preapproval">+ Pre-Approval Request</button>
-        <button class="btn btn--secondary" id="btn-new-claim">+ File a Claim</button>
+        ${_p.can_create ? `<button class="btn btn--primary" id="btn-new-preapproval">+ Pre-Approval Request</button>` : ''}
+        ${_p.can_create ? `<button class="btn btn--secondary" id="btn-new-claim">+ File a Claim</button>` : ''}
       `
-      document.getElementById('btn-new-preapproval').addEventListener('click', _openPreApprovalModal)
-      document.getElementById('btn-new-claim').addEventListener('click', _openClaimModal)
+      if (_p.can_create) {
+        document.getElementById('btn-new-preapproval')?.addEventListener('click', _openPreApprovalModal)
+        document.getElementById('btn-new-claim')?.addEventListener('click', _openClaimModal)
+      }
     }
 
     const [paRes, clRes] = await Promise.all([

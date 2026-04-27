@@ -21,16 +21,18 @@ const Tools = (() => {
   let _user      = null
   let _allTools  = []
   let _activeTab = 'registry'
+  let _p         = null  // department permissions
 
   /* ── render ──────────────────────────────────────────────── */
   function render(user) {
+    const p            = App.getPerms('tools_subscriptions')
     const isSuperAdmin = user.role === 'super_admin'
     const isHR         = user.role === 'hr'
-    const canManage    = isSuperAdmin || isHR
+    const canManage    = (isSuperAdmin || isHR) && p.can_approve
 
     const tabs = [
-      { id: 'registry',   label: 'Tool Registry' },
-      { id: 'my-access',  label: 'My Access' },
+      { id: 'registry',    label: 'Tool Registry' },
+      { id: 'my-access',   label: 'My Access' },
       { id: 'my-requests', label: 'My Requests' },
     ]
     if (canManage) tabs.push({ id: 'requests', label: 'Requests Inbox' })
@@ -51,6 +53,7 @@ const Tools = (() => {
   /* ── init ────────────────────────────────────────────────── */
   async function init(user) {
     _user      = user
+    _p         = App.getPerms('tools_subscriptions')
     _activeTab = 'registry'
 
     const { data } = await API.getTools()
@@ -92,18 +95,17 @@ const Tools = (() => {
 
     const isSuperAdmin = _user.role === 'super_admin'
     const isHR         = _user.role === 'hr'
+    const canAddTool   = (isSuperAdmin || isHR) && _p.can_edit
 
     if (toolbar) {
       toolbar.innerHTML = `
         <input type="text" id="tools-search" class="search-input" placeholder="Search tools…" />
-        ${(isSuperAdmin || isHR) ? '<button class="btn btn--primary" id="btn-add-tool">+ Add Tool</button>' : ''}
-        <button class="btn btn--secondary" id="btn-request-tool">Request New Tool</button>
+        ${canAddTool ? '<button class="btn btn--primary" id="btn-add-tool">+ Add Tool</button>' : ''}
+        ${_p.can_create ? '<button class="btn btn--secondary" id="btn-request-tool">Request New Tool</button>' : ''}
       `
       document.getElementById('tools-search').addEventListener('input', e => _renderRegistry(e.target.value))
-      document.getElementById('btn-request-tool').addEventListener('click', _openNewToolRequestModal)
-      if (isSuperAdmin || isHR) {
-        document.getElementById('btn-add-tool').addEventListener('click', _openAddToolModal)
-      }
+      if (_p.can_create) document.getElementById('btn-request-tool')?.addEventListener('click', _openNewToolRequestModal)
+      if (canAddTool)    document.getElementById('btn-add-tool')?.addEventListener('click', _openAddToolModal)
     }
 
     const { data, error } = await API.getTools()
@@ -156,9 +158,11 @@ const Tools = (() => {
                   <td>${t.renewal_date ? Utils.formatDate(t.renewal_date) : '—'}</td>
                   <td>${t.monthly_cost != null ? Utils.formatCurrency(t.monthly_cost) : '—'}</td>
                   <td>
-                    <button class="btn btn--xs btn--secondary" data-request-access="${t.id}" data-tool-name="${Utils.escapeHtml(t.name)}">
-                      Request Access
-                    </button>
+                    ${_p.can_create
+                      ? `<button class="btn btn--xs btn--secondary" data-request-access="${t.id}" data-tool-name="${Utils.escapeHtml(t.name)}">
+                           Request Access
+                         </button>`
+                      : ''}
                   </td>
                 </tr>
               `).join('')}

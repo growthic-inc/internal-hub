@@ -11,6 +11,7 @@ const Timesheet = (() => {
   let _clients   = []
   let _weekStart = null
   let _activeTab = 'mine'
+  let _p         = null  // department permissions
 
   const CAN_APPROVE = ['super_admin', 'founders_office', 'team_lead', 'hr']
 
@@ -23,7 +24,8 @@ const Timesheet = (() => {
 
   /* ── render ──────────────────────────────────────────────── */
   function render(user) {
-    const showTeam = CAN_APPROVE.includes(user.role)
+    const p = App.getPerms('timesheet')
+    const showTeam = CAN_APPROVE.includes(user.role) && p.can_approve
     const tabs = [{ id: 'mine', label: 'My Timesheet' }]
     if (showTeam) tabs.push({ id: 'team', label: 'Team Submissions' })
 
@@ -46,6 +48,7 @@ const Timesheet = (() => {
   /* ── init ────────────────────────────────────────────────── */
   async function init(user) {
     _user      = user
+    _p         = App.getPerms('timesheet')
     _weekStart = _getMondayOf(new Date())
     _activeTab = 'mine'
 
@@ -90,8 +93,8 @@ const Timesheet = (() => {
           <button class="btn btn--ghost btn--sm" id="ts-next">Next →</button>
         </div>
         <div style="display:flex;gap:8px;">
-          <button class="btn btn--secondary btn--sm" id="ts-submit-btn" style="display:none;">Submit Drafts</button>
-          <button class="btn btn--primary  btn--sm" id="ts-log-btn">+ Log Entry</button>
+          ${_p.can_edit ? `<button class="btn btn--secondary btn--sm" id="ts-submit-btn" style="display:none;">Submit Drafts</button>` : ''}
+          ${_p.can_create ? `<button class="btn btn--primary btn--sm" id="ts-log-btn">+ Log Entry</button>` : ''}
         </div>
       `
       document.getElementById('ts-prev').addEventListener('click', () => {
@@ -100,8 +103,8 @@ const Timesheet = (() => {
       document.getElementById('ts-next').addEventListener('click', () => {
         _weekStart.setDate(_weekStart.getDate() + 7); _loadWeek()
       })
-      document.getElementById('ts-submit-btn').addEventListener('click', _submitDrafts)
-      document.getElementById('ts-log-btn').addEventListener('click', _openLogModal)
+      if (_p.can_edit)   document.getElementById('ts-submit-btn')?.addEventListener('click', _submitDrafts)
+      if (_p.can_create) document.getElementById('ts-log-btn')?.addEventListener('click', _openLogModal)
     }
     _loadWeek()
   }
@@ -200,7 +203,7 @@ const Timesheet = (() => {
                             ${entry.hours}h
                           </td>
                           <td style="width:40px;text-align:right;">
-                            ${entry.status === 'draft' ? `
+                            ${entry.status === 'draft' && _p.can_edit ? `
                               <button class="btn btn--xs btn--ghost ts-delete"
                                 data-id="${entry.id}" title="Delete entry"
                                 style="padding:4px 6px;color:var(--danger);">
@@ -233,7 +236,8 @@ const Timesheet = (() => {
   }
 
   function _updateSubmitBtn() {
-    const btn    = document.getElementById('ts-submit-btn')
+    if (!_p.can_edit) return
+    const btn = document.getElementById('ts-submit-btn')
     if (!btn) return
     const drafts = _entries.filter(e => e.status === 'draft').length
     btn.style.display = drafts > 0 ? 'inline-flex' : 'none'
