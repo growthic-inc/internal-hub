@@ -1486,3 +1486,247 @@
 .ts-day .data-table th { display: none; } /* headers not needed in day rows */
 .ts-day .data-table td { border-top: none; }
 .ts-day .data-table tbody tr:first-child td { border-top: 1px solid var(--border-light); }
+
+/* ══════════════════════════════════════════════════════════════
+   PERMISSIONS CONTROL PANEL
+   ══════════════════════════════════════════════════════════════ */
+
+/* Outer two-column grid */
+.perms-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: calc(100vh - 130px);
+  gap: 0;
+  margin: -24px;            /* bleed to page-content edges */
+}
+
+/* ── Left sidebar ─────────────────────────────────────────── */
+.perms-sidebar {
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.perms-sidebar-header {
+  padding: 24px 20px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.perms-sidebar-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.perms-sidebar-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.perms-super-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--primary);
+  background: rgba(67, 97, 238, 0.1);
+  border: 1px solid rgba(67, 97, 238, 0.2);
+  padding: 2px 7px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.perms-sidebar-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.perms-dept-section {
+  padding: 16px 0 0;
+  flex: 1;
+}
+
+.perms-dept-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  padding: 0 20px 8px;
+  text-transform: uppercase;
+}
+
+.perms-dept-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.perms-dept-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  line-height: 1.4;
+}
+
+.perms-dept-item:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.perms-dept-item--active {
+  background: rgba(67, 97, 238, 0.07);
+  color: var(--primary);
+  border-left-color: var(--primary);
+  font-weight: 600;
+}
+
+/* ── Right panel ──────────────────────────────────────────── */
+.perms-right {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  overflow-y: auto;
+}
+
+.perms-right-body {
+  flex: 1;
+  padding: 32px 40px;
+}
+
+.perms-right-header {
+  margin-bottom: 24px;
+}
+
+.perms-dept-title {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 4px;
+  letter-spacing: -0.4px;
+}
+
+.perms-dept-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* ── Permissions table ────────────────────────────────────── */
+.perms-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.perms-table thead th {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  padding: 10px 16px;
+  text-align: left;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.perms-table thead th:not(:first-child) {
+  text-align: center;
+  width: 90px;
+}
+
+.perms-module-row {
+  border-bottom: 1px solid var(--border-light);
+  transition: background 0.12s;
+}
+.perms-module-row:last-child { border-bottom: none; }
+.perms-module-row:hover { background: rgba(0,0,0,0.015); }
+
+.perms-module-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.perms-mod-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.perms-toggle-cell {
+  text-align: center;
+  padding: 14px 0;
+  vertical-align: middle;
+}
+
+/* Locked toggle — greyed out, not interactive */
+.toggle--locked {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.perms-lock-icon {
+  display: block;
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1;
+  display: none;  /* hidden — the dimmed toggle communicates the lock */
+}
+
+/* ── Footer ───────────────────────────────────────────────── */
+.perms-right-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 40px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  flex-wrap: wrap;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+}
+
+.perms-footer-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+  max-width: 480px;
+  line-height: 1.5;
+}
+
+/* Responsive — collapse sidebar on narrow screens */
+@media (max-width: 900px) {
+  .perms-layout {
+    grid-template-columns: 1fr;
+  }
+  .perms-sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .perms-right-body {
+    padding: 20px;
+  }
+  .perms-right-footer {
+    padding: 14px 20px;
+  }
+}

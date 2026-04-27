@@ -335,6 +335,22 @@ const API = (() => {
       .upsert({ employee_id: employeeId, module, event_type: eventType, enabled })
   }
 
+  /* ── Department Permissions ──────────────────────────────── */
+  async function getDepartmentPermissions(department) {
+    return supabase
+      .from('department_permissions')
+      .select('*')
+      .eq('department', department)
+      .order('module')
+  }
+
+  async function saveDepartmentPermissions(rows) {
+    // rows: [{ department, module, can_view, can_create, can_edit, can_approve }]
+    return supabase
+      .from('department_permissions')
+      .upsert(rows, { onConflict: 'department,module' })
+  }
+
   return {
     getClients, getClient, getClientByProjectCode,
     getEmployees, getEmployee, getTeamLeads, getAllEmployees,
@@ -350,5 +366,6 @@ const API = (() => {
     getClientDashboard, updateClientStatus,
     getMasterFolderFiles,
     getNotificationPreferences, upsertNotificationPreference,
+    getDepartmentPermissions, saveDepartmentPermissions,
   }
 })()
