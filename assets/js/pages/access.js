@@ -103,7 +103,7 @@ const Access = (() => {
     { key: 'operations_growth',    label: 'Operations & Growth'  },
     { key: 'people_culture',       label: 'People & Culture'     },
     { key: 'business_development', label: 'Business Development' },
-    { key: 'content_strategy',     label: 'Content Strategy'     },
+    { key: 'content_strategy',     label: 'Content'              },
     { key: 'creative',             label: 'Creative'             },
     { key: 'creators',             label: 'Creators'             },
     { key: 'finance',              label: 'Finance'              },

@@ -68,7 +68,7 @@ const Utils = (() => {
     operations_growth:    'Operations & Growth',
     people_culture:       'People & Culture',
     business_development: 'Business Development',
-    content_strategy:     'Content Strategy',
+    content_strategy:     'Content',
     creative:             'Creative',
     creators:             'Creators',
     finance:              'Finance',
