@@ -14,14 +14,15 @@ const App = (() => {
     box:        `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>`,
     tool:       `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>`,
     shield:     `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>`,
-    settings:   `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>`,
     sliders:    `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="6" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="4" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="8" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="4" x2="15" y2="4"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`,
+    settings:   `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>`,
   }
 
   const ALL_ROLES = ['super_admin', 'founders_office', 'team_lead', 'delivery', 'hr', 'bde', 'finance', 'employee']
 
-  // Maps NAV route IDs → department_permissions module keys
-  const PERM_MODULE = {
+  // Maps NAV route IDs → access_matrix module keys
+  // Used for sidebar visibility check (module visible if any feature > no_access)
+  const ROUTE_MODULE = {
     'client-dashboard': 'client_dashboard',
     'client-directory': 'client_directory',
     'master-folders':   'client_repository',
@@ -29,7 +30,8 @@ const App = (() => {
     'reimbursements':   'reimbursements',
     'assets':           'asset_management',
     'tools':            'tools_subscriptions',
-    // access-control, permissions, settings: no perm check — role-gated only
+    'access':           'people_hrms',
+    // settings: no access gate — always visible
   }
 
   const NAV = [
@@ -40,45 +42,82 @@ const App = (() => {
     { id: 'reimbursements',   label: 'Reimbursements',    icon: ICONS.creditCard, module: () => Reimbursements,  roles: ALL_ROLES },
     { id: 'assets',           label: 'Asset Management',  icon: ICONS.box,        module: () => Assets,          roles: ALL_ROLES },
     { id: 'tools',            label: 'Tools & Subs',      icon: ICONS.tool,       module: () => Tools,           roles: ALL_ROLES },
-    { id: 'access-control',   label: 'People',            icon: ICONS.shield,     module: () => AccessControl,   roles: ['super_admin', 'hr'] },
-    { id: 'permissions',      label: 'Permissions',       icon: ICONS.sliders,    module: () => Permissions,     roles: ['super_admin'] },
+    // People: visible if any people_hrms feature > no_access
+    { id: 'access',           label: 'People',            icon: ICONS.shield,     module: () => AccessControl,   roles: ALL_ROLES },
+    // Access Control panel: visible only if manage_access >= can_manage (or super_admin)
+    { id: 'access-control',   label: 'Access Control',    icon: ICONS.sliders,    module: () => Access,          roles: ALL_ROLES,
+      visibilityFeature: { module: 'people_hrms', feature: 'manage_access', minLevel: 'can_manage' } },
     { id: 'settings',         label: 'Settings',          icon: ICONS.settings,   module: () => Settings,        roles: ALL_ROLES },
   ]
 
-  let currentUser = null
-  let _perms      = null  // null = super_admin bypass; {} = loaded dept perms
+  /* ── Access Level Hierarchy ─────────────────────────────── */
+  const ACCESS_LEVELS = {
+    no_access:   0,
+    view_only:   1,
+    can_upload:  2,
+    can_edit:    3,
+    can_manage:  4,
+    can_approve: 5,
+  }
 
-  /* ── Permissions ─────────────────────────────────────────── */
-  async function _loadPermissions() {
+  let currentUser = null
+
+  // _matrix: null = super_admin (bypass all checks)
+  // _matrix: { [module]: { [feature]: access_level_string } }
+  let _matrix = null
+
+  /* ── Load access matrix at login ───────────────────────── */
+  async function _loadAccessMatrix() {
     if (currentUser.role === 'super_admin') {
-      _perms = null  // null = full access everywhere
+      _matrix = null  // null = full access everywhere
       return
     }
     if (!currentUser.department) {
-      _perms = {}    // no dept → deny by default (safety)
+      _matrix = {}    // no dept → deny all
       return
     }
-    const { data } = await API.getDepartmentPermissions(currentUser.department)
-    _perms = {}
-    ;(data || []).forEach(row => { _perms[row.module] = row })
+    const { data } = await API.getAccessMatrix(currentUser.department)
+    _matrix = {}
+    ;(data || []).forEach(row => {
+      if (!_matrix[row.module]) _matrix[row.module] = {}
+      _matrix[row.module][row.feature] = row.access_level
+    })
   }
 
-  function getPerms(moduleKey) {
-    if (_perms === null) {
-      // super_admin — full access
-      return { can_view: true, can_create: true, can_edit: true, can_approve: true }
+  /* ── hasAccess(module, feature, minLevel) ───────────────── */
+  // Returns true if the user's access level for this feature >= minLevel
+  // Super admin always returns true.
+  // If a module/feature is not in the matrix, returns false (secure default).
+  function hasAccess(module, feature, minLevel = 'view_only') {
+    if (_matrix === null) return true  // super_admin bypass
+
+    const moduleData = _matrix[module]
+    if (!moduleData) return false
+
+    const level = moduleData[feature]
+    if (!level) return false
+
+    return (ACCESS_LEVELS[level] || 0) >= (ACCESS_LEVELS[minLevel] || 0)
+  }
+
+  /* ── _canViewModule(navItem) ────────────────────────────── */
+  // Returns true if this NAV item should be visible for the current user.
+  // Uses visibilityFeature override when present; otherwise checks if
+  // ANY feature in the route's module has access > no_access.
+  function _canViewModule(navItem) {
+    if (_matrix === null) return true  // super_admin sees everything
+
+    // Route-specific feature override (e.g. access-control panel)
+    if (navItem.visibilityFeature) {
+      const { module, feature, minLevel } = navItem.visibilityFeature
+      return hasAccess(module, feature, minLevel)
     }
-    const p = _perms[moduleKey]
-    if (!p) {
-      // Module not in DB for this dept → open access (avoid accidental lockout)
-      return { can_view: true, can_create: true, can_edit: true, can_approve: true }
-    }
-    return {
-      can_view:    p.can_view    ?? false,
-      can_create:  p.can_create  ?? false,
-      can_edit:    p.can_edit    ?? false,
-      can_approve: p.can_approve ?? false,
-    }
+
+    const moduleKey = ROUTE_MODULE[navItem.id]
+    if (!moduleKey) return true  // settings etc — no access gate
+    const moduleData = _matrix[moduleKey]
+    if (!moduleData) return false
+    return Object.values(moduleData).some(level => (ACCESS_LEVELS[level] || 0) > 0)
   }
 
   function renderAccessDenied(label) {
@@ -93,7 +132,7 @@ const App = (() => {
           Your department doesn't have permission to view ${label}.
         </p>
         <p style="font-size:13px;color:var(--text-muted);margin:6px 0 0;">
-          Contact your Super Admin to request access.
+          Contact your Admin to request access.
         </p>
       </div>
     `
@@ -110,7 +149,7 @@ const App = (() => {
       return
     }
 
-    await _loadPermissions()
+    await _loadAccessMatrix()
 
     _renderSidebar()
     _renderHeaderUser()
@@ -129,10 +168,8 @@ const App = (() => {
 
     const accessible = NAV.filter(item => {
       if (!item.roles.includes(currentUser.role)) return false
-      if (currentUser.role === 'super_admin') return true
-      const permKey = PERM_MODULE[item.id]
-      if (!permKey) return true  // settings / permissions / people — role-gated only
-      return getPerms(permKey).can_view
+      if (_matrix === null) return true  // super_admin sees all
+      return _canViewModule(item)
     })
 
     nav.innerHTML = accessible.map(item => `
@@ -226,7 +263,7 @@ const App = (() => {
           Your account doesn't have access to any modules yet.
         </p>
         <p style="font-size:13px;color:var(--text-muted);margin:6px 0 0;">
-          Contact your Super Admin to get access configured.
+          Contact your Admin to get access configured.
         </p>
       </div>
     `
@@ -235,10 +272,8 @@ const App = (() => {
   function _getDefaultRoute() {
     const accessible = NAV.filter(item => {
       if (!item.roles.includes(currentUser.role)) return false
-      if (currentUser.role === 'super_admin') return true
-      const permKey = PERM_MODULE[item.id]
-      if (!permKey) return true
-      return getPerms(permKey).can_view
+      if (_matrix === null) return true
+      return _canViewModule(item)
     })
     return accessible.length ? accessible[0].id : null
   }
@@ -251,14 +286,11 @@ const App = (() => {
       return
     }
 
-    // Permission check: redirect if can_view is false for this route
-    if (currentUser.role !== 'super_admin') {
-      const permKey = PERM_MODULE[route]
-      if (permKey && !getPerms(permKey).can_view) {
-        const fallback = _getDefaultRoute()
-        if (fallback) { window.location.hash = fallback } else { _renderNoAccess() }
-        return
-      }
+    // Access gate: redirect if module is not visible
+    if (_matrix !== null && !_canViewModule(navItem)) {
+      const fallback = _getDefaultRoute()
+      if (fallback) { window.location.hash = fallback } else { _renderNoAccess() }
+      return
     }
 
     document.querySelectorAll('.nav-item').forEach(el => {
@@ -276,7 +308,7 @@ const App = (() => {
     if (pageModule.init) pageModule.init(currentUser)
   }
 
-  return { init, getPerms, renderAccessDenied }
+  return { init, hasAccess, renderAccessDenied }
 })()
 
 document.addEventListener('DOMContentLoaded', App.init)

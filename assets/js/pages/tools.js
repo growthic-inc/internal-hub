@@ -25,10 +25,9 @@ const Tools = (() => {
 
   /* ── render ──────────────────────────────────────────────── */
   function render(user) {
-    const p            = App.getPerms('tools_subscriptions')
     const isSuperAdmin = user.role === 'super_admin'
     const isHR         = user.role === 'hr'
-    const canManage    = (isSuperAdmin || isHR) && p.can_approve
+    const canManage    = (isSuperAdmin || isHR) && App.hasAccess('tools_subscriptions', 'approve_requests', 'can_approve')
 
     const tabs = [
       { id: 'registry',    label: 'Tool Registry' },
@@ -53,7 +52,11 @@ const Tools = (() => {
   /* ── init ────────────────────────────────────────────────── */
   async function init(user) {
     _user      = user
-    _p         = App.getPerms('tools_subscriptions')
+    _p         = {
+      can_create:  App.hasAccess('tools_subscriptions', 'request_access',   'can_upload'),
+      can_edit:    App.hasAccess('tools_subscriptions', 'manage_tools',      'can_manage'),
+      can_approve: App.hasAccess('tools_subscriptions', 'approve_requests',  'can_approve'),
+    }
     _activeTab = 'registry'
 
     const { data } = await API.getTools()

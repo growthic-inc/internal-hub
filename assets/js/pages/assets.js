@@ -27,7 +27,7 @@ const Assets = (() => {
 
   /* ── render ──────────────────────────────────────────────── */
   function render(user) {
-    const canManage = CAN_MANAGE.includes(user.role)
+    const canManage = CAN_MANAGE.includes(user.role) && App.hasAccess('asset_management', 'manage_assets', 'can_manage')
     const tabs = []
     if (canManage) tabs.push({ id: 'all',  label: 'All Assets' })
     tabs.push(      { id: 'mine', label: 'My Assets' })
@@ -51,7 +51,11 @@ const Assets = (() => {
   /* ── init ────────────────────────────────────────────────── */
   async function init(user) {
     _user = user
-    _p    = App.getPerms('asset_management')
+    _p    = {
+      can_view:   App.hasAccess('asset_management', 'view_assets',   'view_only'),
+      can_create: App.hasAccess('asset_management', 'request_asset', 'can_upload'),
+      can_edit:   App.hasAccess('asset_management', 'manage_assets', 'can_manage'),
+    }
     const canManage = CAN_MANAGE.includes(user.role) && _p.can_edit
 
     const promises = [API.getAssets()]

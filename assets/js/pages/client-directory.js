@@ -25,7 +25,7 @@ const ClientDirectory = (() => {
 
   function render(user) {
     _user = user
-    const canWrite = ['super_admin', 'founders_office', 'bde'].includes(user.role)
+    const canWrite = ['super_admin', 'founders_office', 'bde'].includes(user.role) && App.hasAccess('client_directory', 'create_client', 'can_upload')
 
     return `
       <div class="page-inner">
@@ -125,7 +125,10 @@ const ClientDirectory = (() => {
 
   async function init(user) {
     _user   = user
-    _p      = App.getPerms('client_directory')
+    _p      = {
+      can_create: App.hasAccess('client_directory', 'create_client', 'can_upload'),
+      can_edit:   App.hasAccess('client_directory', 'edit_client',   'can_edit'),
+    }
     _filter = { category: 'all', status: 'active', search: '' }
     await _loadClients()
     _bindCategoryTabs()
@@ -134,7 +137,7 @@ const ClientDirectory = (() => {
     _bindDrawer()
 
     const canWriteRole = ['super_admin', 'founders_office', 'bde'].includes(user.role)
-    if (canWriteRole && _p.can_create) {
+    if (canWriteRole && _p.can_create) {  // _p.can_create already includes hasAccess check
       _bindAddModal()
     } else {
       // Remove the button if it was rendered but perms don't allow

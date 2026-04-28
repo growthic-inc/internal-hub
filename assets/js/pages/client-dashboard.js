@@ -128,7 +128,10 @@ const ClientDashboard = (() => {
   /* ── init ────────────────────────────────────────────────── */
   async function init(user) {
     _user          = user
-    _p             = App.getPerms('client_dashboard')
+    _p             = {
+      can_create: App.hasAccess('client_dashboard', 'upload_performance_data', 'can_upload'),
+      can_edit:   App.hasAccess('client_dashboard', 'update_client_status',    'can_edit'),
+    }
     _trendChart    = null
     _pubChart      = null
     _currentClient = null

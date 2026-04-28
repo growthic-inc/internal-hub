@@ -335,7 +335,7 @@ const API = (() => {
       .upsert({ employee_id: employeeId, module, event_type: eventType, enabled })
   }
 
-  /* ── Department Permissions ──────────────────────────────── */
+  /* ── Department Permissions (legacy — kept during transition) */
   async function getDepartmentPermissions(department) {
     return supabase
       .from('department_permissions')
@@ -345,10 +345,37 @@ const API = (() => {
   }
 
   async function saveDepartmentPermissions(rows) {
-    // rows: [{ department, module, can_view, can_create, can_edit, can_approve }]
     return supabase
       .from('department_permissions')
       .upsert(rows, { onConflict: 'department,module' })
+  }
+
+  /* ── Access Matrix (new 6-tier feature-level permissions) ──── */
+  async function getAccessMatrix(department) {
+    // Returns all rows for a department: { module, feature, access_level }
+    return supabase
+      .from('access_matrix')
+      .select('module, feature, access_level')
+      .eq('department', department)
+      .order('module')
+      .order('feature')
+  }
+
+  async function getAllDeptAccessMatrix(department) {
+    // Same as getAccessMatrix — explicit alias for the Access Control panel
+    return supabase
+      .from('access_matrix')
+      .select('module, feature, access_level')
+      .eq('department', department)
+      .order('module')
+      .order('feature')
+  }
+
+  async function saveAccessMatrix(rows) {
+    // rows: [{ department, module, feature, access_level }]
+    return supabase
+      .from('access_matrix')
+      .upsert(rows, { onConflict: 'department,module,feature' })
   }
 
   return {
@@ -367,5 +394,6 @@ const API = (() => {
     getMasterFolderFiles,
     getNotificationPreferences, upsertNotificationPreference,
     getDepartmentPermissions, saveDepartmentPermissions,
+    getAccessMatrix, getAllDeptAccessMatrix, saveAccessMatrix,
   }
 })()

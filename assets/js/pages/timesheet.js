@@ -24,8 +24,7 @@ const Timesheet = (() => {
 
   /* ── render ──────────────────────────────────────────────── */
   function render(user) {
-    const p = App.getPerms('timesheet')
-    const showTeam = CAN_APPROVE.includes(user.role) && p.can_approve
+    const showTeam = CAN_APPROVE.includes(user.role) && App.hasAccess('timesheet', 'approve_timesheets', 'can_approve')
     const tabs = [{ id: 'mine', label: 'My Timesheet' }]
     if (showTeam) tabs.push({ id: 'team', label: 'Team Submissions' })
 
@@ -48,7 +47,11 @@ const Timesheet = (() => {
   /* ── init ────────────────────────────────────────────────── */
   async function init(user) {
     _user      = user
-    _p         = App.getPerms('timesheet')
+    _p         = {
+      can_create:  App.hasAccess('timesheet', 'log_entry',          'can_upload'),
+      can_edit:    App.hasAccess('timesheet', 'submit_timesheet',   'can_upload'),
+      can_approve: App.hasAccess('timesheet', 'approve_timesheets', 'can_approve'),
+    }
     _weekStart = _getMondayOf(new Date())
     _activeTab = 'mine'
 

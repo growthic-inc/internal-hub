@@ -41,12 +41,13 @@ const AccessControl = (() => {
   }
 
   function render(user) {
+    const canManage = App.hasAccess('people_hrms', 'manage_employees', 'can_manage')
     return `
       <div class="page-inner">
 
         <div class="tabs">
           <button class="tab-btn tab-btn--active" id="ppl-tab-list">Employees</button>
-          <button class="tab-btn" id="ppl-tab-invite">Invite Employee</button>
+          ${canManage ? `<button class="tab-btn" id="ppl-tab-invite">Invite Employee</button>` : ''}
         </div>
 
         <!-- Employee List Panel -->
@@ -208,6 +209,8 @@ const AccessControl = (() => {
     _user = user
     _tab  = 'list'
 
+    const canManage = App.hasAccess('people_hrms', 'manage_employees', 'can_manage')
+
     const [empRes, mgrRes] = await Promise.all([
       API.getAllEmployees(),
       API.getEmployees(true),
@@ -220,9 +223,11 @@ const AccessControl = (() => {
     _bindSearch()
     _bindFilters()
     _bindDrawer()
-    _bindInviteForm()
-    _bindDeactivateModal()
-    _bindEditModal()
+    if (canManage) {
+      _bindInviteForm()
+      _bindDeactivateModal()
+      _bindEditModal()
+    }
   }
 
   // ── Tabs ─────────────────────────────────────────────────────

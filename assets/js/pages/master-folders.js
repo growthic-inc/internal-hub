@@ -68,7 +68,10 @@ const MasterFolders = (() => {
   /* ── init ────────────────────────────────────────────────── */
   async function init(user) {
     _user           = user
-    _p              = App.getPerms('client_repository')
+    _p              = {
+      can_create: App.hasAccess('client_repository', 'upload_files', 'can_upload'),
+      can_edit:   App.hasAccess('client_repository', 'manage_files', 'can_manage'),
+    }
     _selectedClient = null
     _activeFolder   = null
 

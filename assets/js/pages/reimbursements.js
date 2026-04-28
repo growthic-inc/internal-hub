@@ -88,15 +88,15 @@ const Reimbursements = (() => {
 
   /* ── render ──────────────────────────────────────────────── */
   function render(user) {
-    const p            = App.getPerms('reimbursements')
     const isFinance    = user.role === 'finance'
     const isSuperAdmin = user.role === 'super_admin'
-    const canApprove   = CAN_APPROVE.includes(user.role) && p.can_approve
+    const canApprove   = CAN_APPROVE.includes(user.role) && App.hasAccess('reimbursements', 'approve_requests', 'can_approve')
+    const canPayment   = (isFinance || isSuperAdmin) && App.hasAccess('reimbursements', 'process_payment', 'can_approve')
 
     const tabs = [{ id: 'mine', label: 'My Requests' }]
-    if (canApprove)              tabs.push({ id: 'inbox',       label: 'Inbox' })
-    if (isSuperAdmin)            tabs.push({ id: 'hr-requests', label: 'HR Requests' })
-    if ((isFinance || isSuperAdmin) && p.can_approve) tabs.push({ id: 'payment', label: 'For Payment' })
+    if (canApprove)  tabs.push({ id: 'inbox',        label: 'Inbox' })
+    if (isSuperAdmin) tabs.push({ id: 'hr-requests', label: 'HR Requests' })
+    if (canPayment)  tabs.push({ id: 'payment',      label: 'For Payment' })
 
     return `
       <div class="page-inner">
@@ -117,7 +117,10 @@ const Reimbursements = (() => {
   /* ── init ────────────────────────────────────────────────── */
   async function init(user) {
     _user                = user
-    _p                   = App.getPerms('reimbursements')
+    _p                   = {
+      can_create:  App.hasAccess('reimbursements', 'raise_pre_approval',  'can_upload'),
+      can_approve: App.hasAccess('reimbursements', 'approve_requests',    'can_approve'),
+    }
     _activeTab           = 'mine'
     _selectedPreApproval = null
     _receiptUrl          = null
