@@ -183,10 +183,9 @@ ul, ol { list-style: none; }
   width: 36px;
   height: 36px;
   border-radius: var(--radius-sm);
-  object-fit: contain;
+  object-fit: cover;
   flex-shrink: 0;
   display: block;
-  background: #fff;
 }
 
 .sidebar-brand {
