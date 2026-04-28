@@ -9,12 +9,12 @@ const Access = (() => {
 
   /* ── Access level config ─────────────────────────────────── */
   const LEVELS = [
-    { key: 'no_access',   label: 'No Access',   color: '#94A3B8' },
-    { key: 'view_only',   label: 'View Only',   color: '#45BBF0' },
-    { key: 'can_upload',  label: 'Can Upload',  color: '#F59E0B' },
-    { key: 'can_edit',    label: 'Can Edit',    color: '#8B5CF6' },
-    { key: 'can_manage',  label: 'Can Manage',  color: '#1D9E75' },
-    { key: 'can_approve', label: 'Can Approve', color: '#0F4799' },
+    { key: 'no_access',   label: 'No Access',   short: 'None',    color: '#94A3B8' },
+    { key: 'view_only',   label: 'View Only',   short: 'View',    color: '#45BBF0' },
+    { key: 'can_upload',  label: 'Can Upload',  short: 'Upload',  color: '#F59E0B' },
+    { key: 'can_edit',    label: 'Can Edit',    short: 'Edit',    color: '#8B5CF6' },
+    { key: 'can_manage',  label: 'Can Manage',  short: 'Manage',  color: '#1D9E75' },
+    { key: 'can_approve', label: 'Can Approve', short: 'Approve', color: '#0F4799' },
   ]
 
   const LEVEL_INDEX = {}
@@ -251,15 +251,19 @@ const Access = (() => {
 
     body.innerHTML = `
       <div class="access-right-header">
-        <h2 class="access-dept-title">${deptInfo.label}</h2>
-        <p class="access-dept-subtitle">Configure feature-level access for this department</p>
-        <div class="access-level-legend">
-          ${LEVELS.map(l => `
-            <span class="access-legend-item">
-              <span class="access-level-dot" style="background:${l.color}"></span>
-              ${l.label}
-            </span>
-          `).join('')}
+        <div class="access-header-row">
+          <div>
+            <h2 class="access-dept-title">${deptInfo.label}</h2>
+            <p class="access-dept-subtitle">Feature-level access for this department</p>
+          </div>
+          <div class="access-level-legend">
+            ${LEVELS.map(l => `
+              <span class="access-legend-item" title="${l.label}">
+                <span class="access-level-dot" style="background:${l.color}"></span>
+                <span>${l.short}</span>
+              </span>
+            `).join('')}
+          </div>
         </div>
       </div>
 
@@ -268,34 +272,44 @@ const Access = (() => {
       </div>
     `
 
-    // Bind expand/collapse toggles
+    // Bind expand/collapse
     body.querySelectorAll('.access-mod-header').forEach(header => {
       header.addEventListener('click', () => {
-        const mod = header.dataset.module
-        if (_expandedMods.has(mod)) {
-          _expandedMods.delete(mod)
-        } else {
-          _expandedMods.add(mod)
-        }
+        const mod     = header.dataset.module
+        const isOpen  = _expandedMods.has(mod)
+        if (isOpen) { _expandedMods.delete(mod) } else { _expandedMods.add(mod) }
         const featureList = body.querySelector(`.access-mod-features[data-module="${mod}"]`)
         const chevron     = header.querySelector('.access-mod-chevron')
-        if (featureList) featureList.style.display = _expandedMods.has(mod) ? 'block' : 'none'
-        if (chevron) chevron.style.transform = _expandedMods.has(mod) ? 'rotate(0deg)' : 'rotate(-90deg)'
+        if (featureList) featureList.style.display = !isOpen ? 'block' : 'none'
+        if (chevron) chevron.style.transform = !isOpen ? 'rotate(0deg)' : 'rotate(-90deg)'
       })
     })
 
-    // Bind level select changes
-    body.querySelectorAll('.access-level-select').forEach(select => {
-      select.addEventListener('change', () => {
-        const mod     = select.dataset.module
-        const feature = select.dataset.feature
+    // Bind pill clicks
+    body.querySelectorAll('.alp').forEach(pill => {
+      pill.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const pills   = pill.closest('.access-level-pills')
+        const mod     = pills.dataset.module
+        const feature = pills.dataset.feature
+        const level   = pill.dataset.level
         if (!_state[mod]) _state[mod] = {}
-        _state[mod][feature] = select.value
-        _updateSelectStyle(select)
+        _state[mod][feature] = level
+        // Update pill visual states
+        pills.querySelectorAll('.alp').forEach(p => {
+          const active = p.dataset.level === level
+          const cfg    = LEVELS.find(l => l.key === p.dataset.level)
+          p.classList.toggle('alp--active', active)
+          p.style.setProperty('--alp-bg', active ? cfg.color : 'transparent')
+          p.style.setProperty('--alp-border', active ? cfg.color : '')
+          p.style.setProperty('--alp-color', active ? '#fff' : '')
+        })
+        // Update summary badge
+        _updateModSummary(body, mod)
       })
     })
 
-    // Show footer + wire buttons
+    // Show footer
     if (footer) {
       footer.style.display = 'flex'
       document.getElementById('access-save-btn').onclick  = _saveChanges
@@ -303,71 +317,70 @@ const Access = (() => {
     }
   }
 
-  function _renderModule(modKey) {
-    const config   = MODULE_CONFIG[modKey]
-    if (!config) return ''
-    const features  = config.features || {}
-    const isOpen    = _expandedMods.has(modKey)
-    const modState  = _state[modKey] || {}
+  function _updateModSummary(body, modKey) {
+    const modState   = _state[modKey] || {}
+    const features   = MODULE_CONFIG[modKey]?.features || {}
+    const active     = Object.values(modState).filter(l => l !== 'no_access').length
+    const total      = Object.keys(features).length
+    const hasAny     = active > 0
+    const summary    = body.querySelector(`.access-mod-header[data-module="${modKey}"] .access-mod-summary`)
+    if (!summary) return
+    summary.textContent  = hasAny ? `${active} / ${total}` : 'No Access'
+    summary.className    = `access-mod-summary${hasAny ? ' access-mod-summary--active' : ''}`
+  }
 
-    // Compute summary: highest access level for this module
-    const levels = Object.values(modState).map(l => LEVEL_INDEX[l] || 0)
-    const maxIdx = levels.length ? Math.max(...levels) : 0
-    const hasAny = maxIdx > 0
+  function _renderModule(modKey) {
+    const config  = MODULE_CONFIG[modKey]
+    if (!config) return ''
+    const features = config.features || {}
+    const isOpen   = _expandedMods.has(modKey)
+    const modState = _state[modKey] || {}
+    const active   = Object.values(modState).filter(l => l !== 'no_access').length
+    const total    = Object.keys(features).length
+    const hasAny   = active > 0
 
     return `
       <div class="access-mod-card">
         <div class="access-mod-header" data-module="${modKey}">
           <div class="access-mod-header-left">
-            <span class="access-mod-chevron" style="transition:transform 0.2s;transform:rotate(${isOpen ? '0' : '-90'}deg);">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            <span class="access-mod-chevron" style="transform:rotate(${isOpen ? '0' : '-90'}deg);">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
             </span>
             <span class="access-mod-icon">${config.icon}</span>
             <span class="access-mod-label">${config.label}</span>
           </div>
           <span class="access-mod-summary ${hasAny ? 'access-mod-summary--active' : ''}">
-            ${hasAny ? `${Object.values(modState).filter(l => l !== 'no_access').length} of ${Object.keys(features).length} features active` : 'No Access'}
+            ${hasAny ? `${active} / ${total}` : 'No Access'}
           </span>
         </div>
         <div class="access-mod-features" data-module="${modKey}" style="display:${isOpen ? 'block' : 'none'};">
-          <table class="access-feature-table">
-            <tbody>
-              ${Object.entries(features).map(([featKey, featLabel]) => {
-                const current = modState[featKey] || 'no_access'
-                return `
-                  <tr class="access-feature-row">
-                    <td class="access-feature-name">${featLabel}</td>
-                    <td class="access-feature-select-cell">
-                      ${_renderLevelSelect(modKey, featKey, current)}
-                    </td>
-                  </tr>
-                `
-              }).join('')}
-            </tbody>
-          </table>
+          ${Object.entries(features).map(([featKey, featLabel]) => {
+            const current = modState[featKey] || 'no_access'
+            return `
+              <div class="access-feature-row">
+                <span class="access-feature-name">${featLabel}</span>
+                ${_renderLevelPills(modKey, featKey, current)}
+              </div>
+            `
+          }).join('')}
         </div>
       </div>
     `
   }
 
-  function _renderLevelSelect(modKey, featKey, currentLevel) {
-    const lvl = LEVELS.find(l => l.key === currentLevel) || LEVELS[0]
+  function _renderLevelPills(modKey, featKey, currentLevel) {
     return `
-      <select class="access-level-select"
-        data-module="${modKey}"
-        data-feature="${featKey}"
-        style="--sel-color:${lvl.color};"
-      >
-        ${LEVELS.map(l => `
-          <option value="${l.key}" ${l.key === currentLevel ? 'selected' : ''}>${l.label}</option>
-        `).join('')}
-      </select>
+      <div class="access-level-pills" data-module="${modKey}" data-feature="${featKey}">
+        ${LEVELS.map(l => {
+          const active = l.key === currentLevel
+          return `<button class="alp${active ? ' alp--active' : ''}"
+            data-level="${l.key}"
+            title="${l.label}"
+            style="${active ? `--alp-bg:${l.color};--alp-border:${l.color};--alp-color:#fff;` : ''}"
+          >${l.short}</button>`
+        }).join('')}
+      </div>
     `
-  }
-
-  function _updateSelectStyle(select) {
-    const level = LEVELS.find(l => l.key === select.value) || LEVELS[0]
-    select.style.setProperty('--sel-color', level.color)
   }
 
   /* ── Save ────────────────────────────────────────────────── */
@@ -422,32 +435,23 @@ const Access = (() => {
       })
     })
 
-    // Update DOM selects
+    // Update pill states and summary badges
     const body = document.getElementById('access-right-body')
     if (body) {
-      body.querySelectorAll('.access-level-select').forEach(select => {
-        const mod     = select.dataset.module
-        const feature = select.dataset.feature
+      body.querySelectorAll('.access-level-pills').forEach(pills => {
+        const mod     = pills.dataset.module
+        const feature = pills.dataset.feature
         const val     = _state[mod]?.[feature] || 'no_access'
-        select.value  = val
-        _updateSelectStyle(select)
+        pills.querySelectorAll('.alp').forEach(p => {
+          const active = p.dataset.level === val
+          const cfg    = LEVELS.find(l => l.key === p.dataset.level)
+          p.classList.toggle('alp--active', active)
+          p.style.setProperty('--alp-bg',     active ? cfg.color : 'transparent')
+          p.style.setProperty('--alp-border',  active ? cfg.color : '')
+          p.style.setProperty('--alp-color',   active ? '#fff' : '')
+        })
       })
-
-      // Update module summary badges
-      body.querySelectorAll('.access-mod-card').forEach(card => {
-        const header    = card.querySelector('.access-mod-header')
-        const modKey    = header?.dataset.module
-        const summary   = card.querySelector('.access-mod-summary')
-        if (!modKey || !summary) return
-        const modState  = _state[modKey] || {}
-        const features  = MODULE_CONFIG[modKey]?.features || {}
-        const activeCount = Object.values(modState).filter(l => l !== 'no_access').length
-        const hasAny    = activeCount > 0
-        summary.textContent = hasAny
-          ? `${activeCount} of ${Object.keys(features).length} features active`
-          : 'No Access'
-        summary.className = `access-mod-summary${hasAny ? ' access-mod-summary--active' : ''}`
-      })
+      MODULE_ORDER.forEach(modKey => _updateModSummary(body, modKey))
     }
 
     Utils.showToast('Defaults restored — click Save Changes to apply.', 'success')
