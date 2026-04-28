@@ -148,6 +148,9 @@ const App = (() => {
         <div class="sidebar-user-info">
           <div class="sidebar-user-name">${Utils.escapeHtml(currentUser.name)}</div>
           <div class="sidebar-user-role">${Utils.getRoleLabel(currentUser.role)}</div>
+          ${currentUser.department
+            ? `<div class="sidebar-user-dept">${Utils.getDeptLabel(currentUser.department)}</div>`
+            : ''}
         </div>
       </div>
     `
@@ -160,6 +163,9 @@ const App = (() => {
     if (info) info.innerHTML = `
       <div class="dropdown-user-name">${Utils.escapeHtml(currentUser.name)}</div>
       <div class="dropdown-user-role">${Utils.getRoleLabel(currentUser.role)}</div>
+      ${currentUser.department
+        ? `<div class="dropdown-user-dept">${Utils.getDeptLabel(currentUser.department)}</div>`
+        : ''}
     `
   }
 

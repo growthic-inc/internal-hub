@@ -318,6 +318,15 @@ ul, ol { list-style: none; }
   margin-top: 1px;
 }
 
+.sidebar-user-dept {
+  font-size: 10px;
+  color: rgba(255,255,255,0.35);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ── Main Wrapper ───────────────────────────────────────────── */
 .main-wrapper {
   flex: 1;
@@ -453,6 +462,27 @@ ul, ol { list-style: none; }
 .dropdown-user-role {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.dropdown-user-dept {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dropdown-user-dept::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  flex-shrink: 0;
 }
 
 .user-dropdown-divider {

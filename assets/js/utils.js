@@ -64,14 +64,18 @@ const Utils = (() => {
   }
 
   const DEPT_LABELS = {
-    'Management':          'Management',
-    'Operations & Growth': 'Operations & Growth',
-    'People & Culture':    'People & Culture',
-    'Business Development':'Business Development',
-    'Content Strategy':    'Content Strategy',
-    'Creative':            'Creative',
-    'Creators':            'Creators',
-    'Finance':             'Finance',
+    management:           'Management',
+    operations_growth:    'Operations & Growth',
+    people_culture:       'People & Culture',
+    business_development: 'Business Development',
+    content_strategy:     'Content Strategy',
+    creative:             'Creative',
+    creators:             'Creators',
+    finance:              'Finance',
+  }
+
+  function getDeptLabel(dept) {
+    return DEPT_LABELS[dept] || dept
   }
 
   const EXPENSE_LABELS = {
@@ -197,6 +201,7 @@ const Utils = (() => {
     escapeHtml,
     truncate,
     getRoleLabel,
+    getDeptLabel,
     getExpenseLabel,
     showToast,
     openModal,
