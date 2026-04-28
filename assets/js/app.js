@@ -18,7 +18,7 @@ const App = (() => {
     sliders:    `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="6" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="4" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="8" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="4" x2="15" y2="4"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`,
   }
 
-  const ALL_ROLES = ['super_admin', 'founders_office', 'team_lead', 'delivery', 'hr', 'bde', 'finance']
+  const ALL_ROLES = ['super_admin', 'founders_office', 'team_lead', 'delivery', 'hr', 'bde', 'finance', 'employee']
 
   // Maps NAV route IDs → department_permissions module keys
   const PERM_MODULE = {
@@ -201,7 +201,29 @@ const App = (() => {
   function router() {
     const hash  = window.location.hash.slice(1)
     const route = hash || _getDefaultRoute()
+    if (!route) { _renderNoAccess(); return }
     _loadPage(route)
+  }
+
+  function _renderNoAccess() {
+    const titleEl = document.getElementById('page-title')
+    const content = document.getElementById('page-content')
+    if (titleEl) titleEl.textContent = 'No Access'
+    if (content) content.innerHTML = `
+      <div class="empty-state-full">
+        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--border)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+        <h3 style="font-size:16px;font-weight:600;color:var(--text);margin:0 0 6px;">No modules available</h3>
+        <p style="font-size:14px;color:var(--text-muted);margin:0;">
+          Your account doesn't have access to any modules yet.
+        </p>
+        <p style="font-size:13px;color:var(--text-muted);margin:6px 0 0;">
+          Contact your Super Admin to get access configured.
+        </p>
+      </div>
+    `
   }
 
   function _getDefaultRoute() {
@@ -212,13 +234,14 @@ const App = (() => {
       if (!permKey) return true
       return getPerms(permKey).can_view
     })
-    return accessible.length ? accessible[0].id : 'settings'
+    return accessible.length ? accessible[0].id : null
   }
 
   function _loadPage(route) {
     const navItem = NAV.find(n => n.id === route)
     if (!navItem || !navItem.roles.includes(currentUser.role)) {
-      window.location.hash = _getDefaultRoute()
+      const fallback = _getDefaultRoute()
+      if (fallback) { window.location.hash = fallback } else { _renderNoAccess() }
       return
     }
 
@@ -226,7 +249,8 @@ const App = (() => {
     if (currentUser.role !== 'super_admin') {
       const permKey = PERM_MODULE[route]
       if (permKey && !getPerms(permKey).can_view) {
-        window.location.hash = _getDefaultRoute()
+        const fallback = _getDefaultRoute()
+        if (fallback) { window.location.hash = fallback } else { _renderNoAccess() }
         return
       }
     }
