@@ -33,15 +33,15 @@ const App = (() => {
   }
 
   const NAV = [
-    { id: 'client-dashboard', label: 'Client Dashboard', icon: ICONS.barChart,   module: () => ClientDashboard, roles: ['super_admin', 'founders_office', 'team_lead', 'delivery'] },
-    { id: 'client-directory', label: 'Client Directory', icon: ICONS.briefcase,  module: () => ClientDirectory, roles: ['super_admin', 'founders_office', 'team_lead', 'delivery', 'bde'] },
-    { id: 'master-folders',   label: 'Client Repository', icon: ICONS.folder,     module: () => MasterFolders,   roles: ['super_admin', 'founders_office', 'team_lead', 'delivery'] },
-    { id: 'timesheet',        label: 'Timesheet',         icon: ICONS.clock,      module: () => Timesheet,       roles: ['super_admin', 'founders_office', 'team_lead', 'delivery', 'hr', 'bde'] },
-    { id: 'reimbursements',   label: 'Reimbursements',   icon: ICONS.creditCard, module: () => Reimbursements,  roles: ALL_ROLES },
-    { id: 'assets',           label: 'Asset Management', icon: ICONS.box,        module: () => Assets,          roles: ALL_ROLES },
-    { id: 'tools',            label: 'Tools & Subs',     icon: ICONS.tool,       module: () => Tools,           roles: ALL_ROLES },
-    { id: 'access-control',   label: 'People',           icon: ICONS.shield,     module: () => AccessControl,   roles: ['super_admin', 'hr'] },
-    { id: 'permissions',      label: 'Permissions',      icon: ICONS.sliders,    module: () => Permissions,     roles: ['super_admin'] },
+    { id: 'client-dashboard', label: 'Client Dashboard',  icon: ICONS.barChart,   module: () => ClientDashboard, roles: ALL_ROLES },
+    { id: 'client-directory', label: 'Client Directory',  icon: ICONS.briefcase,  module: () => ClientDirectory, roles: ALL_ROLES },
+    { id: 'master-folders',   label: 'Client Repository', icon: ICONS.folder,     module: () => MasterFolders,   roles: ALL_ROLES },
+    { id: 'timesheet',        label: 'Timesheet',         icon: ICONS.clock,      module: () => Timesheet,       roles: ALL_ROLES },
+    { id: 'reimbursements',   label: 'Reimbursements',    icon: ICONS.creditCard, module: () => Reimbursements,  roles: ALL_ROLES },
+    { id: 'assets',           label: 'Asset Management',  icon: ICONS.box,        module: () => Assets,          roles: ALL_ROLES },
+    { id: 'tools',            label: 'Tools & Subs',      icon: ICONS.tool,       module: () => Tools,           roles: ALL_ROLES },
+    { id: 'access-control',   label: 'People',            icon: ICONS.shield,     module: () => AccessControl,   roles: ['super_admin', 'hr'] },
+    { id: 'permissions',      label: 'Permissions',       icon: ICONS.sliders,    module: () => Permissions,     roles: ['super_admin'] },
     { id: 'settings',         label: 'Settings',          icon: ICONS.settings,   module: () => Settings,        roles: ALL_ROLES },
   ]
 
