@@ -143,7 +143,7 @@ const ClientDirectory = (() => {
     }
 
     const { data: emps } = await API.getAllEmployees()
-    _employees = (emps || []).filter(e => e.status === 'active')
+    _employees = emps || []
 
     await _loadClients()
     _bindFilters()
@@ -833,11 +833,11 @@ const ClientDirectory = (() => {
         saUrl = await _uploadClientDoc(clientId, _files.sa, 'service_agreement')
       }
 
-      /* Build client record */
+      /* Build client record — category must match DB check constraint exactly */
       const clientData = {
         project_code:         code,
         client_name:          name,
-        category:             cat.toLowerCase(),
+        category:             cat,   // 'Shark' | 'Dolphin' | 'Turtle' | 'Snail'
         status,
         am_id:                amId,
         sow_notes:            sow,
