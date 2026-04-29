@@ -13,9 +13,12 @@ const ClientDirectory = (() => {
   let _p         = null
 
   // Form state
-  let _editingClientId       = null
-  let _formEntities          = []   // [{ id, name, platforms[], services[] }]
-  let _formSelPlatforms      = []   // client-level platforms
+  let _editingClientId  = null
+  let _formEntities     = []   // [{ id, name, platforms[], services[] }]
+  let _formSelPlatforms = []   // client-level platform selection
+  let _files            = { bg: null, sa: null }   // pending file uploads
+  let _existingBgUrl    = null   // storage path or URL from DB
+  let _existingSaUrl    = null
 
   /* ── Constants ─────────────────────────────────────────────── */
   const PLATFORMS = ['LinkedIn', 'Instagram', 'Reddit', 'Quora', 'YouTube']
@@ -47,6 +50,7 @@ const ClientDirectory = (() => {
     close:  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
     file:   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`,
     ext:    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`,
+    upload: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>`,
   }
 
   /* ── Helpers ────────────────────────────────────────────────── */
@@ -57,6 +61,35 @@ const ClientDirectory = (() => {
   function _canWrite()      { return !!_p?.can_create }
   function _canEdit()       { return !!_p?.can_edit }
   function _canCommercial() { return _user?.role === 'super_admin' || _user?.department === 'business_development' }
+
+  /* ── Document helpers ───────────────────────────────────────── */
+  async function _uploadClientDoc(clientId, file, type) {
+    const ext  = (file.name.split('.').pop() || 'pdf').toLowerCase()
+    const path = `${clientId}/${type}.${ext}`
+    const { error } = await Config.supabase.storage
+      .from('client-documents')
+      .upload(path, file, { upsert: true, contentType: file.type })
+    if (error) throw error
+    return path   // store path, not full URL — we generate signed URLs on view
+  }
+
+  async function _viewDoc(path) {
+    if (!path) return
+    // Legacy: if it looks like an external URL, open directly
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      window.open(path, '_blank', 'noopener')
+      return
+    }
+    // Supabase storage path → generate 1-hour signed URL
+    const { data, error } = await Config.supabase.storage
+      .from('client-documents')
+      .createSignedUrl(path, 3600)
+    if (error || !data?.signedUrl) {
+      Utils.showToast('Could not open document. Please try again.', 'error')
+      return
+    }
+    window.open(data.signedUrl, '_blank', 'noopener')
+  }
 
   /* ── render ─────────────────────────────────────────────────── */
   function render(user) {
@@ -83,7 +116,8 @@ const ClientDirectory = (() => {
               <option value="inactive">Inactive</option>
               <option value="all">All statuses</option>
             </select>
-            ${_canWrite() ? `<button class="btn btn-primary btn-sm" id="cd-add-btn">+ Add Client</button>` : ''}
+            <!-- Always rendered; init() reveals it once permissions are loaded -->
+            <button class="btn btn-primary btn-sm" id="cd-add-btn" style="display:none;">+ Add Client</button>
           </div>
         </div>
         <div id="cd-content" class="page-loading">Loading clients…</div>
@@ -99,12 +133,20 @@ const ClientDirectory = (() => {
     }
     _filter = { category: 'all', status: 'active', search: '' }
 
+    /* Reveal Add Client button now that _p is set */
+    if (_canWrite()) {
+      const btn = document.getElementById('cd-add-btn')
+      if (btn) {
+        btn.style.display = ''
+        btn.addEventListener('click', () => _openForm(null))
+      }
+    }
+
     const { data: emps } = await API.getAllEmployees()
     _employees = (emps || []).filter(e => e.status === 'active')
 
     await _loadClients()
     _bindFilters()
-    if (_canWrite()) document.getElementById('cd-add-btn')?.addEventListener('click', () => _openForm(null))
   }
 
   /* ── Data ───────────────────────────────────────────────────── */
@@ -149,21 +191,23 @@ const ClientDirectory = (() => {
   }
 
   function _cardHTML(c) {
-    const cat          = _cap(c.category || '')
-    const platforms    = c.client_platforms || []
-    const entityCount  = (c.client_entities || []).length
-    const amName       = c.account_manager?.name || '—'
-    const visible      = platforms.slice(0, 4)
-    const extra        = platforms.length - visible.length
+    const cat         = _cap(c.category || '')
+    const platforms   = c.client_platforms || []
+    const entityCount = (c.client_entities || []).length
+    const amName      = c.account_manager?.name || '—'
+    const visible     = platforms.slice(0, 3)
+    const extra       = platforms.length - visible.length
 
     return `
       <div class="client-card" data-id="${c.id}">
-        <div class="client-card-top">
+        <div>
           <div class="client-card-header">
             <div class="client-card-name">${Utils.escapeHtml(c.client_name)}</div>
             ${cat ? `<span class="badge ${CAT_BADGE[cat] || 'badge--muted'}">${cat}</span>` : ''}
           </div>
-          <div class="client-card-code">${c.project_code}</div>
+          <div style="margin-top:5px;">
+            <span class="client-card-code">${c.project_code}</span>
+          </div>
         </div>
 
         <div class="client-card-platforms">
@@ -238,9 +282,11 @@ const ClientDirectory = (() => {
     const canComm  = _canCommercial()
     const canEdit  = _canEdit()
     const ptLabel  = PROJECT_TYPE_LABELS[c.project_type] || ''
+    const hasBg    = !!c.brand_guidelines_url
+    const hasSa    = canComm && !!c.service_agreement_url
 
     body.innerHTML = `
-      <!-- Info grid -->
+      <!-- Core info grid (visible to all) -->
       <div class="cd-drawer-section">
         <div class="cd-info-grid">
           <div class="cd-info-item">
@@ -259,22 +305,33 @@ const ClientDirectory = (() => {
             <div class="cd-info-label">Client Since</div>
             <div class="cd-info-value">${Utils.formatDate(c.created_at)}</div>
           </div>
+        </div>
+      </div>
+
+      ${canComm && (ptLabel || c.price) ? `
+      <div class="divider"></div>
+      <!-- Commercial details (BDE + Super Admin only) -->
+      <div class="cd-drawer-section">
+        <div class="cd-drawer-label" style="display:flex;align-items:center;gap:8px;">
+          Commercial <span class="cd-bde-tag">BDE Only</span>
+        </div>
+        <div class="cd-info-grid">
           ${ptLabel ? `
           <div class="cd-info-item">
             <div class="cd-info-label">Project Type</div>
             <div class="cd-info-value">${ptLabel}</div>
           </div>` : ''}
-          ${canComm && c.price ? `
+          ${c.price ? `
           <div class="cd-info-item">
             <div class="cd-info-label">Monthly Value</div>
             <div class="cd-info-value" style="font-weight:700;color:var(--green);">${Utils.formatCurrency(c.price)}</div>
           </div>` : ''}
         </div>
-      </div>
+      </div>` : ''}
 
       <div class="divider"></div>
 
-      <!-- Platforms -->
+      <!-- Platforms (visible to all) -->
       <div class="cd-drawer-section">
         <div class="cd-drawer-label">Client Platforms</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;">
@@ -286,30 +343,32 @@ const ClientDirectory = (() => {
 
       ${c.sow_notes ? `
       <div class="divider"></div>
+      <!-- SOW (visible to all) -->
       <div class="cd-drawer-section">
         <div class="cd-drawer-label">Scope of Work</div>
         <div style="font-size:13px;color:var(--text);white-space:pre-wrap;line-height:1.6;">${Utils.escapeHtml(c.sow_notes)}</div>
       </div>` : ''}
 
-      ${(c.brand_guidelines_url || (canComm && c.service_agreement_url)) ? `
+      ${hasBg || hasSa ? `
       <div class="divider"></div>
+      <!-- Documents: Brand Guidelines = all, Service Agreement = BDE only -->
       <div class="cd-drawer-section">
         <div class="cd-drawer-label">Documents</div>
         <div style="display:flex;flex-direction:column;gap:8px;">
-          ${c.brand_guidelines_url ? `
-          <a href="${Utils.escapeHtml(c.brand_guidelines_url)}" target="_blank" rel="noopener" class="cd-doc-link">
+          ${hasBg ? `
+          <button class="cd-doc-link" data-doc-path="${Utils.escapeHtml(c.brand_guidelines_url)}">
             ${ICONS.file} Brand Guidelines ${ICONS.ext}
-          </a>` : ''}
-          ${canComm && c.service_agreement_url ? `
-          <a href="${Utils.escapeHtml(c.service_agreement_url)}" target="_blank" rel="noopener" class="cd-doc-link">
+          </button>` : ''}
+          ${hasSa ? `
+          <button class="cd-doc-link" data-doc-path="${Utils.escapeHtml(c.service_agreement_url)}">
             ${ICONS.file} Service Agreement ${ICONS.ext}
-          </a>` : ''}
+          </button>` : ''}
         </div>
       </div>` : ''}
 
       <div class="divider"></div>
 
-      <!-- Entities -->
+      <!-- Entities (visible to all) -->
       <div class="cd-drawer-section">
         <div class="cd-drawer-label">Entities (${entities.length})</div>
         ${entities.length
@@ -335,6 +394,11 @@ const ClientDirectory = (() => {
         if (chevron) chevron.style.transform = open ? '' : 'rotate(90deg)'
       })
     })
+
+    /* Document view buttons */
+    body.querySelectorAll('[data-doc-path]').forEach(btn =>
+      btn.addEventListener('click', () => _viewDoc(btn.dataset.docPath))
+    )
 
     /* Edit button */
     if (canEdit) {
@@ -381,6 +445,9 @@ const ClientDirectory = (() => {
     _editingClientId  = client?.id || null
     _formEntities     = []
     _formSelPlatforms = []
+    _files            = { bg: null, sa: null }
+    _existingBgUrl    = client?.brand_guidelines_url  || null
+    _existingSaUrl    = client?.service_agreement_url || null
 
     if (client) {
       _formSelPlatforms = (client.client_platforms || []).map(p => p.platform_name || p.platform)
@@ -392,9 +459,9 @@ const ClientDirectory = (() => {
       }))
     }
 
-    const isEdit     = !!client
-    const canComm    = _canCommercial()
-    const amOptions  = _employees
+    const isEdit    = !!client
+    const canComm   = _canCommercial()
+    const amOptions = _employees
       .map(e => `<option value="${e.id}" ${client?.am_id === e.id ? 'selected' : ''}>${Utils.escapeHtml(e.name)}</option>`)
       .join('')
 
@@ -422,7 +489,7 @@ const ClientDirectory = (() => {
                      value="${Utils.escapeHtml(client?.client_name || '')}">
             </div>
           </div>
-          <div class="grid-3">
+          <div class="grid-2">
             <div class="form-group">
               <label class="form-label">Category</label>
               <select class="form-select" id="cdf-cat">
@@ -436,15 +503,6 @@ const ClientDirectory = (() => {
               <select class="form-select" id="cdf-status">
                 ${['active','paused','inactive'].map(v =>
                   `<option value="${v}" ${client?.status === v ? 'selected' : ''}>${_cap(v)}</option>`
-                ).join('')}
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Project Type</label>
-              <select class="form-select" id="cdf-type">
-                <option value="">— Select —</option>
-                ${Object.entries(PROJECT_TYPE_LABELS).map(([v, l]) =>
-                  `<option value="${v}" ${client?.project_type === v ? 'selected' : ''}>${l}</option>`
                 ).join('')}
               </select>
             </div>
@@ -464,11 +522,10 @@ const ClientDirectory = (() => {
         </div>
 
         ${canComm ? `
-        <!-- COMMERCIAL -->
+        <!-- COMMERCIAL (BDE + Super Admin only) -->
         <div class="cd-form-section">
           <div class="cd-form-section-title">
-            Commercial
-            <span class="cd-bde-tag">BDE Only</span>
+            Commercial <span class="cd-bde-tag">BDE Only</span>
           </div>
           <div class="grid-2">
             <div class="form-group">
@@ -477,11 +534,19 @@ const ClientDirectory = (() => {
                      value="${client?.price || ''}">
             </div>
             <div class="form-group">
-              <label class="form-label">Service Agreement URL</label>
-              <input class="form-input" id="cdf-agreement-url" type="url"
-                     placeholder="Paste Drive / Notion link"
-                     value="${Utils.escapeHtml(client?.service_agreement_url || '')}">
+              <label class="form-label">Project Type</label>
+              <select class="form-select" id="cdf-type">
+                <option value="">— Select —</option>
+                ${Object.entries(PROJECT_TYPE_LABELS).map(([v, l]) =>
+                  `<option value="${v}" ${client?.project_type === v ? 'selected' : ''}>${l}</option>`
+                ).join('')}
+              </select>
             </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Service Agreement</label>
+            <div id="cdf-sa-field"></div>
+            <span class="form-hint">PDF, DOC, DOCX · max 10 MB</span>
           </div>
         </div>` : ''}
 
@@ -489,7 +554,10 @@ const ClientDirectory = (() => {
         <div class="cd-form-section">
           <div class="cd-form-section-title">Client Platforms</div>
           <div class="form-group">
-            <label class="form-label">Active Platforms <span class="form-hint" style="display:inline;margin-left:6px;">Select all that apply</span></label>
+            <label class="form-label">
+              Active Platforms
+              <span class="form-hint" style="display:inline;margin-left:6px;">Select all that apply</span>
+            </label>
             <div class="pill-select" id="cdf-platforms">
               ${PLATFORMS.map(p => `
                 <button type="button" class="pill-opt${_formSelPlatforms.includes(p) ? ' pill-opt--active' : ''}"
@@ -502,12 +570,11 @@ const ClientDirectory = (() => {
         <div class="cd-form-section">
           <div class="cd-form-section-title">Client Details</div>
           <div class="form-group">
-            <label class="form-label">Brand Guidelines URL</label>
-            <input class="form-input" id="cdf-bg-url" type="url"
-                   placeholder="Paste Drive / Notion link"
-                   value="${Utils.escapeHtml(client?.brand_guidelines_url || '')}">
+            <label class="form-label">Brand Guidelines</label>
+            <div id="cdf-bg-field"></div>
+            <span class="form-hint">PDF, DOC, DOCX · max 10 MB</span>
           </div>
-          <div class="form-group">
+          <div class="form-group" style="margin-bottom:0;">
             <label class="form-label">Scope of Work</label>
             <textarea class="form-input" id="cdf-sow" rows="4"
                       placeholder="Describe deliverables, cadence, key context…"
@@ -529,6 +596,10 @@ const ClientDirectory = (() => {
         <button class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
         <button class="btn btn-primary" id="cdf-save">${isEdit ? 'Save Changes' : 'Create Client'}</button>
       </div>`, 'modal--lg')
+
+    /* Render file upload fields */
+    _renderFileField('bg', _existingBgUrl)
+    if (canComm) _renderFileField('sa', _existingSaUrl)
 
     /* Render existing entities (edit mode) */
     _renderFormEntities()
@@ -560,6 +631,69 @@ const ClientDirectory = (() => {
 
     /* Save */
     document.getElementById('cdf-save')?.addEventListener('click', _saveClient)
+  }
+
+  /* ── File Field ─────────────────────────────────────────────── */
+  function _renderFileField(fieldId, existingUrl) {
+    const container = document.getElementById(`cdf-${fieldId}-field`)
+    if (!container) return
+
+    const file = _files[fieldId]
+
+    if (file) {
+      /* New file selected — show name + remove */
+      container.innerHTML = `
+        <div class="cd-file-chosen">
+          <span class="cd-file-icon">${ICONS.file}</span>
+          <span class="cd-file-name">${Utils.escapeHtml(file.name)}</span>
+          <button type="button" class="cd-file-remove" data-clear="${fieldId}" title="Remove">×</button>
+        </div>`
+    } else if (existingUrl) {
+      /* Existing file — show View + Replace */
+      container.innerHTML = `
+        <div class="cd-file-chosen">
+          <span class="cd-file-icon">${ICONS.file}</span>
+          <span class="cd-file-name cd-file-name--existing">Uploaded document</span>
+          <button type="button" class="cd-file-action" data-view-file="${fieldId}">View</button>
+          <span class="cd-file-sep">·</span>
+          <label class="cd-file-action" style="cursor:pointer;">
+            Replace<input type="file" id="cdf-${fieldId}-input" accept=".pdf,.doc,.docx" style="display:none;">
+          </label>
+        </div>`
+    } else {
+      /* Empty — show choose file */
+      container.innerHTML = `
+        <label class="cd-file-pick-label">
+          ${ICONS.upload} Choose File
+          <input type="file" id="cdf-${fieldId}-input" accept=".pdf,.doc,.docx" style="display:none;">
+        </label>`
+    }
+
+    /* Bind file input (appears in both empty and Replace states) */
+    const input = container.querySelector(`#cdf-${fieldId}-input`)
+    if (input) {
+      input.addEventListener('change', e => {
+        const f = e.target.files?.[0]
+        if (!f) return
+        if (f.size > 10 * 1024 * 1024) {
+          Utils.showToast('File must be under 10 MB', 'error')
+          return
+        }
+        _files[fieldId] = f
+        _renderFileField(fieldId, existingUrl)
+      })
+    }
+
+    /* Bind clear */
+    container.querySelector('[data-clear]')?.addEventListener('click', () => {
+      _files[fieldId] = null
+      _renderFileField(fieldId, existingUrl)
+    })
+
+    /* Bind view */
+    container.querySelector('[data-view-file]')?.addEventListener('click', () => {
+      _viewDoc(existingUrl)
+    })
   }
 
   /* ── Entity Form Section ────────────────────────────────────── */
@@ -656,12 +790,12 @@ const ClientDirectory = (() => {
     const name   = (document.getElementById('cdf-name')?.value || '').trim()
     const cat    = document.getElementById('cdf-cat')?.value
     const status = document.getElementById('cdf-status')?.value
-    const type   = document.getElementById('cdf-type')?.value || null
-    const amId   = document.getElementById('cdf-am')?.value   || null
-    const price  = document.getElementById('cdf-price')?.value || null
-    const agUrl  = (document.getElementById('cdf-agreement-url')?.value || '').trim() || null
-    const bgUrl  = (document.getElementById('cdf-bg-url')?.value || '').trim() || null
+    const amId   = document.getElementById('cdf-am')?.value || null
     const sow    = (document.getElementById('cdf-sow')?.value || '').trim() || null
+
+    // Commercial fields — only present in DOM when canComm is true
+    const price = _canCommercial() ? (document.getElementById('cdf-price')?.value || null) : null
+    const type  = _canCommercial() ? (document.getElementById('cdf-type')?.value  || null) : null
 
     errEl.style.display = 'none'
 
@@ -684,38 +818,52 @@ const ClientDirectory = (() => {
     saveBtn.textContent = 'Saving…'
 
     try {
-      const isEdit     = !!_editingClientId
+      const isEdit   = !!_editingClientId
+      // Pre-generate UUID for new clients so files can be uploaded before DB insert
+      const clientId = isEdit ? _editingClientId : crypto.randomUUID()
+
+      /* Upload any new files first */
+      let bgUrl = _existingBgUrl
+      let saUrl = _existingSaUrl
+
+      if (_files.bg) {
+        bgUrl = await _uploadClientDoc(clientId, _files.bg, 'brand_guidelines')
+      }
+      if (_files.sa && _canCommercial()) {
+        saUrl = await _uploadClientDoc(clientId, _files.sa, 'service_agreement')
+      }
+
+      /* Build client record */
       const clientData = {
         project_code:         code,
         client_name:          name,
         category:             cat.toLowerCase(),
         status,
-        project_type:         type,
         am_id:                amId,
-        price:                price ? Number(price) : null,
-        service_agreement_url: agUrl,
-        brand_guidelines_url:  bgUrl,
         sow_notes:            sow,
+        brand_guidelines_url: bgUrl,
       }
 
-      let clientId
+      // Only write commercial fields if the user has that permission
+      if (_canCommercial()) {
+        clientData.project_type          = type
+        clientData.price                 = price ? Number(price) : null
+        clientData.service_agreement_url = saUrl
+      }
 
       if (isEdit) {
         const { error } = await Config.supabase.from('clients')
-          .update(clientData).eq('id', _editingClientId)
+          .update(clientData).eq('id', clientId)
         if (error) throw error
-        clientId = _editingClientId
 
         /* Replace platforms */
         await Config.supabase.from('client_platforms').delete().eq('client_id', clientId)
-        /* Replace entities (cascade deletes entity_platforms + entity_services) */
+        /* Replace entities (cascades to entity_platforms + entity_services) */
         await Config.supabase.from('client_entities').delete().eq('client_id', clientId)
       } else {
-        const { data, error } = await Config.supabase.from('clients')
-          .insert({ ...clientData, created_by: _user.id })
-          .select('id').single()
+        const { error } = await Config.supabase.from('clients')
+          .insert({ id: clientId, ...clientData, created_by: _user.id })
         if (error) throw error
-        clientId = data.id
       }
 
       /* Client-level platforms */
@@ -754,7 +902,9 @@ const ClientDirectory = (() => {
       const msg = err.message || ''
       errEl.textContent = (msg.includes('unique') || msg.includes('duplicate'))
         ? `Project code "${code}" is already in use.`
-        : (msg || 'Something went wrong. Please try again.')
+        : (msg.includes('brand_guidelines_url') || msg.includes('service_agreement_url') || msg.includes('schema cache'))
+          ? 'DB schema update required. Please run phase6_migration.sql in Supabase first.'
+          : (msg || 'Something went wrong. Please try again.')
       errEl.style.display = 'block'
     } finally {
       saveBtn.disabled    = false
