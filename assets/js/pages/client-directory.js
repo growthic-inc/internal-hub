@@ -63,24 +63,43 @@ const ClientDirectory = (() => {
   function _canCommercial() { return _user?.role === 'super_admin' || _user?.department === 'business_development' }
 
   /* ── Document helpers ───────────────────────────────────────── */
+
+  // Uploads to Google Drive via the upload-client-doc Edge Function.
+  // Returns the Drive webViewLink (https://drive.google.com/file/d/.../view)
+  // which is stored directly in the DB column.
   async function _uploadClientDoc(clientId, file, type) {
-    const ext  = (file.name.split('.').pop() || 'pdf').toLowerCase()
-    const path = `${clientId}/${type}.${ext}`
-    const { error } = await Config.supabase.storage
-      .from('client-documents')
-      .upload(path, file, { upsert: true, contentType: file.type })
-    if (error) throw error
-    return path   // store path, not full URL — we generate signed URLs on view
+    const { data: { session } } = await Config.supabase.auth.getSession()
+    if (!session) throw new Error('Not authenticated')
+
+    const form = new FormData()
+    form.append('file',      file)
+    form.append('client_id', clientId)
+    form.append('doc_type',  type)   // 'brand_guidelines' | 'service_agreement'
+
+    const res = await fetch(
+      `${Config.SUPABASE_URL}/functions/v1/upload-client-doc`,
+      {
+        method:  'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        body:    form,
+      }
+    )
+    const json = await res.json()
+    if (!res.ok || !json.driveUrl) {
+      throw new Error(json.error || 'Document upload failed')
+    }
+    return json.driveUrl   // store the Drive URL directly in DB
   }
 
-  // Returns a usable URL from a stored path or legacy http URL.
-  // Storage paths look like "{clientId}/brand_guidelines.pdf"
+  // Drive URLs are plain https:// links — no signed URL needed.
+  // Keep legacy Supabase storage path support just in case.
   async function _resolveDocUrl(path) {
     if (!path) return null
     if (path.startsWith('http://') || path.startsWith('https://')) return path
+    // Legacy: Supabase storage path — generate a signed URL
     const { data, error } = await Config.supabase.storage
       .from('client-documents')
-      .createSignedUrl(path, 7200)   // 2-hour window
+      .createSignedUrl(path, 7200)
     return (error || !data?.signedUrl) ? null : data.signedUrl
   }
 
