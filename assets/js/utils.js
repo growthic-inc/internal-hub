@@ -121,12 +121,12 @@ const Utils = (() => {
   }
 
   /* ── Modal helpers ────────────────────────────────────────── */
-  function openModal(html) {
+  function openModal(html, cls = '') {
     closeModal()
     const overlay = document.createElement('div')
     overlay.className = 'modal-overlay'
     overlay.id = 'active-modal-overlay'
-    overlay.innerHTML = `<div class="modal">${html}</div>`
+    overlay.innerHTML = `<div class="modal${cls ? ' ' + cls : ''}">${html}</div>`
     document.body.appendChild(overlay)
 
     overlay.addEventListener('click', (e) => {

@@ -342,6 +342,10 @@
   overflow-y: auto;
 }
 
+.modal--lg {
+  max-width: 720px;
+}
+
 .modal-header {
   display: flex;
   align-items: center;
@@ -2030,4 +2034,269 @@
   .access-right-body { padding: 16px; }
   .access-right-footer { padding: 12px 16px; }
   .access-header-row { flex-direction: column; align-items: flex-start; }
+}
+
+
+/* ============================================================
+   CLIENT DIRECTORY — Cards, Drawer, Form
+   ============================================================ */
+
+/* ── Card Grid ──────────────────────────────────────────────── */
+.client-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 16px;
+  padding: 0;
+}
+
+.client-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  padding: 18px 20px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.client-card:hover {
+  border-color: var(--primary);
+  box-shadow: 0 4px 16px rgba(15, 71, 153, 0.09);
+  transform: translateY(-1px);
+}
+
+.client-card-top     { display: flex; flex-direction: column; gap: 6px; }
+.client-card-header  { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+
+.client-card-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.client-card-code {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--primary);
+  letter-spacing: 0.4px;
+  background: rgba(15, 71, 153, 0.07);
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+/* ── Platform Tags ──────────────────────────────────────────── */
+.client-card-platforms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 24px;
+}
+
+.client-platform-tag {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--surface);
+  white-space: nowrap;
+}
+
+.client-platform-more {
+  background: var(--surface);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.client-card-no-platform {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ── Card Footer ────────────────────────────────────────────── */
+.client-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+}
+
+.client-card-am {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 0;
+  overflow: hidden;
+}
+.client-card-am > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.client-card-am-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.client-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ── Drawer body sections ───────────────────────────────────── */
+.cd-drawer-section   { padding: 16px 0; }
+.cd-drawer-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.cd-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.cd-info-item  { display: flex; flex-direction: column; gap: 4px; }
+.cd-info-label { font-size: 11px; color: var(--text-muted); }
+.cd-info-value { font-size: 13px; color: var(--text); font-weight: 500; }
+
+/* ── Document links ─────────────────────────────────────────── */
+.cd-doc-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--primary);
+  text-decoration: none;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  transition: background 0.1s, border-color 0.1s;
+  width: fit-content;
+}
+.cd-doc-link:hover { background: var(--primary-ghost, rgba(15,71,153,.06)); border-color: var(--primary); }
+
+/* ── Entity list (drawer) ───────────────────────────────────── */
+.cd-entity-list      { display: flex; flex-direction: column; gap: 2px; }
+
+.cd-entity-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: var(--bg);
+}
+
+.cd-entity-toggle    { display: flex; align-items: center; }
+.cd-entity-name      { font-size: 13px; font-weight: 600; color: var(--text); }
+.cd-entity-sub-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+}
+
+/* ── Form modal sections ────────────────────────────────────── */
+.cd-form-section {
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.cd-form-section:last-child { border-bottom: none; }
+
+.cd-form-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cd-bde-tag {
+  font-size: 10px;
+  background: var(--warning, #F59E0B);
+  color: #fff;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  text-transform: none;
+}
+
+/* ── Pill multi-select ──────────────────────────────────────── */
+.pill-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pill-opt {
+  padding: 5px 13px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg);
+  cursor: pointer;
+  transition: all 0.12s;
+  user-select: none;
+  line-height: 1.4;
+}
+.pill-opt:hover         { border-color: var(--primary); color: var(--primary); }
+.pill-opt--active       { background: var(--primary); border-color: var(--primary); color: #fff; }
+.pill-opt--active:hover { background: var(--primary); }
+
+/* ── Entity form cards ──────────────────────────────────────── */
+.cd-entity-form-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  margin-bottom: 10px;
+  background: var(--surface);
+}
+
+.cd-entity-form-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .client-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+  .client-grid { grid-template-columns: 1fr; }
+  .cd-info-grid { grid-template-columns: 1fr; }
+  .modal--lg    { max-width: 100%; }
 }
