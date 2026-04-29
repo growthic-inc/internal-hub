@@ -73,22 +73,15 @@ const ClientDirectory = (() => {
     return path   // store path, not full URL — we generate signed URLs on view
   }
 
-  async function _viewDoc(path) {
-    if (!path) return
-    // Legacy: if it looks like an external URL, open directly
-    if (path.startsWith('http://') || path.startsWith('https://')) {
-      window.open(path, '_blank', 'noopener')
-      return
-    }
-    // Supabase storage path → generate 1-hour signed URL
+  // Returns a usable URL from a stored path or legacy http URL.
+  // Storage paths look like "{clientId}/brand_guidelines.pdf"
+  async function _resolveDocUrl(path) {
+    if (!path) return null
+    if (path.startsWith('http://') || path.startsWith('https://')) return path
     const { data, error } = await Config.supabase.storage
       .from('client-documents')
-      .createSignedUrl(path, 3600)
-    if (error || !data?.signedUrl) {
-      Utils.showToast('Could not open document. Please try again.', 'error')
-      return
-    }
-    window.open(data.signedUrl, '_blank', 'noopener')
+      .createSignedUrl(path, 7200)   // 2-hour window
+    return (error || !data?.signedUrl) ? null : data.signedUrl
   }
 
   /* ── render ─────────────────────────────────────────────────── */
@@ -142,7 +135,8 @@ const ClientDirectory = (() => {
       }
     }
 
-    const { data: emps } = await API.getAllEmployees()
+    // getEmployees(false) = all employees, no status filter, no self-join
+    const { data: emps } = await API.getEmployees(false)
     _employees = emps || []
 
     await _loadClients()
@@ -269,10 +263,20 @@ const ClientDirectory = (() => {
     if (nameEl) nameEl.textContent = data.client_name
     if (codeEl) codeEl.textContent = data.project_code
 
-    _renderDrawerBody(data)
+    // Pre-generate signed URLs so document links render as real <a> tags
+    const [bgUrl, saUrl] = await Promise.all([
+      data.brand_guidelines_url
+        ? _resolveDocUrl(data.brand_guidelines_url)
+        : Promise.resolve(null),
+      data.service_agreement_url && _canCommercial()
+        ? _resolveDocUrl(data.service_agreement_url)
+        : Promise.resolve(null),
+    ])
+
+    _renderDrawerBody(data, { bg: bgUrl, sa: saUrl })
   }
 
-  function _renderDrawerBody(c) {
+  function _renderDrawerBody(c, docUrls = {}) {
     const body = document.getElementById('cdd-body')
     if (!body) return
 
@@ -282,8 +286,8 @@ const ClientDirectory = (() => {
     const canComm  = _canCommercial()
     const canEdit  = _canEdit()
     const ptLabel  = PROJECT_TYPE_LABELS[c.project_type] || ''
-    const hasBg    = !!c.brand_guidelines_url
-    const hasSa    = canComm && !!c.service_agreement_url
+    const hasBg    = !!docUrls.bg
+    const hasSa    = canComm && !!docUrls.sa
 
     body.innerHTML = `
       <!-- Core info grid (visible to all) -->
@@ -356,13 +360,17 @@ const ClientDirectory = (() => {
         <div class="cd-drawer-label">Documents</div>
         <div style="display:flex;flex-direction:column;gap:8px;">
           ${hasBg ? `
-          <button class="cd-doc-link" data-doc-path="${Utils.escapeHtml(c.brand_guidelines_url)}">
+          <a href="${Utils.escapeHtml(docUrls.bg)}"
+             target="_blank" rel="noopener noreferrer"
+             class="cd-doc-link">
             ${ICONS.file} Brand Guidelines ${ICONS.ext}
-          </button>` : ''}
+          </a>` : ''}
           ${hasSa ? `
-          <button class="cd-doc-link" data-doc-path="${Utils.escapeHtml(c.service_agreement_url)}">
+          <a href="${Utils.escapeHtml(docUrls.sa)}"
+             target="_blank" rel="noopener noreferrer"
+             class="cd-doc-link">
             ${ICONS.file} Service Agreement ${ICONS.ext}
-          </button>` : ''}
+          </a>` : ''}
         </div>
       </div>` : ''}
 
@@ -394,11 +402,6 @@ const ClientDirectory = (() => {
         if (chevron) chevron.style.transform = open ? '' : 'rotate(90deg)'
       })
     })
-
-    /* Document view buttons */
-    body.querySelectorAll('[data-doc-path]').forEach(btn =>
-      btn.addEventListener('click', () => _viewDoc(btn.dataset.docPath))
-    )
 
     /* Edit button */
     if (canEdit) {
