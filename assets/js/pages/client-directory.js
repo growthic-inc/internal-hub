@@ -54,9 +54,9 @@ const ClientDirectory = (() => {
     if (!str) return ''
     return str.charAt(0).toUpperCase() + str.slice(1)
   }
-  function _canWrite()      { return ['super_admin', 'founders_office', 'bde'].includes(_user?.role) && !!_p?.can_create }
-  function _canEdit()       { return ['super_admin', 'bde'].includes(_user?.role) && !!_p?.can_edit }
-  function _canCommercial() { return ['super_admin', 'bde'].includes(_user?.role) }
+  function _canWrite()      { return !!_p?.can_create }
+  function _canEdit()       { return !!_p?.can_edit }
+  function _canCommercial() { return _user?.role === 'super_admin' || _user?.department === 'business_development' }
 
   /* ── render ─────────────────────────────────────────────────── */
   function render(user) {
