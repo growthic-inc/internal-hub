@@ -221,6 +221,7 @@ const ClientDirectory = (() => {
           <div style="margin-top:5px;">
             <span class="client-card-code">${c.project_code}</span>
           </div>
+          ${c.overview ? `<div class="client-card-overview">${Utils.escapeHtml(Utils.truncate(c.overview, 90))}</div>` : ''}
         </div>
 
         <div class="client-card-platforms">
@@ -330,6 +331,13 @@ const ClientDirectory = (() => {
           </div>
         </div>
       </div>
+
+      ${c.overview ? `
+      <div class="divider"></div>
+      <div class="cd-drawer-section">
+        <div class="cd-drawer-label">Overview</div>
+        <div style="font-size:13px;color:var(--text);line-height:1.6;">${Utils.escapeHtml(c.overview)}</div>
+      </div>` : ''}
 
       ${canComm && (ptLabel || c.price) ? `
       <div class="divider"></div>
@@ -592,6 +600,13 @@ const ClientDirectory = (() => {
         <div class="cd-form-section">
           <div class="cd-form-section-title">Client Details</div>
           <div class="form-group">
+            <label class="form-label">Overview</label>
+            <textarea class="form-input" id="cdf-overview" rows="2"
+                      placeholder="One or two lines about this client — visible on the card to everyone…"
+                      style="resize:vertical;">${Utils.escapeHtml(client?.overview || '')}</textarea>
+            <span class="form-hint">Shown on the directory card · visible to all employees</span>
+          </div>
+          <div class="form-group">
             <label class="form-label">Brand Guidelines</label>
             <div id="cdf-bg-field"></div>
             <span class="form-hint">PDF, DOC, DOCX · max 10 MB</span>
@@ -812,8 +827,9 @@ const ClientDirectory = (() => {
     const name   = (document.getElementById('cdf-name')?.value || '').trim()
     const cat    = document.getElementById('cdf-cat')?.value
     const status = document.getElementById('cdf-status')?.value
-    const amId   = document.getElementById('cdf-am')?.value || null
-    const sow    = (document.getElementById('cdf-sow')?.value || '').trim() || null
+    const amId    = document.getElementById('cdf-am')?.value || null
+    const overview = (document.getElementById('cdf-overview')?.value || '').trim() || null
+    const sow     = (document.getElementById('cdf-sow')?.value || '').trim() || null
 
     // Commercial fields — only present in DOM when canComm is true
     const price = _canCommercial() ? (document.getElementById('cdf-price')?.value || null) : null
@@ -862,6 +878,7 @@ const ClientDirectory = (() => {
         category:             cat,   // 'Shark' | 'Dolphin' | 'Turtle' | 'Snail'
         status,
         am_id:                amId,
+        overview,
         sow_notes:            sow,
         brand_guidelines_url: bgUrl,
       }
@@ -918,6 +935,13 @@ const ClientDirectory = (() => {
 
       Utils.closeModal()
       Utils.showToast(`Client ${isEdit ? 'updated' : 'created'} successfully`, 'success')
+
+      // Reset status filter to "all" so the saved client is always visible
+      // regardless of what status it was saved with
+      _filter.status = 'all'
+      const stDropdown = document.getElementById('cd-status')
+      if (stDropdown) stDropdown.value = 'all'
+
       await _loadClients()
 
     } catch (err) {

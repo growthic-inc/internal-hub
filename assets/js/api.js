@@ -11,7 +11,7 @@ const API = (() => {
   async function getClients(includeArchived = false) {
     let query = supabase
       .from('clients')
-      .select('id, client_name, project_code, category, status, created_at, am_id, account_manager:employees!am_id(name), client_entities(id, entity_name), client_platforms(id, platform_name)')
+      .select('id, client_name, project_code, category, status, created_at, am_id, overview, account_manager:employees!am_id(name), client_entities(id, entity_name), client_platforms(id, platform_name)')
       .order('client_name')
     if (!includeArchived) query = query.neq('status', 'archived')
     return query
