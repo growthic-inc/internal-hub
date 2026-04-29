@@ -1,0 +1,235 @@
+# Growthic One — Changelog
+
+All notable changes to this project are documented here.
+Format: `[version] — date — summary`
+
+---
+
+## [0.5.0] — 2026-04-28 — Access Control system: 6-tier feature-level permissions
+
+### Architecture — access_matrix
+
+- Replaced flat boolean `department_permissions` table (4 columns: can_view / can_create / can_edit / can_approve) with a fully normalised `access_matrix` table
+- Schema: `(id, department, module, feature, access_level)` — UNIQUE on `(department, module, feature)`
+- Six access levels in strict hierarchy: `no_access(0) < view_only(1) < can_upload(2) < can_edit(3) < can_manage(4) < can_approve(5)` — higher levels include all lower
+- 8 departments × 8 modules × up to 26 features = 208 seed rows
+- RLS: all authenticated users can read; write restricted to employees whose email matches a `super_admin` or `people_hrms.manage_access >= can_manage` record (email-based JWT check — employees table has no `auth_id` column)
+- Trigger: `updated_at` auto-stamp on every row change
+- Migration file: `supabase/access_matrix.sql` — CREATE TABLE + RLS policies + trigger + full 208-row seed with `ON CONFLICT DO UPDATE`
+
+### App.js — new permission engine
+
+- `ACCESS_LEVELS` constant maps level strings to numeric values for comparison
+- `_matrix`: `null` = super_admin bypass (no DB lookup needed); `{}` = loaded but empty; populated = `{ [module]: { [feature]: level } }`
+- `App.hasAccess(module, feature, minLevel)` — replaces `getPerms()` system; returns `true` if the employee's level for that feature ≥ minLevel; super_admin always returns `true`
+- `_canViewModule(navItem)` — sidebar visibility logic updated: any feature > `no_access` shows the module link; `visibilityFeature` override for routes that need a specific feature gate rather than "any access"
+- `ROUTE_MODULE` map added: links hash route IDs to `access_matrix` module keys
+- `access-control` nav item uses `visibilityFeature: { module: 'people_hrms', feature: 'manage_access', minLevel: 'can_manage' }` — only visible to those who can actually manage access
+- All permission-gated modules use `ALL_ROLES` in nav (matrix is the real gate, not the role array)
+
+### Access Control panel — access.js (new file)
+
+- Replaces the old `permissions.js` UI
+- Department sidebar: 8 departments, click to load that dept's matrix from DB
+- Module cards: expandable, show feature count badge (e.g. "3 / 5 features configured")
+- Feature rows: label + 6-pill level selector — all options visible at once, single click to select
+- Pill colours: None `#94A3B8` · View `#45BBF0` · Upload `#F59E0B` · Edit `#8B5CF6` · Manage `#1D9E75` · Approve `#0F4799`
+- Live badge update: selecting a pill immediately updates the module's "X / Y" configured count
+- Save button: upserts changed rows only via `saveAccessMatrix()`; success/error toast feedback
+- Reset button: reverts unsaved changes to last-loaded state
+- Legend: inline below the page title, shows all 6 levels with their colour dots — no separate page needed
+- CSS: entire ACCESS CONTROL PANEL section in `components.css` replaced with compact design — `.alp` pill class, `.access-level-pills`, `.access-header-row`, `.access-mod-summary`, `.access-feature-row` as flex divs replacing former table rows
+
+### All 7 page modules migrated to hasAccess()
+
+- **Timesheet** — `log_entry / can_upload`, `submit_timesheet / can_upload`, `approve_timesheets / can_approve`
+- **Reimbursements** — `raise_pre_approval / can_upload`, `approve_requests / can_approve`, `process_payment / can_approve`
+- **Assets** — `view_assets / view_only`, `request_asset / can_upload`, `manage_assets / can_manage`
+- **Tools & Subscriptions** — `request_access / can_upload`, `manage_tools / can_manage`, `approve_requests / can_approve`
+- **Client Dashboard** — `upload_performance_data / can_upload`, `update_client_status / can_edit`
+- **Client Directory** — `create_client / can_upload`, `edit_client / can_edit`
+- **Client Repository** — `upload_files / can_upload`, `manage_files / can_manage`
+- **People (access-control.js)** — `manage_employees / can_manage` gates invite tab and edit/deactivate bindings
+
+### API additions
+
+- `getAccessMatrix(department)` — fetches one dept's matrix rows
+- `getAllDeptAccessMatrix(department)` — alias used by access panel
+- `saveAccessMatrix(rows)` — upserts with `onConflict: 'department,module,feature'`
+
+### Label change
+
+- `content_strategy` department display label renamed from **"Content Strategy"** to **"Content"** in `utils.js` (DEPT_LABELS) and `permissions.js`
+
+---
+
+## [0.4.1] — 2026-04-25 — Permission enforcement, bug fixes, department display
+
+### Permissions panel rebuild
+
+- `permissions.js` rebuilt to load module list dynamically from DB rather than hardcoded constants
+- Modules and toggles render from live `department_permissions` rows
+- Save now does a proper upsert (not insert-only), preventing duplicate-key errors on re-save
+
+### Phase 2 permission enforcement — getPerms() system
+
+- `getPerms()` added to `app.js`: loads `department_permissions` for the active employee's dept on login
+- All 7 modules updated to call `getPerms()` on `init()` and build a local `_p` object
+- Conditional rendering: Add / Edit / Approve buttons hidden if corresponding perm is false
+- Team tab in Timesheet, Inbox in Reimbursements/Tools, and Assign in Assets all gated behind perm checks
+
+### Bug fixes
+
+- **RLS write policy** — `department_permissions` write policy used `employees.auth_id = auth.uid()` which failed because the employees table has no `auth_id` column; fixed to `employees.email = auth.jwt() ->> 'email'`
+- **Employee role redirect loop** — employees with valid sessions were being redirected to login on page refresh due to `get_my_role()` returning null before the employees record was found; fixed with a retry/fallback guard
+- **Upsert constraint error** — `department_permissions` save was hitting a unique violation on repeated saves; changed from `.insert()` to `.upsert()` with the correct conflict target
+- **DB key normalisation** — several API responses used snake_case keys inconsistently; standardised across `getMyReimbursements`, `getReimbursementInbox`, `getTools` response shapes
+- **Dept label missing** — sidebar footer and header dropdown were showing raw `department` value (e.g. `people_culture`) instead of the human-readable label; fixed by piping through `Utils.getDeptLabel()`
+
+### Sidebar consistency
+
+- All permission-controlled modules (`reimbursements`, `assets`, `tools`, `client-dashboard`, `client-directory`, `master-folders`) changed to `ALL_ROLES` in the nav config — role array was redundant alongside dept permission checks and was hiding modules for valid roles
+
+---
+
+## [0.4.0] — 2026-04-23 — Visual upgrade: Client Dashboard + Client Repository
+
+### Design system applied
+- Colors confirmed: `#0F4799` primary, `#45BBF0` secondary, `#1D9E75` green, Helvetica font stack
+- Added Chart.js 4.4 via CDN
+- `components.css` — comprehensive additions: BEM button variants (`btn--*`), `section-card`, `data-table`, `page-toolbar`, `form-row`, utility classes, custom dropdown, toggle switch, notification prefs UI, settings layout, drag-and-drop zone, KPI cards, client status card, SOW progress rows, top content table, charts row, dashboard filter bar, folder cards Level 1/2
+
+### Client Dashboard — full rebuild
+- Filter bar: searchable client dropdown, conditional entity dropdown, platform, project code (auto-filled, readonly), date range, Upload Data button
+- Client Status card: On Track / At Risk / Off Track badge with inline select; persists to DB with updater + timestamp
+- 6 KPI cards with delta arrows (Engagement Rate has light blue tint)
+- Performance Trend: multi-metric interactive line chart (Chart.js), metric pills toggle lines
+- Weekly Publishing Activity: bar chart (Chart.js)
+- SOW Progress: real planned quantities from DB, real report delivery count, progress bars
+- Top Performing Content: table with platform pills
+- Sample data banner — honest placeholder until Upload Data pipeline is built
+- Upload Data modal — placeholder with disabled submit (pipeline spec deferred)
+
+### Client Repository — Level 1 → Level 2 navigation
+- Level 1: 3 clickable folder cards showing file count + 3 recent file previews
+- Level 2: file table with columns File Name / Type / Uploaded By / Date & Time / Actions (View, Download, Delete)
+- Delete rules enforced: uploader within 24h; Team Lead / Super Admin always; others never
+- Upload modal: drag-and-drop zone with file name preview, entity conditional, folder + month editable
+- Entity dropdown appears in toolbar for multi-entity clients
+
+### DB migration
+- `phase4_migration.sql`: adds `client_status`, `client_status_updated_by`, `client_status_updated_at` to `clients` table
+
+### API
+- `updateClientStatus(clientId, status, updatedBy)` — new
+- `getClientDashboard` — now joins `status_updater:employees!client_status_updated_by(name)`
+
+---
+
+## [0.3.0] — 2026-04-23 — Phase 3: Client Repository, Client Dashboard, Settings
+
+### Added
+- **Client Repository** (`master-folders.js`) — renamed from "Master Folders"
+  - Searchable client dropdown, month selector, Upload File button
+  - Three folder cards per client/month: Content, Creatives, Reports
+  - Entity-aware: clients with multiple entities show an entity selector; Drive folder path includes entity level
+  - File upload via `upload-to-drive` Edge Function (Google Drive, no URL pasting)
+  - Metadata tracked: file name, type, uploaded by, uploaded at, Drive file ID, Drive URL
+  - Soft delete with 24-hour rule: uploader can delete within 24h; only Team Lead or Super Admin after that
+- **Client Dashboard** (`client-dashboard.js`) — functional placeholder
+  - Client + month selectors
+  - Client Overview card: name, project code, category, status, account manager, entities, platforms
+  - Scope of Work card: agreed monthly deliverables per platform
+  - Report Status card: checks if a Report has been uploaded in Client Repository for selected month
+  - Performance Metrics: clean empty state explaining data will appear once uploads begin
+- **Settings** (`settings.js`) — full implementation
+  - Profile card: name, email, role, department (read-only, admin-managed)
+  - Security card: Change Password modal (Supabase Auth)
+  - Notification Preferences: per-module, per-event toggles for all 7 modules
+    - Modules: Timesheet, Leave, WFH, Reimbursements, Assets, Tools, People
+    - Defaults to enabled; changes persisted to `notification_preferences` table
+- **Edge Function** (`supabase/functions/upload-to-drive/index.ts`)
+  - Verifies caller JWT
+  - Parses multipart form data (file + metadata)
+  - Authenticates with Google Drive via service account JWT (PKCS#8, RS256)
+  - Builds folder hierarchy automatically: `Clients/[Client]/[Entity?]/[Year]/[Month]/[FolderType]`
+  - Uploads file using Drive multipart upload API
+  - Inserts `master_folder_files` record atomically; deletes Drive file on DB failure
+  - Secrets: `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_DRIVE_ROOT_FOLDER_ID` (placeholder)
+- **`phase3_migration.sql`** — DB migration for Phase 3
+  - Adds `entity_id` column to `master_folder_files`
+  - Creates `notification_preferences` table with composite PK and per-employee RLS
+
+### Changed
+- `api.js` — added `getClientDashboard`, updated `getMasterFolderFiles` (joins `employees(name)` and `client_entities(entity_name)`), added `getNotificationPreferences`, `upsertNotificationPreference`
+- `app.js` — renamed nav label "Master Folders" → "Client Repository"
+- `Deployment_guide.md` — will be updated with Drive Edge Function deployment steps
+
+---
+
+## [0.2.0] — 2026-04-21 — Phase 2: People, Reimbursements, Tools
+
+### Added
+- **People Management** (`access-control.js`) — full HR/Super Admin module
+  - Employee list with search, role filter, department filter
+  - Clickable rows open a drawer with employee details, edit role/department, and deactivate/reactivate
+  - Deactivation auto-returns all assigned assets to available
+  - Invite tab: HR fills in details → Edge Function creates record → sends Supabase Auth invite email
+- **Reimbursements** (`reimbursements.js`) — 3-stage expense flow
+  - Stage 1: Pre-Approval Request (employee → HR/Super Admin)
+  - Stage 2: Expense Claim (linked to pre-approval or standalone)
+  - Stage 3: Mark as Paid (Finance or Super Admin)
+  - HR reviews non-HR employees; Super Admin reviews HR employees' own requests
+  - 11 expense categories defined
+  - Google Drive receipt URL field
+- **Tools & Subscriptions** (`tools.js`) — tool registry and access flow
+  - Tool Registry: grouped by category, search, request access button
+  - My Access: employee's current active tool access
+  - My Requests: employee's request history
+  - Requests Inbox (HR/Super Admin): approve/reject access requests; approving access also inserts into `tool_access`
+  - Add Tool to Registry (HR/Super Admin)
+  - New Tool Request: goes to Super Admin for purchase approval
+- **`finance` role** — new role with access to Reimbursements, Assets, Tools
+- **Edge Function** (`supabase/functions/invite-employee/index.ts`)
+  - Verifies caller is HR or Super Admin via JWT + employee record
+  - Calls `auth.admin.inviteUserByEmail` with production redirect URL
+  - Creates employee record atomically; cleans up auth user if insert fails
+- **`phase2_migration.sql`** — DB migration for Phase 2
+  - Adds `finance` to role CHECK constraint
+  - Drops and recreates `reimbursements` table with full 3-stage schema
+  - Creates `tools`, `tool_access`, `tool_requests` tables with RLS
+
+### Changed
+- `api.js` — added 10 new API functions: `getMyReimbursements`, `getReimbursementInbox`, `getApprovedClaims`, `insertReimbursement`, `getMyPreApprovals`, `getTools`, `getToolAccess`, `getMyToolAccess`, `getToolRequests`, `getMyToolRequests`, `getAllEmployees`
+- `api.js` — fixed `getTeamTimesheetEntries` (removed nonexistent `team_lead_id` filter; RLS handles visibility)
+- `app.js` — added `ALL_ROLES` constant; updated nav roles for Reimbursements, Assets, Tools (all roles), People (HR + Super Admin only)
+- `utils.js` — added `finance` role label, `DEPT_LABELS`, `EXPENSE_LABELS`, `getExpenseLabel()` function
+- `index.html` — invite set-password flow: detects `type=invite` in URL hash, shows password form, calls `supabase.auth.updateUser({ password })`
+- `Deployment_guide.md` — created comprehensive deployment guide
+
+---
+
+## [0.1.0] — 2026-04-XX — Phase 1: Core Modules
+
+### Added
+- **Client Directory** (`client-directory.js`)
+  - Category tabs: All / Shark / Dolphin / Turtle / Snail
+  - Search and status filter
+  - Clickable rows → drawer with entities, platforms, scope of work
+  - Add Client modal (Super Admin, Founder's Office, BDE)
+- **Timesheet** (`timesheet.js`)
+  - Week navigation (Mon–Sun), stat cards
+  - Log Entry modal (date, hours, client, description)
+  - Delete draft entries
+  - Submit Drafts button (bulk status → submitted)
+  - Team tab for CAN_APPROVE roles: last 30 days, approve/reject with comment
+- **Asset Management** (`assets.js`)
+  - All Assets tab (Super Admin, HR): full table, Assign/Return, Add Asset modal
+  - My Assets tab: assets assigned to current user
+- **App shell** (`app.js`) — hash-based SPA router, role-based nav filtering, notification badge
+- **Auth flow** (`auth.js`) — Supabase session management, `getCurrentUser()` using `get_my_role()` SECURITY DEFINER function
+
+### Fixed
+- `database_setup.sql` — moved `get_my_role()` function creation to after `employees` table definition (was causing `relation does not exist` error)
+- Supabase Site URL — must be set to production Vercel URL in Auth → URL Configuration (was defaulting to localhost)
+- Login loop — resolved by ensuring employee record exists before first login

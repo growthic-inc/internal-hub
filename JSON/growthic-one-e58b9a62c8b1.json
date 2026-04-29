@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "growthic-one",
+  "private_key_id": "e58b9a62c8b1b098a702efd691111bd004dcac1c",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC9Vp0cssydp0yO\nq/MNDgWVJbYQIyVlP+DXRB7b0ZtUdRPeRhkbw5NYmVeCNEYzrh60TZGOgJFfcDX3\nbRxrnusIqiPZCLv2na3YQITgwx8p11mE/sjyZPU56Fj2C1D+yx1TnJ3DGR4/k3W6\nnutim4mlZ8iAgjNM+dClxtYo0YvlF1DO/0VKtUp1djMhWWqv9r2ADDVkeUEt/c5+\nDt7/ZMybAsRqBHsUagCTvChvHzPWRi9yRXaXoU3zQF526Qq/gZBgvQkOFE1y+UJu\n22HTnQ1FhYS0AlkzxRYjl4b12o1ZWuIGJSSzup0nd8dYiLdWh24e+2JV44tkO39G\nS7wSq9OTAgMBAAECggEAOD5edYP3nG1yJH+Xt60Oo3uMVcba+PS8ybWGpS3iwnf0\n6vZPxxuVzZ/fiuIUaI20uULBll9Cz+L5ZQKYiq+uiehgtbwOefflCHRCBLJxs3Ax\nO3ykHL04y3bl1lEOQmH72DaR9r6jaadYNZO3wJcLkIL/4IzMyHT9MgGa5I06zVZX\n7ovcVCoBB2Smx3wR17Ip1gMRXxyG65N9Wf8GR5UuLG5MjGgpit5/fozS7Ly6HspB\ncwbb4Fjrahiu6d4ryiybwN2elCcbWbptADpl6ZqasCDLBgnC80brlZXQOm86sqOt\nJC1PSyp7K4GoVPXlCfGqb3cRqHcFggupmqFIBwNAAQKBgQD5UYp5MvidYyN1gcKm\noh2J/aIZeueYNoSQcgBubtJd2M3y7apkGPLZls3qyNmf9yoXurZope9mlLRuhtzt\n+bwh5/UNhq9qvXmiESma8ok810jqiShY7tABIZEUe3esSlHb0m6ucb9T+0mjqJZu\nCr43Sy2EZwKQuVTKgj5TB54LkwKBgQDCaZOVIFUlMIutUNz33gkmxzPIQEetzfDy\nIIM0xx/ZQCzPc476l2vdcM1mScEl5KCxIcCeBgpTeTaOOkAcc9EH1N09aYxXal0V\n4+H7bPv7oZSPIw57Y+nktxsKzUokhNN7LzWnU5Q2oa0Cuc5IPwV83+HW/wSQFnN3\nTMWuySgYAQKBgQCp+ygX3eKXG6JvWRrnFRximmRMTvlbU8Ap4y/cGv6eMVSozdUg\nDcp1A1Y9PtbxM0iliQ0YaBnCrJwfxx8VuPDFhSoUIMG0Wp51GpJtK/LZYkY6cWzq\nxVdXjhUmC8/ZzYnl/6Cqmq7BiU/5ntWBDR4HAOB1pu2e0ly2/PmVDlp4tQKBgBy5\nYp/O9iWXhZum7e8FdE6xcfotXSnV2rq7iQc8QH1l2PkRttdZlgtSxlZNoWcK358s\nQHxYoh/xMdlTy/MoPYMttT6EoMKtqXE5iUMPuC9WkU+Qu2wJuB4d27X93O2GXoS9\n1eySEbz8qEZV05+jCBmKLqEIbtEnMAo5Yp/PgsgBAoGBANZIC4bm8WFryF6rDmCD\nL9vemybb+ghzT5ocZCHCh94MewDM7u3pOjN+Luld4ie9tebVGRy/rJqKM/kho8ia\nQxoQ135R85+oscQJF0ob3rmJiwUjAR83Qr+sq6Tx5/xlxAErtoXRAmwJEm/IZfHj\nZVgDIHjdGAgGDSZzvxt28swF\n-----END PRIVATE KEY-----\n",
+  "client_email": "growthic-one-client-drive@growthic-one.iam.gserviceaccount.com",
+  "client_id": "108517717779388975235",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/growthic-one-client-drive%40growthic-one.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
