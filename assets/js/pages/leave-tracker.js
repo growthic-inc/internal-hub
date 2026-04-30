@@ -1100,8 +1100,8 @@ const LeaveTracker = (() => {
   async function _approveRequest(id, type) {
     const updateFn = type === 'leave' ? API.updateLeaveRequest : API.updateWfhRequest
     const { error } = await updateFn(id, {
-      status:      'approved',
-      approved_by: _user.id,
+      status:   'approved',
+      acted_at: new Date().toISOString(),
     })
     if (error) {
       Utils.showToast('Failed to approve: ' + error.message, 'error')
@@ -1144,7 +1144,7 @@ const LeaveTracker = (() => {
       const { error } = await updateFn(id, {
         status:           'rejected',
         approver_comment: comment,
-        approved_by:      _user.id,
+        acted_at:         new Date().toISOString(),
       })
 
       btn.disabled    = false
@@ -1165,8 +1165,8 @@ const LeaveTracker = (() => {
   async function _approveCancellation(id, type) {
     const updateFn = type === 'leave' ? API.updateLeaveRequest : API.updateWfhRequest
     const { error } = await updateFn(id, {
-      status:      'cancelled',
-      approved_by: _user.id,
+      status:   'cancelled',
+      acted_at: new Date().toISOString(),
     })
     if (error) {
       Utils.showToast('Failed: ' + error.message, 'error')
