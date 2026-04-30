@@ -48,19 +48,14 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: userErr } = await anonClient.auth.getUser()
     if (userErr || !user) return json({ error: 'Unauthorized' }, 401)
 
-    const adminClient = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    )
-
     // ── Parse form ────────────────────────────────────────────
-    const form     = await req.formData()
-    const file     = form.get('file')      as File   | null
-    const clientId = form.get('client_id') as string | null
-    const docType  = form.get('doc_type')  as string | null  // 'brand_guidelines' | 'service_agreement'
+    const form       = await req.formData()
+    const file       = form.get('file')        as File   | null
+    const clientName = form.get('client_name') as string | null  // passed directly — no DB lookup needed
+    const docType    = form.get('doc_type')    as string | null  // 'brand_guidelines' | 'service_agreement'
 
-    if (!file || !clientId || !docType) {
-      return json({ error: 'file, client_id, and doc_type are required.' }, 400)
+    if (!file || !clientName || !docType) {
+      return json({ error: 'file, client_name, and doc_type are required.' }, 400)
     }
     if (!DOC_TYPE_LABELS[docType]) {
       return json({ error: `Invalid doc_type: "${docType}". Use brand_guidelines or service_agreement.` }, 400)
@@ -69,14 +64,6 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'File exceeds 20 MB limit.' }, 400)
     }
 
-    // ── Resolve client name ───────────────────────────────────
-    const { data: client } = await adminClient
-      .from('clients')
-      .select('client_name')
-      .eq('id', clientId)
-      .single()
-    if (!client) return json({ error: 'Client not found.' }, 404)
-
     // ── Google Drive ──────────────────────────────────────────
     const saJson      = JSON.parse(Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON')!)
     const accessToken = await getGoogleAccessToken(saJson)
@@ -84,8 +71,8 @@ Deno.serve(async (req: Request) => {
 
     // Folder hierarchy: Client Documents / {clientName} / {Brand Guidelines|Service Agreements}
     let parent = rootId
-    parent = await findOrCreateFolder(accessToken, 'Client Documents',      parent)
-    parent = await findOrCreateFolder(accessToken, client.client_name,      parent)
+    parent = await findOrCreateFolder(accessToken, 'Client Documents',       parent)
+    parent = await findOrCreateFolder(accessToken, clientName.trim(),        parent)
     parent = await findOrCreateFolder(accessToken, DOC_TYPE_LABELS[docType], parent)
 
     // ── Upload ────────────────────────────────────────────────
