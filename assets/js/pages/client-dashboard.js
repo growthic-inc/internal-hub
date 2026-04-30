@@ -1,56 +1,25 @@
 /* ============================================================
-   CLIENT DASHBOARD
-   Real data: client info, SOW, report status, client status.
-   Sample data: KPIs, charts, top content (until data ingestion built).
+   CLIENT DASHBOARD — real Supabase data
+   KPIs, charts, top content, LinkedIn XLS upload pipeline.
    ============================================================ */
 
 const ClientDashboard = (() => {
 
-  /* ── Sample performance data (placeholder until Upload Data built) ── */
-  const SAMPLE = {
-    kpi: [
-      { key: 'likes',           label: 'Likes',             value: 3240,    delta: 14,  pos: true },
-      { key: 'engagement',      label: 'Engagement',        value: 4870,    delta: 9,   pos: true },
-      { key: 'impressions',     label: 'Impressions',       value: 112500,  delta: 21,  pos: true },
-      { key: 'followersGained', label: 'Followers Gained',  value: 178,     delta: 6,   pos: true },
-      { key: 'searchDiscovery', label: 'Search & Discovery',value: 1480,    delta: 18,  pos: true },
-      { key: 'engagementRate',  label: 'Engagement Rate',   value: '6.84%', delta: 0.6, pos: true, highlight: true },
-    ],
-    trendLabels: ['Apr 1', 'Apr 7', 'Apr 14', 'Apr 21'],
-    trendDatasets: {
-      impressions:     { label: 'Impressions',       data: [24000, 31000, 28000, 35000], color: '#0F4799' },
-      engagement:      { label: 'Engagement',        data: [980,   1200,  1050,  1380],  color: '#45BBF0' },
-      likes:           { label: 'Likes',             data: [720,   890,   810,   980],   color: '#1D9E75' },
-      followersGained: { label: 'Followers Gained',  data: [38,    52,    44,    62],    color: '#F59E0B' },
-      searchDiscovery: { label: 'Search & Discovery',data: [310,   380,   355,   435],   color: '#8B5CF6' },
-      engagementRate:  { label: 'Engagement Rate',   data: [5.8,   6.2,   5.9,   7.1],  color: '#EF4444' },
-    },
-    publishing: {
-      labels: ['Apr 1–7', 'Apr 8–14', 'Apr 15–21', 'Apr 22–28'],
-      data:   [6, 9, 7, 8],
-    },
-    topContent: [
-      { preview: 'How Crystal Crop is transforming Indian agriculture…', platform: 'LinkedIn',  engagement: 1840, impressions: 42300 },
-      { preview: 'Meet the MD: Ankur Aggarwal on sustainable farming',   platform: 'LinkedIn',  engagement: 1240, impressions: 31500 },
-      { preview: 'Crop protection starts with awareness',                 platform: 'Instagram', engagement: 980,  impressions: 18700 },
-    ],
+  const METRIC_CONFIG = {
+    impressions:     { label: 'Impressions',     color: '#0F4799', field: 'impressions' },
+    clicks:          { label: 'Clicks',          color: '#45BBF0', field: 'clicks' },
+    reactions:       { label: 'Reactions',       color: '#1D9E75', field: 'reactions' },
+    engagement_rate: { label: 'Engagement Rate', color: '#EF4444', field: 'engagement_rate', scale: 100 },
+    comments:        { label: 'Comments',        color: '#8B5CF6', field: 'comments' },
+    reposts_shares:  { label: 'Reposts',         color: '#F59E0B', field: 'reposts_shares' },
   }
+  const METRIC_KEYS = Object.keys(METRIC_CONFIG)
 
-  const METRIC_KEYS = ['impressions', 'engagement', 'likes', 'followersGained', 'searchDiscovery', 'engagementRate']
+  let _user = null, _p = null, _clients = [], _currentClient = null, _currentEntity = null
+  let _currentPlatform = 'LinkedIn', _currentRange = '30', _currentMonth = _thisMonth()
+  let _trendChart = null, _pubChart = null, _activeMetrics = ['impressions', 'clicks']
 
-  let _user            = null
-  let _p               = null  // department permissions
-  let _clients         = []
-  let _currentClient   = null
-  let _currentEntity   = null
-  let _currentPlatform = 'LinkedIn'
-  let _currentRange    = '30'
-  let _currentMonth    = _thisMonth()
-  let _trendChart      = null
-  let _pubChart        = null
-  let _activeMetrics   = ['impressions', 'engagement']
-
-  /* ── render ──────────────────────────────────────────────── */
+  /* ── render ─────────────────────────────────────────────── */
   function render(user) {
     return `
       <div class="page-inner" style="max-width:1400px;">
@@ -125,23 +94,18 @@ const ClientDashboard = (() => {
     `
   }
 
-  /* ── init ────────────────────────────────────────────────── */
+  /* ── init ───────────────────────────────────────────────── */
   async function init(user) {
-    _user          = user
-    _p             = {
+    _user = user
+    _p = {
       can_create: App.hasAccess('client_dashboard', 'upload_performance_data', 'can_upload'),
       can_edit:   App.hasAccess('client_dashboard', 'update_client_status',    'can_edit'),
     }
-    _trendChart    = null
-    _pubChart      = null
-    _currentClient = null
-
+    _trendChart = null; _pubChart = null; _currentClient = null
     const { data } = await API.getClients()
     _clients = data || []
-
     _bindClientDropdown()
     _bindFilters()
-
     if (_p.can_create) {
       document.getElementById('db-upload-btn')?.addEventListener('click', _openUploadModal)
     } else {
@@ -149,7 +113,7 @@ const ClientDashboard = (() => {
     }
   }
 
-  /* ── Client dropdown ─────────────────────────────────────── */
+  /* ── Client dropdown ────────────────────────────────────── */
   function _bindClientDropdown() {
     const btn      = document.getElementById('db-client-btn')
     const dropdown = document.getElementById('db-client-dropdown')
@@ -164,16 +128,12 @@ const ClientDashboard = (() => {
       dropdown.style.display = open ? 'none' : 'block'
       if (!open) { search.value = ''; _renderClientList(_clients); search.focus() }
     })
-
     search.addEventListener('input', () => {
       const q = search.value.toLowerCase()
       _renderClientList(_clients.filter(c => c.client_name.toLowerCase().includes(q) || c.project_code.toLowerCase().includes(q)))
     })
-
     document.addEventListener('click', e => {
-      if (!document.getElementById('db-client-wrap')?.contains(e.target)) {
-        if (dropdown) dropdown.style.display = 'none'
-      }
+      if (!document.getElementById('db-client-wrap')?.contains(e.target)) dropdown.style.display = 'none'
     })
 
     function _renderClientList(clients) {
@@ -189,30 +149,20 @@ const ClientDashboard = (() => {
         item.addEventListener('click', async () => {
           dropdown.style.display = 'none'
           document.getElementById('db-client-label').textContent = item.dataset.name
-          document.getElementById('db-project-code').textContent  = item.dataset.code
-
+          document.getElementById('db-project-code').textContent = item.dataset.code
           const { data: full } = await API.getClientDashboard(item.dataset.id)
-          _currentClient = full
-          _currentEntity = null
-
-          const entities = full?.client_entities || []
+          _currentClient = full; _currentEntity = null
+          const entities    = full?.client_entities || []
           const entityGroup = document.getElementById('db-entity-group')
           const entitySel   = document.getElementById('db-entity-select')
-
           if (entities.length > 1) {
-            entitySel.innerHTML = entities.map(e =>
-              `<option value="${e.id}">${Utils.escapeHtml(e.entity_name)}</option>`
-            ).join('')
+            entitySel.innerHTML = entities.map(e => `<option value="${e.id}">${Utils.escapeHtml(e.entity_name)}</option>`).join('')
             _currentEntity = entities[0].id
             entityGroup.style.display = 'flex'
-            entitySel.addEventListener('change', () => {
-              _currentEntity = entitySel.value
-              _loadDashboard()
-            })
+            entitySel.addEventListener('change', () => { _currentEntity = entitySel.value; _loadDashboard() })
           } else {
             entityGroup.style.display = 'none'
           }
-
           _loadDashboard()
         })
       })
@@ -220,36 +170,47 @@ const ClientDashboard = (() => {
   }
 
   function _bindFilters() {
-    document.getElementById('db-platform-select')?.addEventListener('change', e => {
-      _currentPlatform = e.target.value
-      if (_currentClient) _loadDashboard()
-    })
-    document.getElementById('db-range-select')?.addEventListener('change', e => {
-      _currentRange = e.target.value
-      if (_currentClient) _loadDashboard()
-    })
+    document.getElementById('db-platform-select')?.addEventListener('change', e => { _currentPlatform = e.target.value; if (_currentClient) _loadDashboard() })
+    document.getElementById('db-range-select')?.addEventListener('change',   e => { _currentRange    = e.target.value; if (_currentClient) _loadDashboard() })
   }
 
-  /* ── Load dashboard ──────────────────────────────────────── */
+  function _getDateRange() {
+    const dateTo = new Date(), dateFrom = new Date()
+    dateFrom.setDate(dateTo.getDate() - (parseInt(_currentRange, 10) || 30))
+    return { dateFrom: dateFrom.toISOString().split('T')[0], dateTo: dateTo.toISOString().split('T')[0] }
+  }
+
+  /* ── Load dashboard ─────────────────────────────────────── */
   async function _loadDashboard() {
     const body = document.getElementById('db-body')
     if (!body || !_currentClient) return
     body.innerHTML = '<p class="loading-text">Loading dashboard…</p>'
 
-    const { data: reports } = await API.getMasterFolderFiles(_currentClient.id, _currentMonth, 'reports')
-    const reportCount = (reports || []).length
+    const { dateFrom, dateTo } = _getDateRange()
+
+    const [metricsRes, postsRes, reportsRes, uploadLogRes] = await Promise.all([
+      API.getSocialMetrics(_currentClient.id, _currentPlatform, dateFrom, dateTo),
+      API.getSocialPosts(_currentClient.id, _currentPlatform, dateFrom, dateTo),
+      API.getMasterFolderFiles(_currentClient.id, _currentMonth, 'reports'),
+      API.getAnalyticsUploadLog(_currentClient.id, _currentPlatform),
+    ])
+    const metrics   = metricsRes.data   || []
+    const posts     = postsRes.data     || []
+    const reports   = reportsRes.data   || []
+    const uploadLog = uploadLogRes.data  || []
+
+    if (!metrics.length && !posts.length) { _renderEmptyState(body); return }
+
+    const kpis        = _computeKPIs(metrics, posts)
+    const reportCount = reports.length
 
     body.innerHTML = `
-      <!-- Sample data notice -->
-      <div class="sample-data-banner">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-        Performance metrics are showing sample data. Use <strong>Upload Data</strong> to load real numbers.
-      </div>
+      ${_renderDataBanner(uploadLog, dateFrom, dateTo)}
 
       <!-- Row 1: Status + KPIs -->
       <div style="display:flex;flex-direction:column;gap:16px;margin-bottom:16px;">
         ${_renderStatusCard()}
-        <div class="kpi-grid">${_renderKPICards()}</div>
+        <div class="kpi-grid">${_renderKPICards(kpis)}</div>
       </div>
 
       <!-- Row 2: Charts -->
@@ -260,7 +221,7 @@ const ClientDashboard = (() => {
             <div class="chart-multi-select" id="trend-pills">
               ${METRIC_KEYS.map(k => `
                 <span class="chart-metric-pill${_activeMetrics.includes(k) ? ' active' : ''}" data-metric="${k}">
-                  ${SAMPLE.trendDatasets[k].label}
+                  ${Utils.escapeHtml(METRIC_CONFIG[k].label)}
                 </span>`).join('')}
             </div>
           </div>
@@ -285,34 +246,58 @@ const ClientDashboard = (() => {
         <div class="section-card">
           <div class="section-card-header"><h3>Top Performing Content</h3></div>
           <div class="section-card-body" style="padding:0;">
-            ${_renderTopContent()}
+            ${_renderTopContent(posts)}
           </div>
         </div>
       </div>
     `
 
-    _initTrendChart()
-    _initPubChart()
+    _initTrendChart(metrics)
+    _initPubChart(posts)
     _bindStatusCard()
-    _bindTrendPills()
+    _bindTrendPills(metrics)
   }
 
-  /* ── Status card ─────────────────────────────────────────── */
-  function _renderStatusCard() {
-    const c = _currentClient
-    const statusVal = c.client_status || 'on_track'
-    const statusMap = {
-      on_track:  { label: 'On Track',  cls: 'status--on-track'  },
-      at_risk:   { label: 'At Risk',   cls: 'status--at-risk'   },
-      off_track: { label: 'Off Track', cls: 'status--off-track' },
+  /* ── Empty state ────────────────────────────────────────── */
+  function _renderEmptyState(body) {
+    body.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--border)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:16px;"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+        <h3 style="margin:0 0 8px;font-size:16px;font-weight:600;color:var(--text);">No data uploaded yet</h3>
+        <p style="margin:0 0 20px;font-size:14px;color:var(--text-muted);max-width:380px;">Upload a LinkedIn or Instagram analytics export to see performance data.</p>
+        ${_p.can_create ? `<button class="btn btn--primary btn--sm" onclick="document.getElementById('db-upload-btn')?.click()">Upload Data</button>` : ''}
+      </div>
+    `
+  }
+
+  /* ── Data banner ────────────────────────────────────────── */
+  function _renderDataBanner(uploadLog, dateFrom, dateTo) {
+    const last = uploadLog[0]
+    let lastText = ''
+    if (last) {
+      const name    = Utils.escapeHtml(last.uploaded_by_emp?.name || 'someone')
+      const daysAgo = Math.round((Date.now() - new Date(last.uploaded_at).getTime()) / 86400000)
+      const ago     = daysAgo === 0 ? 'today' : daysAgo === 1 ? '1 day ago' : `${daysAgo} days ago`
+      lastText      = ` · Last uploaded ${ago} by ${name}`
     }
-    const s = statusMap[statusVal]
+    return `
+      <div class="sample-data-banner" style="background:var(--surface-alt,#f0f7ff);border-color:var(--primary,#0F4799)20;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        Showing data for <strong>${Utils.escapeHtml(_currentPlatform)}</strong> · ${Utils.formatDate(dateFrom)} – ${Utils.formatDate(dateTo)}${lastText}
+      </div>`
+  }
+
+  /* ── Status card ────────────────────────────────────────── */
+  function _renderStatusCard() {
+    const c         = _currentClient
+    const statusVal = c.client_status || 'on_track'
+    const statusMap = { on_track: ['On Track', 'status--on-track'], at_risk: ['At Risk', 'status--at-risk'], off_track: ['Off Track', 'status--off-track'] }
+    const [slabel, scls] = statusMap[statusVal] || statusMap.on_track
     const updatedBy  = c.status_updater?.name || null
     const updatedAt  = c.client_status_updated_at ? Utils.formatDate(c.client_status_updated_at) : null
-
     return `
       <div class="client-status-card">
-        <div class="client-status-badge ${s.cls}" id="status-badge">${s.label}</div>
+        <div class="client-status-badge ${scls}" id="status-badge">${slabel}</div>
         ${_p.can_edit ? `
           <select class="client-status-select" id="status-select">
             <option value="on_track"  ${statusVal === 'on_track'  ? 'selected' : ''}>On Track</option>
@@ -328,71 +313,77 @@ const ClientDashboard = (() => {
   }
 
   function _bindStatusCard() {
-    const sel = document.getElementById('status-select')
-    const badge = document.getElementById('status-badge')
+    const sel = document.getElementById('status-select'), badge = document.getElementById('status-badge')
     if (!sel || !badge) return
-
+    const statusMap = { on_track: ['On Track', 'status--on-track'], at_risk: ['At Risk', 'status--at-risk'], off_track: ['Off Track', 'status--off-track'] }
     sel.addEventListener('change', async () => {
       const val = sel.value
       const { error } = await API.updateClientStatus(_currentClient.id, val, _user.id)
       if (error) { Utils.showToast('Failed to update status.', 'error'); return }
-
-      const map = { on_track: ['On Track', 'status--on-track'], at_risk: ['At Risk', 'status--at-risk'], off_track: ['Off Track', 'status--off-track'] }
-      badge.textContent = map[val][0]
-      badge.className = `client-status-badge ${map[val][1]}`
+      badge.textContent = statusMap[val][0]
+      badge.className   = `client-status-badge ${statusMap[val][1]}`
       Utils.showToast('Client status updated.', 'success')
     })
   }
 
-  /* ── KPI cards ───────────────────────────────────────────── */
-  function _renderKPICards() {
-    return SAMPLE.kpi.map(k => `
-      <div class="kpi-card${k.highlight ? ' kpi-card--highlight' : ''}">
-        <div class="kpi-label">${k.label}</div>
-        <div class="kpi-value">${typeof k.value === 'number' ? k.value.toLocaleString('en-IN') : k.value}</div>
-        <div class="kpi-delta kpi-delta--${k.pos ? 'up' : 'down'}">
-          ${k.pos
-            ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>'
-            : '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>'}
-          ${k.delta}%
-        </div>
-      </div>
-    `).join('')
+  /* ── KPI computation + cards ────────────────────────────── */
+  function _computeKPIs(metrics, posts) {
+    const sum  = (arr, key) => arr.reduce((a, r) => a + _num(r[key]), 0)
+    const loc  = n => n.toLocaleString('en-IN')
+    const avgEng = metrics.length ? ((sum(metrics, 'engagement_rate') / metrics.length) * 100).toFixed(2) + '%' : '0.00%'
+    return [
+      { label: 'Impressions',     value: loc(sum(metrics, 'impressions')), highlight: false },
+      { label: 'Clicks',          value: loc(sum(metrics, 'clicks')),      highlight: false },
+      { label: 'Reactions',       value: loc(sum(metrics, 'reactions')),   highlight: false },
+      { label: 'Engagement Rate', value: avgEng,                           highlight: true  },
+      { label: 'Posts Published', value: loc(posts.length),                highlight: false },
+      { label: 'Total Follows',   value: loc(sum(posts, 'follows')),       highlight: false },
+    ]
   }
 
-  /* ── Charts ──────────────────────────────────────────────── */
-  function _initTrendChart() {
+  function _renderKPICards(kpis) {
+    return kpis.map(k => `
+      <div class="kpi-card${k.highlight ? ' kpi-card--highlight' : ''}">
+        <div class="kpi-label">${Utils.escapeHtml(k.label)}</div>
+        <div class="kpi-value">${Utils.escapeHtml(String(k.value))}</div>
+      </div>`).join('')
+  }
+
+  /* ── Trend chart ────────────────────────────────────────── */
+  function _initTrendChart(metrics) {
     if (_trendChart) { _trendChart.destroy(); _trendChart = null }
     const canvas = document.getElementById('trend-chart')
     if (!canvas || typeof Chart === 'undefined') return
 
+    const labels   = metrics.map(r => _shortDate(r.date))
     const datasets = _activeMetrics.map(k => {
-      const d = SAMPLE.trendDatasets[k]
+      const cfg   = METRIC_CONFIG[k]
+      const scale = cfg.scale || 1
       return {
-        label:           d.label,
-        data:            d.data,
-        borderColor:     d.color,
-        backgroundColor: d.color + '18',
-        borderWidth:     2,
-        pointRadius:     4,
+        label:            cfg.label,
+        data:             metrics.map(r => _num(r[cfg.field]) * scale),
+        borderColor:      cfg.color,
+        backgroundColor:  cfg.color + '18',
+        borderWidth:      2,
+        pointRadius:      metrics.length > 60 ? 2 : 4,
         pointHoverRadius: 6,
-        tension:         0.35,
-        fill:            false,
+        tension:          0.35,
+        fill:             false,
       }
     })
 
     _trendChart = new Chart(canvas, {
       type: 'line',
-      data: { labels: SAMPLE.trendLabels, datasets },
+      data: { labels, datasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'bottom', labels: { font: { size: 11, family: 'Helvetica Neue, Helvetica, Arial, sans-serif' }, boxWidth: 12, padding: 14 } },
+          legend:  { position: 'bottom', labels: { font: { size: 11, family: 'Helvetica Neue, Helvetica, Arial, sans-serif' }, boxWidth: 12, padding: 14 } },
           tooltip: { mode: 'index', intersect: false },
         },
         scales: {
-          x: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 11 }, color: '#94A3B8' } },
+          x: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 11 }, color: '#94A3B8', maxTicksLimit: 10 } },
           y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 11 }, color: '#94A3B8' }, beginAtZero: false },
         },
         interaction: { mode: 'nearest', axis: 'x', intersect: false },
@@ -400,18 +391,34 @@ const ClientDashboard = (() => {
     })
   }
 
-  function _initPubChart() {
+  /* ── Publishing chart ───────────────────────────────────── */
+  function _initPubChart(posts) {
     if (_pubChart) { _pubChart.destroy(); _pubChart = null }
     const canvas = document.getElementById('pub-chart')
     if (!canvas || typeof Chart === 'undefined') return
 
+    const weekMap = {}
+    posts.forEach(p => {
+      if (!p.created_date) return
+      const d = new Date(p.created_date), day = d.getDay()
+      const mon = new Date(d); mon.setDate(d.getDate() + (day === 0 ? -6 : 1 - day))
+      const key = mon.toISOString().split('T')[0]
+      weekMap[key] = (weekMap[key] || 0) + 1
+    })
+    const weeks  = Object.keys(weekMap).sort()
+    const labels = weeks.map(w => {
+      const mon = new Date(w), sun = new Date(mon); sun.setDate(mon.getDate() + 6)
+      return _shortDate(mon.toISOString()) + '–' + _shortDate(sun.toISOString())
+    })
+    const data = weeks.map(w => weekMap[w])
+
     _pubChart = new Chart(canvas, {
       type: 'bar',
       data: {
-        labels:   SAMPLE.publishing.labels,
+        labels,
         datasets: [{
           label:           'Posts Published',
-          data:            SAMPLE.publishing.data,
+          data,
           backgroundColor: '#0F4799',
           borderRadius:    4,
           borderSkipped:   false,
@@ -421,18 +428,18 @@ const ClientDashboard = (() => {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { display: false },
+          legend:  { display: false },
           tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y} posts` } },
         },
         scales: {
           x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#94A3B8' } },
-          y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 11 }, color: '#94A3B8', stepSize: 2 }, beginAtZero: true },
+          y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 11 }, color: '#94A3B8', stepSize: 1 }, beginAtZero: true },
         },
       },
     })
   }
 
-  function _bindTrendPills() {
+  function _bindTrendPills(metrics) {
     document.querySelectorAll('.chart-metric-pill').forEach(pill => {
       pill.addEventListener('click', () => {
         const key = pill.dataset.metric
@@ -444,12 +451,12 @@ const ClientDashboard = (() => {
           _activeMetrics.push(key)
           pill.classList.add('active')
         }
-        _initTrendChart()
+        _initTrendChart(metrics)
       })
     })
   }
 
-  /* ── SOW progress ────────────────────────────────────────── */
+  /* ── SOW progress ───────────────────────────────────────── */
   function _renderSOW(reportCount) {
     const sow = _currentClient.scope_of_work || []
     if (!sow.length) return '<p class="empty-state" style="padding:24px 0;">No scope of work defined.</p>'
@@ -458,7 +465,7 @@ const ClientDashboard = (() => {
     const reportDelivered = Math.min(reportCount, reportPlanned)
     const reportPct       = Math.round((reportDelivered / reportPlanned) * 100)
 
-    const postSow = sow.find(s => s.deliverable_type?.toLowerCase().includes('post') || s.deliverable_type?.toLowerCase().includes('content'))
+    const postSow     = sow.find(s => s.deliverable_type?.toLowerCase().includes('post') || s.deliverable_type?.toLowerCase().includes('content'))
     const postPlanned = postSow?.agreed_monthly_quantity || 0
 
     return `
@@ -490,40 +497,55 @@ const ClientDashboard = (() => {
     `
   }
 
-  /* ── Top content ─────────────────────────────────────────── */
-  function _renderTopContent() {
+  /* ── Top content ────────────────────────────────────────── */
+  function _renderTopContent(posts) {
+    if (!posts.length) {
+      return '<p style="padding:24px;color:var(--text-muted);font-size:13px;">No posts in selected range.</p>'
+    }
+
+    const top = posts.slice(0, 10)
+    const CONTENT_TYPE_COLORS = { Video: '#8B5CF6', Image: '#0F4799', Text: '#64748B', Carousel: '#F59E0B' }
+
     return `
       <table class="data-table">
         <thead><tr>
           <th>Post Preview</th>
-          <th>Platform</th>
-          <th style="text-align:right;">Engagement</th>
+          <th>Type</th>
+          <th>Posted By</th>
+          <th>Date</th>
           <th style="text-align:right;">Impressions</th>
+          <th style="text-align:right;">Likes</th>
+          <th style="text-align:right;">Eng. Rate</th>
         </tr></thead>
         <tbody>
-          ${SAMPLE.topContent.map(r => `
-            <tr>
-              <td>
-                <div class="top-content-preview">
-                  <div class="top-content-thumb">📝</div>
-                  <span class="top-content-text">${Utils.escapeHtml(r.preview)}</span>
-                </div>
-              </td>
-              <td>
-                <span class="platform-pill platform-pill--${r.platform.toLowerCase()}">
-                  ${Utils.escapeHtml(r.platform)}
-                </span>
-              </td>
-              <td style="text-align:right;font-weight:600;">${r.engagement.toLocaleString('en-IN')}</td>
-              <td style="text-align:right;">${r.impressions.toLocaleString('en-IN')}</td>
-            </tr>
-          `).join('')}
+          ${top.map(p => {
+            const title   = Utils.truncate(p.post_title || '(no title)', 80)
+            const url     = p.post_url ? Utils.escapeHtml(p.post_url) : null
+            const ct      = p.content_type || p.post_type || '—'
+            const ctColor = CONTENT_TYPE_COLORS[ct] || '#64748B'
+            const engRate = p.engagement_rate != null ? (_num(p.engagement_rate) * 100).toFixed(2) + '%' : '—'
+            return `
+              <tr>
+                <td>
+                  ${url
+                    ? `<a href="${url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;" title="${Utils.escapeHtml(p.post_title || '')}">${Utils.escapeHtml(title)}</a>`
+                    : Utils.escapeHtml(title)}
+                </td>
+                <td><span style="font-size:11px;font-weight:600;color:${ctColor};">${Utils.escapeHtml(ct)}</span></td>
+                <td style="white-space:nowrap;">${Utils.escapeHtml(p.posted_by || '—')}</td>
+                <td style="white-space:nowrap;">${p.created_date ? Utils.formatDate(p.created_date) : '—'}</td>
+                <td style="text-align:right;">${_num(p.impressions).toLocaleString('en-IN')}</td>
+                <td style="text-align:right;">${_num(p.likes).toLocaleString('en-IN')}</td>
+                <td style="text-align:right;font-weight:600;">${engRate}</td>
+              </tr>
+            `
+          }).join('')}
         </tbody>
       </table>
     `
   }
 
-  /* ── Upload Data modal (placeholder) ─────────────────────── */
+  /* ── Upload Data modal ──────────────────────────────────── */
   function _openUploadModal() {
     const clientOpts = _clients.map(c =>
       `<option value="${c.id}"${_currentClient?.id === c.id ? ' selected' : ''}>${Utils.escapeHtml(c.client_name)}</option>`
@@ -536,7 +558,7 @@ const ClientDashboard = (() => {
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
         </button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body" id="up-modal-body">
         <div class="form-group">
           <label class="form-label">Client</label>
           <select class="form-select" id="up-client">${clientOpts}</select>
@@ -545,8 +567,8 @@ const ClientDashboard = (() => {
           <div class="form-group">
             <label class="form-label">Platform</label>
             <select class="form-select" id="up-platform">
-              <option>LinkedIn</option>
-              <option>Instagram</option>
+              <option value="LinkedIn">LinkedIn</option>
+              <option value="Instagram">Instagram</option>
             </select>
           </div>
           <div class="form-group">
@@ -555,42 +577,198 @@ const ClientDashboard = (() => {
           </div>
         </div>
         <div class="form-group">
-          <label class="form-label">Data File (Excel / CSV)</label>
-          <div class="drag-drop-zone" id="up-drop-zone">
-            <input type="file" accept=".xlsx,.xls,.csv" id="up-file-input" />
+          <label class="form-label">Data File (Excel export from LinkedIn)</label>
+          <div class="drag-drop-zone" id="up-drop-zone" style="cursor:pointer;">
+            <input type="file" accept=".xlsx,.xls" id="up-file-input" style="position:absolute;inset:0;opacity:0;cursor:pointer;" />
             <div class="drag-drop-icon">📊</div>
-            <div class="drag-drop-label">Drop file here or <span>browse</span></div>
-            <div class="drag-drop-hint">Accepts .xlsx, .xls, .csv</div>
-            <div class="drag-drop-file-name" id="up-file-name" style="display:none;"></div>
+            <div class="drag-drop-label">Drop file here or <span style="color:var(--primary);text-decoration:underline;">browse</span></div>
+            <div class="drag-drop-hint">LinkedIn Analytics export (.xlsx)</div>
+            <div class="drag-drop-file-name" id="up-file-name" style="display:none;font-weight:600;color:var(--text);margin-top:6px;"></div>
           </div>
         </div>
-        <div class="alert alert-info" style="margin-bottom:0;">
-          <strong>Coming soon.</strong> The data processing pipeline is being built. Upload functionality will be enabled in the next release.
-        </div>
+        <div id="up-preview" style="display:none;"></div>
+        <div id="up-error" style="display:none;" class="alert alert-danger"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="Utils.closeModal()">Cancel</button>
-        <button class="btn btn-primary" disabled>Upload and Process</button>
+        <button class="btn btn-primary" id="up-submit-btn" disabled>Upload and Process</button>
       </div>
     `)
 
-    document.getElementById('up-file-input')?.addEventListener('change', e => {
-      const file = e.target.files?.[0]
-      const nameEl = document.getElementById('up-file-name')
-      if (file && nameEl) { nameEl.textContent = file.name; nameEl.style.display = 'block' }
-    })
+    let _parsedPayload = null
 
     document.getElementById('up-client')?.addEventListener('change', e => {
       const c = _clients.find(cl => cl.id === e.target.value)
       const codeEl = document.getElementById('up-code')
       if (c && codeEl) codeEl.value = c.project_code
+      _resetPreview()
     })
+    document.getElementById('up-platform')?.addEventListener('change', _resetPreview)
+    document.getElementById('up-file-input')?.addEventListener('change', async e => {
+      const file = e.target.files?.[0]; if (!file) return
+      document.getElementById('up-file-name').textContent = file.name
+      document.getElementById('up-file-name').style.display = 'block'
+      _resetPreview(); await _parseFile(file)
+    })
+    document.getElementById('up-submit-btn')?.addEventListener('click', async () => {
+      if (!_parsedPayload) return
+      const clientId = document.getElementById('up-client')?.value
+      const platform = document.getElementById('up-platform')?.value?.toLowerCase()
+      await _doUpload({ ..._parsedPayload, client_id: clientId, platform })
+    })
+
+    function _resetPreview() {
+      _parsedPayload = null
+      const preview = document.getElementById('up-preview'), errEl = document.getElementById('up-error')
+      if (preview) { preview.style.display = 'none'; preview.innerHTML = '' }
+      if (errEl)   { errEl.style.display   = 'none'; errEl.textContent = '' }
+      const btn = document.getElementById('up-submit-btn'); if (btn) btn.disabled = true
+    }
+
+    function _showError(msg) {
+      const errEl = document.getElementById('up-error'); if (!errEl) return
+      errEl.textContent = msg; errEl.style.display = 'block'
+      const btn = document.getElementById('up-submit-btn'); if (btn) btn.disabled = true
+    }
+
+    async function _parseFile(file) {
+      const platform = document.getElementById('up-platform')?.value
+      if (platform === 'Instagram') { _showError('Instagram export parsing is not yet supported. Please upload a LinkedIn export.'); return }
+      if (typeof XLSX === 'undefined') { _showError('SheetJS library is not loaded. Please refresh the page and try again.'); return }
+
+      try {
+        const buf        = await file.arrayBuffer()
+        const wb         = XLSX.read(buf, { type: 'array', cellDates: false })
+        const sheetNames = wb.SheetNames.map(n => n.trim())
+        const metricsSheet = wb.Sheets[sheetNames.find(n => n.toLowerCase() === 'metrics')   || '']
+        const postsSheet   = wb.Sheets[sheetNames.find(n => n.toLowerCase() === 'all posts') || '']
+        if (!metricsSheet || !postsSheet) { _showError('Could not find "Metrics" and "All posts" sheets. Please upload a LinkedIn Analytics export.'); return }
+
+        const metricsRows = XLSX.utils.sheet_to_json(metricsSheet, { header: 1, defval: '' })
+        const postsRows   = XLSX.utils.sheet_to_json(postsSheet,   { header: 1, defval: '' })
+        if (metricsRows.length < 3 || postsRows.length < 3) { _showError('The file appears to be empty or incorrectly formatted.'); return }
+
+        const mHeaders = metricsRows[1].map(h => String(h).trim())
+        const pHeaders = postsRows[1].map(h => String(h).trim())
+        const mIdx = h => mHeaders.indexOf(h)
+        const pIdx = h => pHeaders.indexOf(h)
+
+        const metrics = []
+        for (let i = 2; i < metricsRows.length; i++) {
+          const row = metricsRows[i]
+          const date = _parseDate(String(row[mIdx('Date')] || ''))
+          if (!date) continue
+          metrics.push({
+            date,
+            impressions:                _num(row[mIdx('Impressions (total)')]),
+            reach:                      _num(row[mIdx('Unique impressions (organic)')]),
+            clicks:                     _num(row[mIdx('Clicks (total)')]),
+            reactions:                  _num(row[mIdx('Reactions (total)')]),
+            comments:                   _num(row[mIdx('Comments (total)')]),
+            reposts_shares:             _num(row[mIdx('Reposts (total)')]),
+            follows:                    0,
+            engagement_rate:            _num(row[mIdx('Engagement rate (total)')]),
+            impressions_organic:        _num(row[mIdx('Impressions (organic)')]),
+            impressions_sponsored:      _num(row[mIdx('Impressions (sponsored)')]),
+            unique_impressions_organic: _num(row[mIdx('Unique impressions (organic)')]),
+            clicks_organic:             _num(row[mIdx('Clicks (organic)')]),
+            clicks_sponsored:           _num(row[mIdx('Clicks (sponsored)')]),
+            reactions_organic:          _num(row[mIdx('Reactions (organic)')]),
+            reactions_sponsored:        _num(row[mIdx('Reactions (sponsored)')]),
+            comments_organic:           _num(row[mIdx('Comments (organic)')]),
+            comments_sponsored:         _num(row[mIdx('Comments (sponsored)')]),
+            reposts_organic:            _num(row[mIdx('Reposts (organic)')]),
+            reposts_sponsored:          _num(row[mIdx('Reposts (sponsored)')]),
+            engagement_rate_organic:    _num(row[mIdx('Engagement rate (organic)')]),
+            engagement_rate_sponsored:  _num(row[mIdx('Engagement rate (sponsored)')]),
+          })
+        }
+
+        const posts = []
+        for (let i = 2; i < postsRows.length; i++) {
+          const row = postsRows[i]
+          if (!row[pIdx('Post link')]) continue
+          const createdDate = _parseDate(String(row[pIdx('Created date')]))
+          posts.push({
+            post_title:          String(row[pIdx('Post title')] || '').slice(0, 2000),
+            post_url:            String(row[pIdx('Post link')]  || ''),
+            post_type:           String(row[pIdx('Post type')]  || ''),
+            content_type:        String(row[pIdx('Content Type')] || ''),
+            campaign_name:       String(row[pIdx('Campaign name')] || ''),
+            posted_by:           String(row[pIdx('Posted by')] || ''),
+            created_date:        createdDate,
+            campaign_start_date: _parseDate(String(row[pIdx('Campaign start date')] || '')),
+            campaign_end_date:   _parseDate(String(row[pIdx('Campaign end date')]   || '')),
+            audience:            String(row[pIdx('Audience')] || ''),
+            impressions:         _num(row[pIdx('Impressions')]),
+            views:               _num(row[pIdx('Views')]),
+            offsite_views:       _num(row[pIdx('Offsite Views')]),
+            clicks:              _num(row[pIdx('Clicks')]),
+            ctr:                 _num(row[pIdx('Click through rate (CTR)')]),
+            likes:               _num(row[pIdx('Likes')]),
+            comments:            _num(row[pIdx('Comments')]),
+            reposts_shares:      _num(row[pIdx('Reposts')]),
+            follows:             _num(row[pIdx('Follows')]),
+            engagement_rate:     _num(row[pIdx('Engagement rate')]),
+            saves:               0,
+          })
+        }
+
+        if (!metrics.length && !posts.length) { _showError('No data rows found in the file. Please check the export format.'); return }
+
+        const allDates = metrics.map(m => m.date).filter(Boolean).sort()
+        const dFrom    = allDates[0] || '—', dTo = allDates[allDates.length - 1] || '—'
+        _parsedPayload = { metrics, posts }
+
+        const preview = document.getElementById('up-preview')
+        if (preview) {
+          preview.style.display = 'block'
+          preview.innerHTML = `<div class="alert alert-info" style="margin-bottom:0;">
+            <strong>Ready to upload.</strong> Found <strong>${metrics.length}</strong> days of metrics + <strong>${posts.length}</strong> posts.<br>
+            Date range: <strong>${Utils.escapeHtml(dFrom)}</strong> to <strong>${Utils.escapeHtml(dTo)}</strong>.<br>
+            <span style="color:var(--warning,#B45309);font-size:12px;">This will overwrite existing data in this date range for the selected client.</span>
+          </div>`
+        }
+        const btn = document.getElementById('up-submit-btn'); if (btn) btn.disabled = false
+
+      } catch (err) {
+        console.error('[ClientDashboard] parse error', err)
+        _showError('Failed to parse file: ' + (err.message || 'Unknown error.'))
+      }
+    }
+
+    async function _doUpload(payload) {
+      const btn = document.getElementById('up-submit-btn')
+      if (btn) { btn.disabled = true; btn.textContent = 'Uploading…' }
+      try {
+        const result = await API.ingestAnalytics(payload)
+        if (result.error || result.success === false) {
+          if (btn) { btn.disabled = false; btn.textContent = 'Upload and Process' }
+          _showError(result.error || result.message || 'Upload failed. Please try again.')
+          return
+        }
+        Utils.closeModal()
+        Utils.showToast('Data uploaded successfully.', 'success')
+        _loadDashboard()
+      } catch (err) {
+        console.error('[ClientDashboard] upload error', err)
+        if (btn) { btn.disabled = false; btn.textContent = 'Upload and Process' }
+        _showError('Upload failed: ' + (err.message || 'Unknown error.'))
+      }
+    }
   }
 
-  /* ── Helpers ─────────────────────────────────────────────── */
-  function _thisMonth() {
-    const n = new Date()
-    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`
+  /* ── Helpers ────────────────────────────────────────────── */
+  function _thisMonth() { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}` }
+  function _num(val)    { const n = parseFloat(val); return isNaN(n) ? 0 : n }
+  function _parseDate(str) {
+    if (!str || typeof str !== 'string') return null
+    const [m, d, y] = str.split('/'); if (!m || !d || !y) return null
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+  }
+  function _shortDate(iso) {
+    if (!iso) return ''; const d = new Date(iso); if (isNaN(d)) return iso
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
   }
 
   return { render, init }

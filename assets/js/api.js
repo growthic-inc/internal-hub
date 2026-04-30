@@ -453,6 +453,75 @@ const API = (() => {
     return { url: data.publicUrl }
   }
 
+  /* ── Phase 9: Social Analytics ──────────────────────────────── */
+
+  /**
+   * Send parsed XLS data to the ingest-analytics Edge Function.
+   * The function handles: auth check, date-range delete, bulk insert, audit log.
+   * @param {object} payload { client_id, platform, metrics: [], posts: [] }
+   */
+  async function ingestAnalytics(payload) {
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(
+      `${Config.SUPABASE_URL}/functions/v1/ingest-analytics`,
+      {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+          'apikey':        Config.SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify(payload),
+      }
+    )
+    return res.json()
+  }
+
+  /**
+   * Fetch daily metrics for a client+platform in a date window.
+   * Returns rows ordered by date ASC.
+   */
+  async function getSocialMetrics(clientId, platform, dateFrom, dateTo) {
+    let q = supabase
+      .from('social_metrics_daily')
+      .select('*')
+      .eq('client_id', clientId)
+      .eq('platform', platform.toLowerCase())
+      .order('date', { ascending: true })
+    if (dateFrom) q = q.gte('date', dateFrom)
+    if (dateTo)   q = q.lte('date', dateTo)
+    return q
+  }
+
+  /**
+   * Fetch individual posts for a client+platform in a date window.
+   * Returns rows ordered by engagement_rate DESC (best posts first).
+   */
+  async function getSocialPosts(clientId, platform, dateFrom, dateTo) {
+    let q = supabase
+      .from('social_posts')
+      .select('*')
+      .eq('client_id', clientId)
+      .eq('platform', platform.toLowerCase())
+      .order('engagement_rate', { ascending: false })
+    if (dateFrom) q = q.gte('created_date', dateFrom)
+    if (dateTo)   q = q.lte('created_date', dateTo)
+    return q
+  }
+
+  /**
+   * Fetch the upload history for a client+platform (last 10 uploads).
+   */
+  async function getAnalyticsUploadLog(clientId, platform) {
+    return supabase
+      .from('analytics_upload_log')
+      .select('*, uploaded_by_emp:employees!uploaded_by(name)')
+      .eq('client_id', clientId)
+      .eq('platform', platform.toLowerCase())
+      .order('uploaded_at', { ascending: false })
+      .limit(10)
+  }
+
   /* ── Home dashboard data (Phase 8) ──────────────────────────── */
   async function getHomeLeaveData(employeeId, year) {
     const [creditsRes, requestsRes] = await Promise.all([
@@ -802,6 +871,8 @@ const API = (() => {
     getNotificationPreferences, upsertNotificationPreference,
     getDepartmentPermissions, saveDepartmentPermissions,
     getAccessMatrix, getAllDeptAccessMatrix, saveAccessMatrix,
+    // Phase 9 — Social Analytics
+    ingestAnalytics, getSocialMetrics, getSocialPosts, getAnalyticsUploadLog,
     // Phase 8
     createEmployee, updateOwnProfile, uploadAvatar,
     getHomeLeaveData, getUpcomingHolidays, getRecentAnnouncements,
