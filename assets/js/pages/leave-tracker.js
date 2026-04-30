@@ -113,7 +113,7 @@ const LeaveTracker = (() => {
       q.month === month &&
       q.year === year
     )
-    if (individual) return individual.max_days_per_month
+    if (individual) return individual.max_days
 
     const dept = quotas.find(q =>
       q.scope === 'department' &&
@@ -121,7 +121,7 @@ const LeaveTracker = (() => {
       q.month === month &&
       q.year === year
     )
-    if (dept) return dept.max_days_per_month
+    if (dept) return dept.max_days
 
     return null // unlimited
   }
@@ -1422,11 +1422,21 @@ const LeaveTracker = (() => {
             </div>
             <div class="form-group" style="margin-bottom:0;" id="lt-q-dept-wrap">
               <label class="form-label">Department</label>
-              <input class="form-input" type="text" id="lt-q-dept" placeholder="e.g. creative" />
+              <select class="form-select" id="lt-q-dept">
+                <option value="">— Select department —</option>
+                ${[...new Set(_employees.map(e => e.department).filter(Boolean))].sort().map(slug =>
+                  `<option value="${slug}">${Utils.escapeHtml(Utils.getDeptLabel(slug))}</option>`
+                ).join('')}
+              </select>
             </div>
             <div class="form-group" style="margin-bottom:0;" id="lt-q-emp-wrap" style="display:none;">
-              <label class="form-label">Employee ID</label>
-              <input class="form-input" type="text" id="lt-q-emp" placeholder="Employee UUID" />
+              <label class="form-label">Employee</label>
+              <select class="form-select" id="lt-q-emp">
+                <option value="">— Select employee —</option>
+                ${_employees.filter(e => e.status === 'active').sort((a,b) => a.name.localeCompare(b.name)).map(e =>
+                  `<option value="${e.id}">${Utils.escapeHtml(e.name)}</option>`
+                ).join('')}
+              </select>
             </div>
             <div class="form-group" style="margin-bottom:0;">
               <label class="form-label">Max Days/Month</label>
@@ -1543,7 +1553,7 @@ const LeaveTracker = (() => {
             <tr>
               <td>${q.scope === 'individual' ? 'Individual' : 'Department'}</td>
               <td>${q.scope === 'individual' ? Utils.escapeHtml(q.employees?.name || q.employee_id) : Utils.escapeHtml(q.department || '—')}</td>
-              <td>${q.max_days_per_month}</td>
+              <td>${q.max_days}</td>
               <td>
                 <button class="btn btn--xs btn--ghost" data-delete-quota="${q.id}"
                   style="color:var(--danger);">Delete</button>
@@ -1708,14 +1718,14 @@ const LeaveTracker = (() => {
       const [selYear, selMonth] = (document.getElementById('lt-quota-month')?.value || `${curYear}-${String(curMonth).padStart(2,'0')}`).split('-').map(Number)
       if (!maxDays || maxDays < 1) { Utils.showToast('Enter a valid max days value.', 'error'); return }
 
-      const payload = { scope, max_days_per_month: maxDays, month: selMonth, year: selYear }
+      const payload = { scope, max_days: maxDays, month: selMonth, year: selYear }
       if (scope === 'department') {
-        const dept = document.getElementById('lt-q-dept').value.trim()
-        if (!dept) { Utils.showToast('Enter a department.', 'error'); return }
+        const dept = document.getElementById('lt-q-dept').value
+        if (!dept) { Utils.showToast('Select a department.', 'error'); return }
         payload.department = dept
       } else {
-        const empId = document.getElementById('lt-q-emp').value.trim()
-        if (!empId) { Utils.showToast('Enter an employee ID.', 'error'); return }
+        const empId = document.getElementById('lt-q-emp').value
+        if (!empId) { Utils.showToast('Select an employee.', 'error'); return }
         payload.employee_id = empId
       }
 
