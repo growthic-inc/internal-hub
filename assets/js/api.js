@@ -564,14 +564,17 @@ const API = (() => {
 
   /* ── WFH Quotas (Phase 7) ─────────────────────────────────── */
   async function getWfhQuotas(month, year) {
-    let q = supabase.from('wfh_quotas').select('*, employees!employee_id(name)').order('scope')
+    // Plain select — employee names resolved on the frontend from _employees cache
+    let q = supabase.from('wfh_quotas').select('*').order('scope')
     if (month) q = q.eq('month', month)
     if (year)  q = q.eq('year', year)
     return q
   }
 
-  async function upsertWfhQuota(data) {
-    return supabase.from('wfh_quotas').upsert(data, { onConflict: 'employee_id,month,year' }).select().single()
+  async function createWfhQuota(data) {
+    // Use insert (not upsert) — partial unique indexes on wfh_quotas are not
+    // recognised as conflict targets by PostgREST, causing fetch errors.
+    return supabase.from('wfh_quotas').insert(data).select().single()
   }
 
   async function deleteWfhQuota(id) {
@@ -716,7 +719,7 @@ const API = (() => {
     createLeaveRequest, updateLeaveRequest,
     getMyWfhRequests, getPendingWfhApprovals, getHRWfhQueue, getAllWfhRequests,
     createWfhRequest, updateWfhRequest,
-    getWfhQuotas, upsertWfhQuota, deleteWfhQuota,
+    getWfhQuotas, createWfhQuota, deleteWfhQuota,
     getCompanyHolidays, addCompanyHoliday, deleteCompanyHoliday,
     getCompanyEvents, createCompanyEvent, updateCompanyEvent, deleteCompanyEvent,
     getAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement,

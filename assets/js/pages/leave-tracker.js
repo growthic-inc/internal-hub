@@ -1362,17 +1362,19 @@ const LeaveTracker = (() => {
     const curMonth = now.getMonth() + 1
     const curYear  = now.getFullYear()
 
-    const [ltRes, holRes, evtRes, quotaRes] = await Promise.all([
+    const [ltRes, holRes, evtRes, quotaRes, creditsRes] = await Promise.all([
       API.getLeaveTypes(),
       API.getCompanyHolidays(curYear),
       API.getCompanyEvents(curYear),
       API.getWfhQuotas(null, curYear),
+      API.getAllLeaveCredits(curYear),
     ])
 
-    const allLeaveTypes = ltRes.data    || []
-    const allHolidays   = holRes.data   || []
-    const allEvents     = evtRes.data   || []
-    const allQuotas     = quotaRes.data || []
+    const allLeaveTypes = ltRes.data       || []
+    const allHolidays   = holRes.data      || []
+    const allEvents     = evtRes.data      || []
+    const allQuotas     = quotaRes.data    || []
+    const allCredits    = creditsRes.data  || []
 
     content.innerHTML = `
       <!-- ── Leave Types ── -->
@@ -1473,6 +1475,61 @@ const LeaveTracker = (() => {
         </div>
       </div>
 
+      <!-- ── Leave Credits ── -->
+      <div class="lt-settings-section section-card mb-4">
+        <div class="section-card-header">
+          <h3>Leave Allocations</h3>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <input class="form-input" type="number" id="lt-credits-year"
+              value="${curYear}" min="2020" max="2099"
+              style="width:80px;text-align:center;" />
+            <button class="btn btn--primary btn--sm" id="lt-add-credit-btn">+ Add Allocation</button>
+          </div>
+        </div>
+        <div class="section-card-body" style="padding:0;" id="lt-credits-body">
+          ${_renderCreditsTable(allCredits, allLeaveTypes)}
+        </div>
+        <div id="lt-add-credit-form" style="display:none;padding:14px 16px;border-top:1px solid var(--border);">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:flex-end;margin-bottom:10px;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Employee</label>
+              <select class="form-select" id="lt-lc-emp">
+                <option value="">— Select employee —</option>
+                ${_employees.filter(e => e.status === 'active').sort((a,b) => a.name.localeCompare(b.name)).map(e =>
+                  `<option value="${e.id}">${Utils.escapeHtml(e.name)}</option>`
+                ).join('')}
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Leave Type</label>
+              <select class="form-select" id="lt-lc-type">
+                <option value="">— Select type —</option>
+                ${allLeaveTypes.filter(t => t.is_active).map(t =>
+                  `<option value="${t.id}">${Utils.escapeHtml(t.name)}</option>`
+                ).join('')}
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Days</label>
+              <input class="form-input" type="number" id="lt-lc-days" min="0.5" step="0.5" placeholder="e.g. 12" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Year</label>
+              <input class="form-input" type="number" id="lt-lc-year-field"
+                value="${curYear}" min="2020" max="2099" style="width:80px;" />
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:10px;">
+            <label class="form-label">Notes (optional)</label>
+            <input class="form-input" type="text" id="lt-lc-notes" placeholder="e.g. Annual allocation 2026" />
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn--primary btn--sm" id="lt-save-credit-btn">Save Allocation</button>
+            <button class="btn btn--ghost btn--sm" id="lt-cancel-credit-btn">Cancel</button>
+          </div>
+        </div>
+      </div>
+
       <!-- ── Company Events ── -->
       <div class="lt-settings-section section-card">
         <div class="section-card-header">
@@ -1509,7 +1566,7 @@ const LeaveTracker = (() => {
       </div>
     `
 
-    _bindSettingsActions(allLeaveTypes, allQuotas, allHolidays, allEvents, curMonth, curYear)
+    _bindSettingsActions(allLeaveTypes, allQuotas, allHolidays, allEvents, allCredits, curMonth, curYear)
   }
 
   /* ── Leave Types table ────────────────────────────────── */
@@ -1552,7 +1609,10 @@ const LeaveTracker = (() => {
           ${filtered.map(q => `
             <tr>
               <td>${q.scope === 'individual' ? 'Individual' : 'Department'}</td>
-              <td>${q.scope === 'individual' ? Utils.escapeHtml(q.employees?.name || q.employee_id) : Utils.escapeHtml(q.department || '—')}</td>
+              <td>${q.scope === 'individual'
+                    ? Utils.escapeHtml((_employees.find(e => e.id === q.employee_id)?.name) || q.employee_id || '—')
+                    : Utils.escapeHtml(Utils.getDeptLabel(q.department) || q.department || '—')
+                  }</td>
               <td>${q.max_days}</td>
               <td>
                 <button class="btn btn--xs btn--ghost" data-delete-quota="${q.id}"
@@ -1617,8 +1677,44 @@ const LeaveTracker = (() => {
     `
   }
 
+  /* ── Leave Credits table ──────────────────────────────── */
+  function _renderCreditsTable(credits, leaveTypes) {
+    if (!credits.length) return '<p class="empty-state">No allocations yet. Use "+ Add Allocation" to credit leave days to employees.</p>'
+    return `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Employee</th>
+            <th>Leave Type</th>
+            <th>Days</th>
+            <th>Year</th>
+            <th>Notes</th>
+            <th>Credited By</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${credits.map(c => `
+            <tr>
+              <td>${Utils.escapeHtml(c.employees?.name || '—')}</td>
+              <td>${Utils.escapeHtml(c.leave_types?.name || '—')}</td>
+              <td><strong>${c.credited_days}</strong></td>
+              <td>${c.year}</td>
+              <td class="text-muted" style="font-size:12px;">${Utils.escapeHtml(c.notes || '—')}</td>
+              <td style="font-size:12px;">${Utils.escapeHtml(c.credited_by_emp?.name || '—')}</td>
+              <td>
+                <button class="btn btn--xs btn--ghost" data-delete-credit="${c.id}"
+                  style="color:var(--danger);">Delete</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `
+  }
+
   /* ── Settings event binding ───────────────────────────── */
-  function _bindSettingsActions(allLeaveTypes, allQuotas, allHolidays, allEvents, curMonth, curYear) {
+  function _bindSettingsActions(allLeaveTypes, allQuotas, allHolidays, allEvents, allCredits, curMonth, curYear) {
 
     /* ── Leave Type actions ── */
     document.getElementById('lt-add-type-btn')?.addEventListener('click', () => {
@@ -1688,6 +1784,55 @@ const LeaveTracker = (() => {
       })
     })
 
+    /* ── Leave Credits (Allocations) actions ── */
+    document.getElementById('lt-credits-year')?.addEventListener('change', async function () {
+      const yr = parseInt(this.value, 10)
+      if (!yr || yr < 2020) return
+      const res = await API.getAllLeaveCredits(yr)
+      const body = document.getElementById('lt-credits-body')
+      if (body) body.innerHTML = _renderCreditsTable(res.data || [], allLeaveTypes)
+      _bindCreditDeleteButtons()
+    })
+
+    document.getElementById('lt-add-credit-btn')?.addEventListener('click', () => {
+      document.getElementById('lt-add-credit-form').style.display = 'block'
+      document.getElementById('lt-lc-emp').focus()
+    })
+    document.getElementById('lt-cancel-credit-btn')?.addEventListener('click', () => {
+      document.getElementById('lt-add-credit-form').style.display = 'none'
+    })
+    document.getElementById('lt-save-credit-btn')?.addEventListener('click', async () => {
+      const empId       = document.getElementById('lt-lc-emp').value
+      const leaveTypeId = document.getElementById('lt-lc-type').value
+      const days        = parseFloat(document.getElementById('lt-lc-days').value)
+      const year        = parseInt(document.getElementById('lt-lc-year-field').value, 10)
+      const notes       = document.getElementById('lt-lc-notes').value.trim()
+
+      if (!empId)       { Utils.showToast('Select an employee.', 'error');   return }
+      if (!leaveTypeId) { Utils.showToast('Select a leave type.', 'error');  return }
+      if (!days || days < 0.5) { Utils.showToast('Enter valid days (min 0.5).', 'error'); return }
+      if (!year || year < 2020) { Utils.showToast('Enter a valid year.', 'error'); return }
+
+      const payload = {
+        employee_id:   empId,
+        leave_type_id: leaveTypeId,
+        credited_days: days,
+        year,
+        credited_by:   _user.id,
+      }
+      if (notes) payload.notes = notes
+
+      const btn = document.getElementById('lt-save-credit-btn')
+      btn.disabled = true
+      const { error } = await API.addLeaveCredit(payload)
+      btn.disabled = false
+      if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
+      Utils.showToast('Leave allocation saved.', 'success')
+      _loadSettingsTab()
+    })
+
+    _bindCreditDeleteButtons()
+
     /* ── WFH Quota actions ── */
     const quotaMonthEl = document.getElementById('lt-quota-month')
     quotaMonthEl?.addEventListener('change', async () => {
@@ -1731,7 +1876,7 @@ const LeaveTracker = (() => {
 
       const btn = document.getElementById('lt-save-quota-btn')
       btn.disabled = true
-      const { error } = await API.upsertWfhQuota(payload)
+      const { error } = await API.createWfhQuota(payload)
       btn.disabled = false
       if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
       Utils.showToast('WFH quota saved.', 'success')
@@ -1860,6 +2005,23 @@ const LeaveTracker = (() => {
         const body = document.getElementById('lt-wfh-quotas-body')
         if (body) body.innerHTML = _renderWfhQuotasTable(res.data || [], m, y)
         _bindQuotaDeleteButtons()
+      })
+    })
+  }
+
+  function _bindCreditDeleteButtons() {
+    document.querySelectorAll('[data-delete-credit]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this leave allocation? This will reduce the employee\'s leave balance.')) return
+        const { error } = await API.deleteLeaveCredit(btn.dataset.deleteCredit)
+        if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
+        Utils.showToast('Allocation deleted.', 'success')
+        const yr  = parseInt(document.getElementById('lt-credits-year')?.value || new Date().getFullYear(), 10)
+        const res = await API.getAllLeaveCredits(yr)
+        const body = document.getElementById('lt-credits-body')
+        const ltRes = await API.getLeaveTypes()
+        if (body) body.innerHTML = _renderCreditsTable(res.data || [], ltRes.data || [])
+        _bindCreditDeleteButtons()
       })
     })
   }
