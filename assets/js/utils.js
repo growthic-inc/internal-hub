@@ -54,7 +54,9 @@ const Utils = (() => {
 
   /* ── Role display labels ──────────────────────────────────── */
   const ROLE_LABELS = {
-    super_admin:     'Super Admin',
+    super_admin: 'Super Admin',
+    employee:    'Employee',
+    // Legacy values — kept so old data still renders correctly
     founders_office: "Founder's Office",
     team_lead:       'Team Lead',
     bde:             'Business Development',
@@ -63,6 +65,7 @@ const Utils = (() => {
     finance:         'Finance',
   }
 
+  // Static fallback labels — used if departments table hasn't loaded yet
   const DEPT_LABELS = {
     management:           'Management',
     operations_growth:    'Operations & Growth',
@@ -74,8 +77,41 @@ const Utils = (() => {
     finance:              'Finance',
   }
 
+  // Dynamic department cache — populated by People/Leave modules after
+  // loading from API.getDepartments(). Falls back to DEPT_LABELS if empty.
+  let _deptCache = {}
+
+  function setDeptCache(departments) {
+    _deptCache = {}
+    ;(departments || []).forEach(d => { _deptCache[d.slug] = d.name })
+  }
+
   function getDeptLabel(dept) {
-    return DEPT_LABELS[dept] || dept
+    return _deptCache[dept] || DEPT_LABELS[dept] || dept
+  }
+
+  /* ── Employment type labels ───────────────────────────────── */
+  const EMPLOYMENT_TYPE_LABELS = {
+    full_time:  'Full Time',
+    part_time:  'Part Time',
+    freelancer: 'Freelancer',
+    intern:     'Intern',
+    probation:  'Probation',
+  }
+
+  function getEmploymentTypeLabel(type) {
+    return EMPLOYMENT_TYPE_LABELS[type] || type
+  }
+
+  /* ── Work location labels ─────────────────────────────────── */
+  const WORK_LOCATION_LABELS = {
+    office: 'Office',
+    remote: 'Remote',
+    hybrid: 'Hybrid',
+  }
+
+  function getWorkLocationLabel(loc) {
+    return WORK_LOCATION_LABELS[loc] || loc
   }
 
   const EXPENSE_LABELS = {
@@ -202,7 +238,10 @@ const Utils = (() => {
     truncate,
     getRoleLabel,
     getDeptLabel,
+    setDeptCache,
     getExpenseLabel,
+    getEmploymentTypeLabel,
+    getWorkLocationLabel,
     showToast,
     openModal,
     closeModal,
@@ -212,5 +251,7 @@ const Utils = (() => {
     on,
     debounce,
     canAccess,
+    EMPLOYMENT_TYPE_LABELS,
+    WORK_LOCATION_LABELS,
   }
 })()

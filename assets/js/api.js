@@ -388,6 +388,307 @@ const API = (() => {
       .upsert(rows, { onConflict: 'department,module,feature' })
   }
 
+  /* ── Departments (Phase 7 — dynamic registry) ────────────── */
+  async function getDepartments() {
+    return supabase.from('departments').select('*').order('name')
+  }
+
+  async function addDepartment(slug, name) {
+    return supabase.from('departments').insert({ slug, name }).select().single()
+  }
+
+  async function deleteDepartment(id) {
+    return supabase.from('departments').delete().eq('id', id)
+  }
+
+  /* ── Employees — full profile (Phase 7) ──────────────────── */
+  async function getEmployeesFull() {
+    return supabase
+      .from('employees')
+      .select(`
+        id, employee_id, name, email, personal_email, phone_number,
+        date_of_birth, role, department, designation, employment_type,
+        work_location, profile_image_url,
+        emergency_contact_name, emergency_contact_relationship, emergency_contact_phone,
+        status, joining_date, probation_completed, probation_completed_date,
+        manager_id, manager:employees!manager_id(id, name, designation)
+      `)
+      .order('name')
+  }
+
+  async function updateEmployeeFull(employeeId, data) {
+    return supabase.from('employees').update(data).eq('id', employeeId)
+  }
+
+  /* ── Org Chart (Phase 7) ──────────────────────────────────── */
+  async function getOrgChart() {
+    return supabase.rpc('get_org_chart')
+  }
+
+  /* ── Leave Types (Phase 7) ────────────────────────────────── */
+  async function getLeaveTypes(activeOnly = false) {
+    let q = supabase.from('leave_types').select('*').order('name')
+    if (activeOnly) q = q.eq('is_active', true)
+    return q
+  }
+
+  async function createLeaveType(data) {
+    return supabase.from('leave_types').insert(data).select().single()
+  }
+
+  async function updateLeaveType(id, data) {
+    return supabase.from('leave_types').update(data).eq('id', id)
+  }
+
+  async function deleteLeaveType(id) {
+    return supabase.from('leave_types').delete().eq('id', id)
+  }
+
+  /* ── Leave Credits (Phase 7) ──────────────────────────────── */
+  async function getLeaveCredits(employeeId, year) {
+    return supabase
+      .from('leave_credits')
+      .select('*, leave_types(name), credited_by_emp:employees!credited_by(name)')
+      .eq('employee_id', employeeId)
+      .eq('year', year)
+      .order('created_at', { ascending: false })
+  }
+
+  async function getAllLeaveCredits(year) {
+    return supabase
+      .from('leave_credits')
+      .select('*, employees!employee_id(name, employee_id, department), leave_types(name), credited_by_emp:employees!credited_by(name)')
+      .eq('year', year)
+      .order('created_at', { ascending: false })
+  }
+
+  async function addLeaveCredit(data) {
+    return supabase.from('leave_credits').insert(data).select().single()
+  }
+
+  async function deleteLeaveCredit(id) {
+    return supabase.from('leave_credits').delete().eq('id', id)
+  }
+
+  /* ── Leave Requests (Phase 7) ─────────────────────────────── */
+  async function getMyLeaveRequests(employeeId) {
+    return supabase
+      .from('leave_requests')
+      .select('*, leave_types(name), approver:employees!approver_id(name)')
+      .eq('employee_id', employeeId)
+      .order('created_at', { ascending: false })
+  }
+
+  async function getPendingLeaveApprovals(approverId) {
+    // Returns requests where this manager is the approver (pending + cancellation_pending)
+    // Also returns NULL-approver requests for HR
+    return supabase
+      .from('leave_requests')
+      .select('*, leave_types(name), employee:employees!employee_id(id, name, department, profile_image_url)')
+      .eq('approver_id', approverId)
+      .in('status', ['pending', 'cancellation_pending'])
+      .order('created_at', { ascending: true })
+  }
+
+  async function getHRLeaveQueue() {
+    // Requests with no approver (top-level employees) — for HR
+    return supabase
+      .from('leave_requests')
+      .select('*, leave_types(name), employee:employees!employee_id(id, name, department, profile_image_url)')
+      .is('approver_id', null)
+      .in('status', ['pending', 'cancellation_pending'])
+      .order('created_at', { ascending: true })
+  }
+
+  async function getAllLeaveRequests(filters = {}) {
+    let q = supabase
+      .from('leave_requests')
+      .select('*, leave_types(name), employee:employees!employee_id(id, name, department), approver:employees!approver_id(name)')
+      .order('created_at', { ascending: false })
+    if (filters.status) q = q.eq('status', filters.status)
+    if (filters.employeeId) q = q.eq('employee_id', filters.employeeId)
+    return q
+  }
+
+  async function createLeaveRequest(data) {
+    return supabase.from('leave_requests').insert(data).select().single()
+  }
+
+  async function updateLeaveRequest(id, data) {
+    return supabase.from('leave_requests').update(data).eq('id', id)
+  }
+
+  /* ── WFH Requests (Phase 7) ───────────────────────────────── */
+  async function getMyWfhRequests(employeeId) {
+    return supabase
+      .from('wfh_requests')
+      .select('*, approver:employees!approver_id(name)')
+      .eq('employee_id', employeeId)
+      .order('created_at', { ascending: false })
+  }
+
+  async function getPendingWfhApprovals(approverId) {
+    return supabase
+      .from('wfh_requests')
+      .select('*, employee:employees!employee_id(id, name, department, profile_image_url)')
+      .eq('approver_id', approverId)
+      .in('status', ['pending', 'cancellation_pending'])
+      .order('created_at', { ascending: true })
+  }
+
+  async function getHRWfhQueue() {
+    return supabase
+      .from('wfh_requests')
+      .select('*, employee:employees!employee_id(id, name, department, profile_image_url)')
+      .is('approver_id', null)
+      .in('status', ['pending', 'cancellation_pending'])
+      .order('created_at', { ascending: true })
+  }
+
+  async function getAllWfhRequests(filters = {}) {
+    let q = supabase
+      .from('wfh_requests')
+      .select('*, employee:employees!employee_id(id, name, department), approver:employees!approver_id(name)')
+      .order('created_at', { ascending: false })
+    if (filters.status) q = q.eq('status', filters.status)
+    return q
+  }
+
+  async function createWfhRequest(data) {
+    return supabase.from('wfh_requests').insert(data).select().single()
+  }
+
+  async function updateWfhRequest(id, data) {
+    return supabase.from('wfh_requests').update(data).eq('id', id)
+  }
+
+  /* ── WFH Quotas (Phase 7) ─────────────────────────────────── */
+  async function getWfhQuotas(month, year) {
+    let q = supabase.from('wfh_quotas').select('*, employees!employee_id(name)').order('scope')
+    if (month) q = q.eq('month', month)
+    if (year)  q = q.eq('year', year)
+    return q
+  }
+
+  async function upsertWfhQuota(data) {
+    return supabase.from('wfh_quotas').upsert(data, { onConflict: 'employee_id,month,year' }).select().single()
+  }
+
+  async function deleteWfhQuota(id) {
+    return supabase.from('wfh_quotas').delete().eq('id', id)
+  }
+
+  /* ── Company Holidays (Phase 7) ───────────────────────────── */
+  async function getCompanyHolidays(year) {
+    let q = supabase.from('company_holidays').select('*').order('date')
+    if (year) q = q.gte('date', `${year}-01-01`).lte('date', `${year}-12-31`)
+    return q
+  }
+
+  async function addCompanyHoliday(data) {
+    return supabase.from('company_holidays').insert(data).select().single()
+  }
+
+  async function deleteCompanyHoliday(id) {
+    return supabase.from('company_holidays').delete().eq('id', id)
+  }
+
+  /* ── Company Events (Phase 7) ─────────────────────────────── */
+  async function getCompanyEvents(year) {
+    let q = supabase.from('company_events').select('*, created_by_emp:employees!created_by(name)').order('start_date')
+    if (year) q = q.gte('start_date', `${year}-01-01`).lte('start_date', `${year}-12-31`)
+    return q
+  }
+
+  async function createCompanyEvent(data) {
+    return supabase.from('company_events').insert(data).select().single()
+  }
+
+  async function updateCompanyEvent(id, data) {
+    return supabase.from('company_events').update(data).eq('id', id)
+  }
+
+  async function deleteCompanyEvent(id) {
+    return supabase.from('company_events').delete().eq('id', id)
+  }
+
+  /* ── Announcements (Phase 7) ──────────────────────────────── */
+  async function getAnnouncements() {
+    return supabase
+      .from('announcements')
+      .select('*, author:employees!created_by(name, profile_image_url)')
+      .order('created_at', { ascending: false })
+  }
+
+  async function createAnnouncement(data) {
+    return supabase.from('announcements').insert(data).select().single()
+  }
+
+  async function updateAnnouncement(id, data) {
+    return supabase.from('announcements').update(data).eq('id', id)
+  }
+
+  async function deleteAnnouncement(id) {
+    return supabase.from('announcements').delete().eq('id', id)
+  }
+
+  async function getAnnouncementReactions(announcementId) {
+    return supabase
+      .from('announcement_reactions')
+      .select('reaction, employee_id')
+      .eq('announcement_id', announcementId)
+  }
+
+  async function addReaction(announcementId, employeeId, reaction) {
+    return supabase
+      .from('announcement_reactions')
+      .insert({ announcement_id: announcementId, employee_id: employeeId, reaction })
+  }
+
+  async function removeReaction(announcementId, employeeId, reaction) {
+    return supabase
+      .from('announcement_reactions')
+      .delete()
+      .eq('announcement_id', announcementId)
+      .eq('employee_id', employeeId)
+      .eq('reaction', reaction)
+  }
+
+  /* ── Policy Categories (Phase 7) ──────────────────────────── */
+  async function getPolicyCategories() {
+    return supabase.from('policy_categories').select('*').order('name')
+  }
+
+  async function addPolicyCategory(name, createdBy) {
+    return supabase.from('policy_categories').insert({ name, created_by: createdBy }).select().single()
+  }
+
+  async function deletePolicyCategory(id) {
+    return supabase.from('policy_categories').delete().eq('id', id)
+  }
+
+  /* ── Policies (Phase 7) ───────────────────────────────────── */
+  async function getPolicies(categoryId = null) {
+    let q = supabase
+      .from('policies')
+      .select('*, category:policy_categories(name), author:employees!created_by(name)')
+      .order('title')
+    if (categoryId) q = q.eq('category_id', categoryId)
+    return q
+  }
+
+  async function createPolicy(data) {
+    return supabase.from('policies').insert(data).select().single()
+  }
+
+  async function updatePolicy(id, data) {
+    return supabase.from('policies').update(data).eq('id', id)
+  }
+
+  async function deletePolicy(id) {
+    return supabase.from('policies').delete().eq('id', id)
+  }
+
   return {
     getClients, getClient, getClientByProjectCode,
     getEmployees, getEmployee, getTeamLeads, getAllEmployees,
@@ -405,5 +706,22 @@ const API = (() => {
     getNotificationPreferences, upsertNotificationPreference,
     getDepartmentPermissions, saveDepartmentPermissions,
     getAccessMatrix, getAllDeptAccessMatrix, saveAccessMatrix,
+    // Phase 7
+    getDepartments, addDepartment, deleteDepartment,
+    getEmployeesFull, updateEmployeeFull,
+    getOrgChart,
+    getLeaveTypes, createLeaveType, updateLeaveType, deleteLeaveType,
+    getLeaveCredits, getAllLeaveCredits, addLeaveCredit, deleteLeaveCredit,
+    getMyLeaveRequests, getPendingLeaveApprovals, getHRLeaveQueue, getAllLeaveRequests,
+    createLeaveRequest, updateLeaveRequest,
+    getMyWfhRequests, getPendingWfhApprovals, getHRWfhQueue, getAllWfhRequests,
+    createWfhRequest, updateWfhRequest,
+    getWfhQuotas, upsertWfhQuota, deleteWfhQuota,
+    getCompanyHolidays, addCompanyHoliday, deleteCompanyHoliday,
+    getCompanyEvents, createCompanyEvent, updateCompanyEvent, deleteCompanyEvent,
+    getAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement,
+    getAnnouncementReactions, addReaction, removeReaction,
+    getPolicyCategories, addPolicyCategory, deletePolicyCategory,
+    getPolicies, createPolicy, updatePolicy, deletePolicy,
   }
 })()
