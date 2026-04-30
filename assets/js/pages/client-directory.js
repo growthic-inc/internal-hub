@@ -65,16 +65,16 @@ const ClientDirectory = (() => {
   /* ── Document helpers ───────────────────────────────────────── */
 
   // Uploads to Google Drive via the upload-client-doc Edge Function.
-  // Returns the Drive webViewLink (https://drive.google.com/file/d/.../view)
-  // which is stored directly in the DB column.
-  async function _uploadClientDoc(clientId, file, type) {
+  // clientName is passed directly — no DB lookup needed (works for new clients too).
+  // Returns a Drive /view URL stored directly in the DB column.
+  async function _uploadClientDoc(clientName, file, type) {
     const { data: { session } } = await Config.supabase.auth.getSession()
     if (!session) throw new Error('Not authenticated')
 
     const form = new FormData()
-    form.append('file',      file)
-    form.append('client_id', clientId)
-    form.append('doc_type',  type)   // 'brand_guidelines' | 'service_agreement'
+    form.append('file',        file)
+    form.append('client_name', clientName)
+    form.append('doc_type',    type)   // 'brand_guidelines' | 'service_agreement'
 
     const res = await fetch(
       `${Config.SUPABASE_URL}/functions/v1/upload-client-doc`,
@@ -84,11 +84,11 @@ const ClientDirectory = (() => {
         body:    form,
       }
     )
-    const json = await res.json()
-    if (!res.ok || !json.driveUrl) {
-      throw new Error(json.error || 'Document upload failed')
+    const payload = await res.json()
+    if (!res.ok || !payload.driveUrl) {
+      throw new Error(payload.error || 'Document upload failed')
     }
-    return json.driveUrl   // store the Drive URL directly in DB
+    return payload.driveUrl   // store the Drive URL directly in DB
   }
 
   // Drive URLs are plain https:// links — no signed URL needed.
@@ -860,15 +860,15 @@ const ClientDirectory = (() => {
       // Pre-generate UUID for new clients so files can be uploaded before DB insert
       const clientId = isEdit ? _editingClientId : crypto.randomUUID()
 
-      /* Upload any new files first */
+      /* Upload any new files first — pass client name directly, no DB lookup */
       let bgUrl = _existingBgUrl
       let saUrl = _existingSaUrl
 
       if (_files.bg) {
-        bgUrl = await _uploadClientDoc(clientId, _files.bg, 'brand_guidelines')
+        bgUrl = await _uploadClientDoc(name, _files.bg, 'brand_guidelines')
       }
       if (_files.sa && _canCommercial()) {
-        saUrl = await _uploadClientDoc(clientId, _files.sa, 'service_agreement')
+        saUrl = await _uploadClientDoc(name, _files.sa, 'service_agreement')
       }
 
       /* Build client record — category must match DB check constraint exactly */
