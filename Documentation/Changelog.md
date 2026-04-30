@@ -5,6 +5,74 @@ Format: `[version] — date — summary`
 
 ---
 
+## [0.6.0] — 2026-04-30 — Client Directory: document uploads, entity services, overview field
+
+### Edge Function — upload-client-doc (new)
+
+- New Deno Edge Function at `supabase/functions/upload-client-doc/index.ts`
+- Uploads brand guidelines and service agreements to Google Drive
+- Drive folder hierarchy: `Client Documents / {clientName} / Brand Guidelines|Service Agreements / {filename}`
+- Accepts `client_name` directly from the form — no DB lookup performed, so uploads work for new clients before their row is inserted
+- Files set to `reader: anyone with link` via Drive Permissions API so links open without a Google login
+- DOCX/DOC `webViewLink` fix: Drive returns `...edit?rtpof=true` for Office files which gives readers a 503; Edge Function rewrites to `/view` for Google Docs, Sheets, Slides and `drive.google.com/file/d/.../view` for PDFs and native files
+- Returns `{ driveUrl }` — stored directly in `clients.brand_guidelines_url` / `clients.service_agreement_url`
+- Added `supabase/config.toml` so the Supabase CLI can locate functions during deploy (was causing "no such file or directory" error on `supabase functions deploy`)
+
+### Client Directory — document upload & preview
+
+- Brand guidelines and service agreement upload replaced from Supabase Storage (forced download) to Google Drive (native preview in browser)
+- File picker UI: custom `cd-file-pick-label` button shows chosen filename + a remove × button; replaces plain `<input type="file">`
+- `_uploadClientDoc(clientName, file, type)` — sends `client_name` (not `client_id`) to Edge Function, resolves to Drive `/view` URL
+- Document links in the client drawer rendered as `<a target="_blank">` so right-click → "Open in new tab" works; URLs pre-resolved before drawer renders
+- `_resolveDocUrl()` helper — Drive URLs are plain https links, no signed URL needed (pass-through)
+
+### Client Directory — new fields
+
+- **Overview** — free-text field filled by BDE, visible to all roles; shown on client cards (truncated to 2 lines, 90 chars) and in the edit form
+- **Price** — numeric field, commercial-only visibility (`_canCommercial()`)
+- **Project Type** — dropdown: Retainer / Project Based / One Time; stored as `retainer | project_based | one_time`
+- **SOW Notes** — free-text notes on scope of work
+
+### Client Directory — entity-level platforms & services
+
+- `entity_platforms` table: which platforms each entity is active on (LinkedIn, Instagram, Reddit, Quora, YouTube); unique per `(entity_id, platform)`
+- `entity_services` table: which Growthic services are provided per entity; unique per `(entity_id, service)`
+- Both tables have RLS: SELECT open to all authenticated users; INSERT/UPDATE/DELETE restricted to `super_admin` and `bde` roles
+- `getClient()` in API already joins `entity_platforms(platform)` and `entity_services(service)` via the existing `client_entities` relation
+
+### Client Directory — bug fixes
+
+- **Add Client button not showing for BDE** — `render()` was called before `init()` set `_p`, so `_canWrite()` returned false at render time; fix: button always rendered with `display:none`, shown in `init()` after access matrix loads
+- **AM dropdown missing employees** — `emp_select` RLS blocked BDE from seeing other employees; fixed by updating policy to `USING (true)`; also switched from `getAllEmployees()` (self-join) to `getEmployees(false)` (all statuses)
+- **Category constraint violation** — code was sending `cat.toLowerCase()` ('shark') but DB CHECK expects 'Shark', 'Dolphin', 'Turtle', 'Snail'; fixed by using dropdown value directly
+- **Client save not updating frontend** — `clients_update` RLS checked `get_my_role() IN (...)` which silently updated 0 rows with `{error: null}` for BDE; fixed by changing policy to `USING (true) WITH CHECK (true)`; frontend also resets status filter to 'all' after save so updated client is always visible
+- **Edge Function "Client not found" 404** — function was looking up `client_name` from DB using the pre-generated UUID which doesn't exist yet for new clients; fixed by accepting `client_name` directly from the form
+
+### DB schema changes — phase6_migration.sql
+
+- `clients` table: added `price NUMERIC(12,2)`, `project_type TEXT`, `brand_guidelines_url TEXT`, `service_agreement_url TEXT`, `sow_notes TEXT`, `overview TEXT`
+- New table `entity_platforms` with RLS
+- New table `entity_services` with RLS
+- RLS fix: `emp_select` policy on `employees` changed to `USING (true)` (all authenticated users can read)
+- RLS fix: `clients_update` policy changed to `USING (true) WITH CHECK (true)`
+- RLS fix: `clients_select` policy changed to `USING (true)`
+
+### API
+
+- `getClients()` — added `overview` to the SELECT column list
+- `getClient()` — already joins `entity_platforms` and `entity_services` via `client_entities`
+
+### CSS — components.css
+
+- `.client-card-overview` — 2-line clamp, muted text, 12px, margin-top 6px
+- `.cd-file-pick-label`, `.cd-file-chosen`, `.cd-file-icon`, `.cd-file-name`, `.cd-file-remove` — custom file picker row
+- `.cd-file-action`, `.cd-file-sep` — action link + separator inside file picker
+- `.btn-link` — unstyled button that looks like a text link (for inline actions)
+- `.cd-doc-link` — added `cursor: pointer`
+- `.client-card-code` — monospace font for project code pill
+
+---
+
 ## [0.5.0] — 2026-04-28 — Access Control system: 6-tier feature-level permissions
 
 ### Architecture — access_matrix
