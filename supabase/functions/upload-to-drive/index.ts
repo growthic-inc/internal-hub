@@ -18,10 +18,25 @@ const corsHeaders = {
 }
 
 const FOLDER_TYPE_LABELS: Record<string, string> = {
-  approved_content: 'Content',
-  creatives:        'Creatives',
-  reports:          'Reports',
+  approved_content:    'Content',
+  creatives:           'Creatives',
+  reports:             'Reports',
+  analytics_linkedin:  'Analytics',
+  analytics_instagram: 'Analytics',
 }
+
+// Sub-folder created inside the folder type label (platform level for analytics)
+const FOLDER_TYPE_SUBFOLDERS: Record<string, string | null> = {
+  approved_content:    null,
+  creatives:           null,
+  reports:             null,
+  analytics_linkedin:  'LinkedIn',
+  analytics_instagram: 'Instagram',
+}
+
+// Analytics uploads are NOT recorded in master_folder_files — they live
+// only on Drive. The caller (ingest-analytics) stores the URL itself.
+const SKIP_DB_RECORD = new Set(['analytics_linkedin', 'analytics_instagram'])
 
 const MONTHS = [
   'January','February','March','April','May','June',
@@ -63,7 +78,7 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'file, client_id, month, and folder_type are required.' }, 400)
     }
 
-    const validFolderTypes = ['approved_content', 'creatives', 'reports']
+    const validFolderTypes = ['approved_content', 'creatives', 'reports', 'analytics_linkedin', 'analytics_instagram']
     if (!validFolderTypes.includes(folderType)) {
       return json({ error: `Invalid folder_type: ${folderType}` }, 400)
     }
@@ -114,6 +129,12 @@ Deno.serve(async (req: Request) => {
     currentParent = await findOrCreateFolder(accessToken, monthName,   currentParent)
     currentParent = await findOrCreateFolder(accessToken, folderLabel, currentParent)
 
+    // Optional platform sub-folder (analytics_linkedin → 'LinkedIn', etc.)
+    const subfolder = FOLDER_TYPE_SUBFOLDERS[folderType]
+    if (subfolder) {
+      currentParent = await findOrCreateFolder(accessToken, subfolder, currentParent)
+    }
+
     // ── Upload file ────────────────────────────────────────────
     const fileBytes = new Uint8Array(await file.arrayBuffer())
     const { driveFileId, webViewLink } = await uploadFileToDrive(
@@ -124,7 +145,11 @@ Deno.serve(async (req: Request) => {
       file.type || 'application/octet-stream',
     )
 
-    // ── Insert DB record ───────────────────────────────────────
+    // ── Insert DB record (skip for analytics types — caller handles logging) ──
+    if (SKIP_DB_RECORD.has(folderType)) {
+      return json({ success: true, drive_file_id: driveFileId, drive_url: webViewLink })
+    }
+
     const { data: record, error: insertErr } = await adminClient
       .from('master_folder_files')
       .insert({
