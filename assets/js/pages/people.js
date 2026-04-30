@@ -68,6 +68,12 @@ const People = (() => {
     _employees   = empRes.data   || []
     _departments = deptRes.data  || []
 
+    // Resolve manager names from the loaded array (fallback if PostgREST self-join misses)
+    const _empById = Object.fromEntries(_employees.map(e => [e.id, e]))
+    _employees.forEach(e => {
+      e._managerName = e.manager?.name || (e.manager_id && _empById[e.manager_id]?.name) || null
+    })
+
     _bindTabs()
     _loadTab('directory')
   }
@@ -215,7 +221,7 @@ const People = (() => {
               <td><span class="dept-badge">${Utils.getDeptLabel(e.department)}</span></td>
               <td class="text-sm">${_empTypeLabel(e.employment_type)}</td>
               <td class="text-sm text-muted">
-                ${e.manager ? Utils.escapeHtml(e.manager.name) : '—'}
+                ${e._managerName ? Utils.escapeHtml(e._managerName) : '—'}
               </td>
               <td>
                 ${e.status === 'active'
@@ -819,24 +825,26 @@ const People = (() => {
     const treeEl = document.getElementById('ppl-org-tree')
     if (!treeEl) return
 
+    // Only show active employees who have completed their profile
+    let visibleNodes = nodes.filter(n => n.status === 'active' && n.profile_completed !== false)
+
     // Filter by department if needed
-    let visibleNodes = nodes
     if (deptFilter) {
       // Keep nodes in selected dept AND their ancestors (to preserve hierarchy context)
-      const inDept  = new Set(nodes.filter(n => n.department === deptFilter).map(n => n.id))
+      const inDept  = new Set(visibleNodes.filter(n => n.department === deptFilter).map(n => n.id))
       const visible = new Set(inDept)
       // Walk up manager chain to include ancestors
-      nodes.forEach(n => {
+      visibleNodes.forEach(n => {
         if (inDept.has(n.id)) {
           let parentId = n.manager_id
           while (parentId) {
             visible.add(parentId)
-            const parent = nodes.find(p => p.id === parentId)
+            const parent = visibleNodes.find(p => p.id === parentId)
             parentId = parent?.manager_id || null
           }
         }
       })
-      visibleNodes = nodes.filter(n => visible.has(n.id))
+      visibleNodes = visibleNodes.filter(n => visible.has(n.id))
     }
 
     const roots = visibleNodes.filter(n => !n.manager_id || !visibleNodes.find(p => p.id === n.manager_id))
@@ -846,51 +854,43 @@ const People = (() => {
       return
     }
 
-    treeEl.innerHTML = roots.map(root => _buildOrgNodeHtml(root, visibleNodes)).join('')
+    treeEl.innerHTML = `
+      <div class="org-chart-wrap">
+        <ul class="org-tree-level org-tree-level--root">
+          ${roots.map(root => _buildOrgNodeHtml(root, visibleNodes)).join('')}
+        </ul>
+      </div>
+    `
 
-    treeEl.querySelectorAll('.org-node').forEach(node => {
+    treeEl.querySelectorAll('.org-card').forEach(node => {
       node.addEventListener('click', () => _openProfileModal(node.dataset.id))
     })
   }
 
   function _buildOrgNodeHtml(node, allNodes) {
     const children = allNodes.filter(n => n.manager_id === node.id)
-    const initials = Utils.getInitials(node.name)
+    const initials  = Utils.getInitials(node.name)
     const avatarHtml = node.profile_image_url
       ? `<img src="${Utils.escapeHtml(node.profile_image_url)}" alt=""
-           style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
-      : `<span style="font-size:13px;font-weight:700;">${initials}</span>`
+           style="width:100%;height:100%;object-fit:cover;">`
+      : `<span>${initials}</span>`
 
     return `
-      <div class="org-node-wrap">
-        <div class="org-node" data-id="${node.id}" style="cursor:pointer;">
-          <div style="display:flex;align-items:center;gap:12px;">
-            <div style="width:40px;height:40px;border-radius:50%;background:var(--primary-light);
-              color:var(--primary);display:flex;align-items:center;justify-content:center;
-              flex-shrink:0;overflow:hidden;">
-              ${avatarHtml}
-            </div>
-            <div>
-              <div style="font-size:13px;font-weight:600;color:var(--text);">
-                ${Utils.escapeHtml(node.name)}
-              </div>
-              <div style="font-size:12px;color:var(--text-muted);margin-top:1px;">
-                ${Utils.escapeHtml(node.designation || '—')}
-              </div>
-              ${node.department
-                ? `<span class="dept-badge" style="margin-top:4px;display:inline-block;">
-                    ${Utils.getDeptLabel(node.department)}
-                  </span>`
-                : ''}
-            </div>
+      <li class="org-tree-item">
+        <div class="org-card" data-id="${node.id}">
+          <div class="org-card-photo">
+            ${avatarHtml}
           </div>
+          <div class="org-card-name">${Utils.escapeHtml(node.name)}</div>
+          <div class="org-card-designation">${Utils.escapeHtml(node.designation || '—')}</div>
+          <span class="dept-badge">${Utils.getDeptLabel(node.department)}</span>
         </div>
         ${children.length ? `
-          <div class="org-node-children org-connector">
+          <ul class="org-tree-level">
             ${children.map(child => _buildOrgNodeHtml(child, allNodes)).join('')}
-          </div>
+          </ul>
         ` : ''}
-      </div>
+      </li>
     `
   }
 
@@ -936,8 +936,7 @@ const People = (() => {
         </div>
         <div class="section-card-body" style="max-width:680px;">
           <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">
-            Fill in the employee details below. An invitation email will be sent to their
-            work email address so they can set their password and log in.
+            Create the employee account directly. Set a temporary password they can change after first login.
           </p>
 
           <div id="ppl-inv-err" class="alert alert--danger" style="display:none;"></div>
@@ -952,6 +951,19 @@ const People = (() => {
               <label class="form-label">Work Email <span class="required">*</span></label>
               <input class="form-input" type="email" id="ppl-inv-email"
                 placeholder="name@thegrowthic.com">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Temporary Password <span class="required">*</span></label>
+              <input class="form-input" type="password" id="ppl-inv-password"
+                placeholder="Min. 8 characters">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Confirm Password <span class="required">*</span></label>
+              <input class="form-input" type="password" id="ppl-inv-confirm-password"
+                placeholder="Min. 8 characters">
             </div>
           </div>
 
@@ -1047,7 +1059,7 @@ const People = (() => {
           </div>
 
           <div style="margin-top:20px;">
-            <button class="btn btn--primary" id="ppl-inv-submit">Send Invite</button>
+            <button class="btn btn--primary" id="ppl-inv-submit">Add Employee</button>
           </div>
         </div>
       </div>
@@ -1064,24 +1076,34 @@ const People = (() => {
     errEl.style.display     = 'none'
     successEl.style.display = 'none'
 
-    const name       = document.getElementById('ppl-inv-name')?.value.trim()
-    const email      = document.getElementById('ppl-inv-email')?.value.trim()
-    const designation = document.getElementById('ppl-inv-designation')?.value.trim()
-    const dept       = document.getElementById('ppl-inv-dept')?.value
-    const role       = document.getElementById('ppl-inv-role')?.value
-    const empType    = document.getElementById('ppl-inv-emp-type')?.value
-    const location   = document.getElementById('ppl-inv-location')?.value
-    const joining    = document.getElementById('ppl-inv-joining')?.value
+    const name            = document.getElementById('ppl-inv-name')?.value.trim()
+    const email           = document.getElementById('ppl-inv-email')?.value.trim()
+    const password        = document.getElementById('ppl-inv-password')?.value
+    const confirmPassword = document.getElementById('ppl-inv-confirm-password')?.value
+    const designation     = document.getElementById('ppl-inv-designation')?.value.trim()
+    const department      = document.getElementById('ppl-inv-dept')?.value
+    const role            = document.getElementById('ppl-inv-role')?.value
+    const employment_type = document.getElementById('ppl-inv-emp-type')?.value
+    const work_location   = document.getElementById('ppl-inv-location')?.value
+    const joining_date    = document.getElementById('ppl-inv-joining')?.value
+    const manager_id      = document.getElementById('ppl-inv-manager')?.value               || null
+    const personal_email  = document.getElementById('ppl-inv-personal-email')?.value.trim() || null
+    const phone_number    = document.getElementById('ppl-inv-phone')?.value.trim()          || null
+    const date_of_birth   = document.getElementById('ppl-inv-dob')?.value                   || null
+    const emergency_contact_name         = document.getElementById('ppl-inv-ec-name')?.value.trim()  || null
+    const emergency_contact_relationship = document.getElementById('ppl-inv-ec-rel')?.value.trim()   || null
+    const emergency_contact_phone        = document.getElementById('ppl-inv-ec-phone')?.value.trim() || null
 
     const missing = []
-    if (!name)        missing.push('Full Name')
-    if (!email)       missing.push('Work Email')
-    if (!designation) missing.push('Designation')
-    if (!dept)        missing.push('Department')
-    if (!role)        missing.push('Role')
-    if (!empType)     missing.push('Employment Type')
-    if (!location)    missing.push('Work Location')
-    if (!joining)     missing.push('Joining Date')
+    if (!name)            missing.push('Full Name')
+    if (!email)           missing.push('Work Email')
+    if (!password)        missing.push('Temporary Password')
+    if (!designation)     missing.push('Designation')
+    if (!department)      missing.push('Department')
+    if (!role)            missing.push('Role')
+    if (!employment_type) missing.push('Employment Type')
+    if (!work_location)   missing.push('Work Location')
+    if (!joining_date)    missing.push('Joining Date')
 
     if (missing.length) {
       errEl.textContent   = `Please fill in required fields: ${missing.join(', ')}.`
@@ -1089,74 +1111,73 @@ const People = (() => {
       return
     }
 
-    submitBtn.disabled    = true
-    submitBtn.textContent = 'Sending invite…'
-
-    try {
-      const session = await Config.supabase.auth.getSession()
-      const token   = session?.data?.session?.access_token
-
-      const res = await fetch(`${Config.SUPABASE_URL}/functions/v1/invite-employee`, {
-        method:  'POST',
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          name,
-          email,
-          personal_email:                 document.getElementById('ppl-inv-personal-email')?.value.trim() || null,
-          phone_number:                   document.getElementById('ppl-inv-phone')?.value.trim()          || null,
-          date_of_birth:                  document.getElementById('ppl-inv-dob')?.value                   || null,
-          designation,
-          department:                     dept,
-          role,
-          employment_type:                empType,
-          work_location:                  location,
-          joining_date:                   joining,
-          manager_id:                     document.getElementById('ppl-inv-manager')?.value               || null,
-          emergency_contact_name:         document.getElementById('ppl-inv-ec-name')?.value.trim()        || null,
-          emergency_contact_relationship: document.getElementById('ppl-inv-ec-rel')?.value.trim()         || null,
-          emergency_contact_phone:        document.getElementById('ppl-inv-ec-phone')?.value.trim()       || null,
-        }),
-      })
-
-      const body = await res.json().catch(() => ({}))
-
-      if (!res.ok) {
-        throw new Error(body.error || body.message || `Server error (${res.status})`)
-      }
-
-      // Refresh employees list
-      const { data } = await API.getEmployeesFull()
-      _employees = data || []
-
-      successEl.textContent   = `Invite sent to ${email}. They will receive an email to set their password.`
-      successEl.style.display = 'block'
-
-      // Reset form
-      ;[
-        'ppl-inv-name', 'ppl-inv-email', 'ppl-inv-personal-email', 'ppl-inv-phone',
-        'ppl-inv-dob', 'ppl-inv-designation', 'ppl-inv-joining',
-        'ppl-inv-ec-name', 'ppl-inv-ec-rel', 'ppl-inv-ec-phone',
-      ].forEach(id => {
-        const el = document.getElementById(id)
-        if (el) el.value = ''
-      })
-      ;['ppl-inv-dept', 'ppl-inv-role', 'ppl-inv-emp-type', 'ppl-inv-location', 'ppl-inv-manager'].forEach(id => {
-        const el = document.getElementById(id)
-        if (el) el.selectedIndex = 0
-      })
-
-      Utils.showToast('Employee invite sent successfully.', 'success')
-
-    } catch (err) {
-      errEl.textContent   = err.message || 'Failed to send invite. Please try again.'
+    if (password.length < 8) {
+      errEl.textContent   = 'Password must be at least 8 characters.'
       errEl.style.display = 'block'
+      return
     }
 
+    if (password !== confirmPassword) {
+      errEl.textContent   = 'Passwords do not match.'
+      errEl.style.display = 'block'
+      return
+    }
+
+    submitBtn.disabled    = true
+    submitBtn.textContent = 'Adding employee…'
+
+    const result = await API.createEmployee({
+      name,
+      email,
+      password,
+      designation,
+      department,
+      role,
+      employment_type,
+      work_location,
+      joining_date,
+      manager_id,
+      personal_email,
+      phone_number,
+      date_of_birth,
+      emergency_contact_name,
+      emergency_contact_relationship,
+      emergency_contact_phone,
+    })
+
     submitBtn.disabled    = false
-    submitBtn.textContent = 'Send Invite'
+    submitBtn.textContent = 'Add Employee'
+
+    if (result.error) {
+      errEl.textContent   = result.error.message || 'Failed to create employee. Please try again.'
+      errEl.style.display = 'block'
+      return
+    }
+
+    successEl.textContent   = 'Employee added successfully. They can now log in with the provided password.'
+    successEl.style.display = 'block'
+
+    // Reset form
+    ;[
+      'ppl-inv-name', 'ppl-inv-email', 'ppl-inv-password', 'ppl-inv-confirm-password',
+      'ppl-inv-personal-email', 'ppl-inv-phone', 'ppl-inv-dob', 'ppl-inv-designation',
+      'ppl-inv-joining', 'ppl-inv-ec-name', 'ppl-inv-ec-rel', 'ppl-inv-ec-phone',
+    ].forEach(id => {
+      const el = document.getElementById(id)
+      if (el) el.value = ''
+    })
+    ;['ppl-inv-dept', 'ppl-inv-role', 'ppl-inv-emp-type', 'ppl-inv-location', 'ppl-inv-manager'].forEach(id => {
+      const el = document.getElementById(id)
+      if (el) el.selectedIndex = 0
+    })
+
+    // Reload employees list and re-resolve manager names
+    const { data } = await API.getEmployeesFull()
+    _employees = data || []
+    const _empById = Object.fromEntries(_employees.map(e => [e.id, e]))
+    _employees.forEach(e => {
+      e._managerName = e.manager?.name || (e.manager_id && _empById[e.manager_id]?.name) || null
+    })
   }
 
   /* ── Label helpers ──────────────────────────────────────── */

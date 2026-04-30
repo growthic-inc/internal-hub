@@ -21,6 +21,7 @@ const App = (() => {
   const ALL_ROLES = ['super_admin', 'employee']
 
   const ICONS_EXTRA = {
+    home:       `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>`,
     users:      `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>`,
     calendar:   `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`,
     megaphone:  `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"></path></svg>`,
@@ -46,6 +47,8 @@ const App = (() => {
   }
 
   const NAV = [
+    // Phase 8: Home dashboard — always first, visible to everyone
+    { id: 'home',             label: 'Home',              icon: ICONS_EXTRA.home,      module: () => HomeModule,      roles: ALL_ROLES },
     { id: 'client-dashboard', label: 'Client Dashboard',  icon: ICONS.barChart,        module: () => ClientDashboard, roles: ALL_ROLES },
     { id: 'client-directory', label: 'Client Directory',  icon: ICONS.briefcase,       module: () => ClientDirectory, roles: ALL_ROLES },
     { id: 'master-folders',   label: 'Client Repository', icon: ICONS.folder,          module: () => MasterFolders,   roles: ALL_ROLES },
@@ -160,6 +163,12 @@ const App = (() => {
     if (!currentUser) {
       await Auth.signOut()
       window.location.href = '/'
+      return
+    }
+
+    // Phase 8: Block the entire app until the employee completes their profile
+    if (currentUser.profile_completed === false) {
+      _showProfileCompletionWizard(currentUser)
       return
     }
 
@@ -320,6 +329,212 @@ const App = (() => {
 
     content.innerHTML = pageModule.render(currentUser)
     if (pageModule.init) pageModule.init(currentUser)
+  }
+
+  /* ── Profile Completion Wizard ──────────────────────────────
+     Shown full-screen to new employees on first login.
+     Blocks all app access until the employee saves their profile.
+  ─────────────────────────────────────────────────────────── */
+  function _showProfileCompletionWizard(user) {
+    // Render the full-page overlay into #page-content (sidebar hidden)
+    const sidebar = document.querySelector('.sidebar')
+    const header  = document.querySelector('.app-header')
+    if (sidebar) sidebar.style.display = 'none'
+    if (header)  header.style.display  = 'none'
+
+    const content = document.getElementById('page-content')
+    if (!content) return
+
+    content.innerHTML = `
+      <div class="profile-wizard-overlay">
+        <div class="profile-wizard-card">
+          <div class="profile-wizard-header">
+            <div class="profile-wizard-logo">
+              <img src="../assets/img/logo.jpg" alt="Growthic One" style="height:36px;">
+            </div>
+            <h2 class="profile-wizard-title">Welcome to Growthic One!</h2>
+            <p class="profile-wizard-sub">Please complete your profile before continuing. This only takes a minute.</p>
+          </div>
+
+          <div id="pw-error"   class="form-error"   style="display:none;margin-bottom:12px;"></div>
+          <div id="pw-success" class="form-success"  style="display:none;margin-bottom:12px;"></div>
+
+          <form id="profile-wizard-form" autocomplete="off">
+
+            <!-- Avatar -->
+            <div class="pw-section-label">Profile Picture</div>
+            <div class="pw-avatar-row">
+              <div class="pw-avatar-preview" id="pw-avatar-preview">
+                <span>${Utils.getInitials(user.name)}</span>
+              </div>
+              <label class="btn btn--secondary btn--sm" style="cursor:pointer;">
+                Upload Photo
+                <input type="file" id="pw-avatar-file" accept="image/*" style="display:none;">
+              </label>
+            </div>
+
+            <!-- Personal -->
+            <div class="pw-section-label">Personal Details</div>
+            <div class="people-field-grid">
+              <div class="form-group">
+                <label class="form-label">Date of Birth</label>
+                <input type="date" id="pw-dob" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Personal Email</label>
+                <input type="email" id="pw-personal-email" class="form-input" placeholder="personal@example.com">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Phone Number</label>
+                <input type="tel" id="pw-phone" class="form-input" placeholder="+91 98765 43210">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Blood Group</label>
+                <select id="pw-blood-group" class="form-input">
+                  <option value="">Select</option>
+                  ${['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(bg =>
+                    `<option value="${bg}">${bg}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Residential Address</label>
+              <textarea id="pw-address" class="form-input" rows="2" placeholder="House no., Street, City, State, PIN"></textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-label">LinkedIn URL</label>
+              <input type="url" id="pw-linkedin" class="form-input" placeholder="https://linkedin.com/in/yourprofile">
+            </div>
+
+            <!-- Bank -->
+            <div class="pw-section-label">Bank Details</div>
+            <div class="people-field-grid">
+              <div class="form-group">
+                <label class="form-label">Bank Account Number</label>
+                <input type="text" id="pw-bank-account" class="form-input" placeholder="Account number">
+              </div>
+              <div class="form-group">
+                <label class="form-label">IFSC Code</label>
+                <input type="text" id="pw-bank-ifsc" class="form-input" placeholder="e.g. HDFC0001234">
+              </div>
+            </div>
+
+            <!-- Emergency Contact -->
+            <div class="pw-section-label">Emergency Contact</div>
+            <div class="people-field-grid">
+              <div class="form-group">
+                <label class="form-label">Contact Name <span class="required-star">*</span></label>
+                <input type="text" id="pw-ec-name" class="form-input" placeholder="Full name" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Phone Number <span class="required-star">*</span></label>
+                <input type="tel" id="pw-ec-phone" class="form-input" placeholder="+91 98765 43210" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Relationship <span class="required-star">*</span></label>
+                <select id="pw-ec-relationship" class="form-input" required>
+                  <option value="">Select</option>
+                  <option value="Parent">Parent</option>
+                  <option value="Spouse">Spouse</option>
+                  <option value="Sibling">Sibling</option>
+                  <option value="Child">Child</option>
+                  <option value="Friend">Friend</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+            </div>
+
+            <button type="submit" class="btn btn--primary" id="pw-submit-btn" style="width:100%;margin-top:8px;">
+              Save Profile &amp; Continue
+            </button>
+          </form>
+        </div>
+      </div>
+    `
+
+    // Avatar preview
+    const avatarFile = document.getElementById('pw-avatar-file')
+    const avatarPreview = document.getElementById('pw-avatar-preview')
+    if (avatarFile) {
+      avatarFile.addEventListener('change', () => {
+        const file = avatarFile.files[0]
+        if (!file) return
+        const reader = new FileReader()
+        reader.onload = e => {
+          avatarPreview.innerHTML = `<img src="${e.target.result}" alt="Preview">`
+        }
+        reader.readAsDataURL(file)
+      })
+    }
+
+    // Form submit
+    const form = document.getElementById('profile-wizard-form')
+    if (!form) return
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const errEl = document.getElementById('pw-error')
+      const sucEl = document.getElementById('pw-success')
+      const btn   = document.getElementById('pw-submit-btn')
+      errEl.style.display = 'none'
+      sucEl.style.display = 'none'
+
+      const ecName         = document.getElementById('pw-ec-name')?.value.trim()
+      const ecPhone        = document.getElementById('pw-ec-phone')?.value.trim()
+      const ecRelationship = document.getElementById('pw-ec-relationship')?.value
+
+      if (!ecName || !ecPhone || !ecRelationship) {
+        errEl.textContent = 'Emergency contact name, phone, and relationship are required.'
+        errEl.style.display = 'block'
+        return
+      }
+
+      btn.disabled = true
+      btn.textContent = 'Saving…'
+
+      // Upload avatar if chosen
+      let profile_image_url = null
+      const file = document.getElementById('pw-avatar-file')?.files[0]
+      if (file) {
+        const { url, error: uploadErr } = await API.uploadAvatar(user.id, file)
+        if (uploadErr) {
+          errEl.textContent = 'Avatar upload failed: ' + uploadErr.message
+          errEl.style.display = 'block'
+          btn.disabled = false
+          btn.textContent = 'Save Profile & Continue'
+          return
+        }
+        profile_image_url = url
+      }
+
+      const profileData = {
+        date_of_birth:     document.getElementById('pw-dob')?.value         || null,
+        personal_email:    document.getElementById('pw-personal-email')?.value.trim() || null,
+        phone:             document.getElementById('pw-phone')?.value.trim() || null,
+        blood_group:       document.getElementById('pw-blood-group')?.value  || null,
+        address:           document.getElementById('pw-address')?.value.trim() || null,
+        linkedin_url:      document.getElementById('pw-linkedin')?.value.trim() || null,
+        bank_account_number: document.getElementById('pw-bank-account')?.value.trim() || null,
+        bank_ifsc:         document.getElementById('pw-bank-ifsc')?.value.trim() || null,
+        emergency_contact_name:         ecName,
+        emergency_contact_phone:        ecPhone,
+        emergency_contact_relationship: ecRelationship,
+        profile_completed: true,
+      }
+      if (profile_image_url) profileData.profile_image_url = profile_image_url
+
+      const { error } = await API.updateOwnProfile(user.id, profileData)
+      if (error) {
+        errEl.textContent = 'Could not save profile: ' + error.message
+        errEl.style.display = 'block'
+        btn.disabled = false
+        btn.textContent = 'Save Profile & Continue'
+        return
+      }
+
+      sucEl.textContent = 'Profile saved! Loading your dashboard…'
+      sucEl.style.display = 'block'
+      setTimeout(() => window.location.reload(), 1200)
+    })
   }
 
   return { init, hasAccess, renderAccessDenied }

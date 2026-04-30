@@ -416,6 +416,99 @@ const API = (() => {
       .order('name')
   }
 
+  /* ── Employee creation (Phase 8 — no invite, sets password directly) ── */
+  async function createEmployee(data) {
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(
+      `${Config.SUPABASE_URL}/functions/v1/create-employee`,
+      {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+          'apikey':        Config.SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify(data),
+      }
+    )
+    return res.json()
+  }
+
+  /* ── Own profile update (Phase 8 — profile completion wizard) ── */
+  async function updateOwnProfile(id, data) {
+    return supabase.from('employees').update(data).eq('id', id).select().single()
+  }
+
+  /* ── Avatar upload to Supabase Storage ──────────────────────── */
+  async function uploadAvatar(employeeId, file) {
+    const ext  = file.name.split('.').pop()
+    const path = `${employeeId}.${ext}`
+    const { error } = await supabase.storage
+      .from('employee-avatars')
+      .upload(path, file, { upsert: true })
+    if (error) return { error }
+    const { data } = supabase.storage
+      .from('employee-avatars')
+      .getPublicUrl(path)
+    return { url: data.publicUrl }
+  }
+
+  /* ── Home dashboard data (Phase 8) ──────────────────────────── */
+  async function getHomeLeaveData(employeeId, year) {
+    const [creditsRes, requestsRes] = await Promise.all([
+      supabase.from('leave_credits').select('credited_days').eq('employee_id', employeeId).eq('year', year),
+      supabase.from('leave_requests').select('days, status, start_date, end_date, leave_types(name)')
+        .eq('employee_id', employeeId)
+        .in('status', ['approved','pending'])
+        .order('start_date'),
+    ])
+    return {
+      credits:  creditsRes.data  || [],
+      requests: requestsRes.data || [],
+    }
+  }
+
+  async function getUpcomingHolidays(limit = 3) {
+    return supabase
+      .from('company_holidays')
+      .select('date, name')
+      .gte('date', new Date().toISOString().split('T')[0])
+      .order('date')
+      .limit(limit)
+  }
+
+  async function getRecentAnnouncements(limit = 2) {
+    return supabase
+      .from('announcements')
+      .select('id, title, body, created_at, employees!created_by(name)')
+      .eq('status', 'published')
+      .order('created_at', { ascending: false })
+      .limit(limit)
+  }
+
+  async function getPendingApprovalsCount(approverId) {
+    const [leaveRes, wfhRes] = await Promise.all([
+      supabase.from('leave_requests').select('id', { count: 'exact', head: true })
+        .eq('approver_id', approverId).eq('status', 'pending'),
+      supabase.from('wfh_requests').select('id', { count: 'exact', head: true })
+        .eq('approver_id', approverId).eq('status', 'pending'),
+    ])
+    return (leaveRes.count || 0) + (wfhRes.count || 0)
+  }
+
+  async function getWorkAnniversaries() {
+    const today = new Date()
+    const mm    = String(today.getMonth() + 1).padStart(2, '0')
+    const dd    = String(today.getDate()).padStart(2, '0')
+    return supabase
+      .from('employees')
+      .select('id, name, joining_date, designation, profile_image_url')
+      .eq('status', 'active')
+      .filter('joining_date', 'not.is', null)
+      // match month-day pattern (MMDD portion of joining_date)
+      .like('joining_date', `%-${mm}-${dd}`)
+  }
+
   async function updateEmployeeFull(employeeId, data) {
     return supabase.from('employees').update(data).eq('id', employeeId)
   }
@@ -709,6 +802,10 @@ const API = (() => {
     getNotificationPreferences, upsertNotificationPreference,
     getDepartmentPermissions, saveDepartmentPermissions,
     getAccessMatrix, getAllDeptAccessMatrix, saveAccessMatrix,
+    // Phase 8
+    createEmployee, updateOwnProfile, uploadAvatar,
+    getHomeLeaveData, getUpcomingHolidays, getRecentAnnouncements,
+    getPendingApprovalsCount, getWorkAnniversaries,
     // Phase 7
     getDepartments, addDepartment, deleteDepartment,
     getEmployeesFull, updateEmployeeFull,
