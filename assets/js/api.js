@@ -522,6 +522,73 @@ const API = (() => {
       .limit(10)
   }
 
+  /** Daily new-follower rows for the selected date window. */
+  async function getSocialFollowers(clientId, platform, dateFrom, dateTo) {
+    let q = supabase
+      .from('social_followers_daily')
+      .select('*')
+      .eq('client_id', clientId)
+      .eq('platform', platform.toLowerCase())
+      .order('date', { ascending: true })
+    if (dateFrom) q = q.gte('date', dateFrom)
+    if (dateTo)   q = q.lte('date', dateTo)
+    return q
+  }
+
+  /** Daily visitor/page-view rows for the selected date window. */
+  async function getSocialVisitors(clientId, platform, dateFrom, dateTo) {
+    let q = supabase
+      .from('social_visitors_daily')
+      .select('*')
+      .eq('client_id', clientId)
+      .eq('platform', platform.toLowerCase())
+      .order('date', { ascending: true })
+    if (dateFrom) q = q.gte('date', dateFrom)
+    if (dateTo)   q = q.lte('date', dateTo)
+    return q
+  }
+
+  /**
+   * Audience demographics snapshot for a client+platform+export_type.
+   * Pass exportType = 'followers' or 'visitors'.
+   * Optionally filter to a single dimension.
+   */
+  async function getSocialDemographics(clientId, platform, exportType, dimension = null) {
+    let q = supabase
+      .from('social_audience_demographics')
+      .select('*')
+      .eq('client_id', clientId)
+      .eq('platform', platform.toLowerCase())
+      .eq('export_type', exportType)
+      .order('value', { ascending: false })
+    if (dimension) q = q.eq('dimension', dimension)
+    return q
+  }
+
+  /**
+   * Upload the raw analytics XLS file to Google Drive via the upload-to-drive
+   * edge function. Returns { drive_file_id, drive_url } on success.
+   * folderType must be 'analytics_linkedin' or 'analytics_instagram'.
+   */
+  async function uploadAnalyticsToDrive(file, clientId, platform, month) {
+    const { data: { session } } = await supabase.auth.getSession()
+    const folderType = `analytics_${platform.toLowerCase()}`
+    const form = new FormData()
+    form.append('file',        file)
+    form.append('client_id',   clientId)
+    form.append('month',       month)
+    form.append('folder_type', folderType)
+    const res = await fetch(
+      `${Config.SUPABASE_URL}/functions/v1/upload-to-drive`,
+      {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session?.access_token}`, 'apikey': Config.SUPABASE_ANON_KEY },
+        body: form,
+      }
+    )
+    return res.json()
+  }
+
   /* ── Home dashboard data (Phase 8) ──────────────────────────── */
   async function getHomeLeaveData(employeeId, year) {
     const [creditsRes, requestsRes] = await Promise.all([
@@ -873,6 +940,7 @@ const API = (() => {
     getAccessMatrix, getAllDeptAccessMatrix, saveAccessMatrix,
     // Phase 9 — Social Analytics
     ingestAnalytics, getSocialMetrics, getSocialPosts, getAnalyticsUploadLog,
+    getSocialFollowers, getSocialVisitors, getSocialDemographics, uploadAnalyticsToDrive,
     // Phase 8
     createEmployee, updateOwnProfile, uploadAvatar,
     getHomeLeaveData, getUpcomingHolidays, getRecentAnnouncements,

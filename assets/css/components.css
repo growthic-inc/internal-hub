@@ -3679,3 +3679,107 @@
   max-width: 360px;
   line-height: 1.6;
 }
+
+/* ── Audience section ──────────────────────────────────────── */
+.audience-charts-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 900px) { .audience-charts-row { grid-template-columns: 1fr; } }
+
+/* ── Demographics tabs ─────────────────────────────────────── */
+.demo-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.demo-tab {
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+}
+
+.demo-tab:hover { color: var(--text); }
+.demo-tab--active { color: var(--primary); border-bottom-color: var(--primary); }
+
+.demo-tab-panel { display: none; }
+.demo-tab-panel--active { display: block; }
+
+/* ── Demographics dimension group ──────────────────────────── */
+.demo-dimension {
+  margin-bottom: 20px;
+}
+
+.demo-dimension-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.demo-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 13px;
+}
+
+.demo-row-rank {
+  width: 18px;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.demo-row-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+.demo-row-bar-wrap {
+  width: 100px;
+  height: 6px;
+  background: var(--border-light, #f1f5f9);
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.demo-row-bar {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--primary);
+  min-width: 2px;
+}
+
+.demo-row-value {
+  width: 60px;
+  text-align: right;
+  font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+  font-size: 12px;
+}
