@@ -34,9 +34,8 @@ const FOLDER_TYPE_SUBFOLDERS: Record<string, string | null> = {
   analytics_instagram: 'Instagram',
 }
 
-// Analytics uploads are NOT recorded in master_folder_files — they live
-// only on Drive. The caller (ingest-analytics) stores the URL itself.
-const SKIP_DB_RECORD = new Set(['analytics_linkedin', 'analytics_instagram'])
+// Analytics and asset photo uploads are NOT recorded in master_folder_files.
+const SKIP_DB_RECORD = new Set(['analytics_linkedin', 'analytics_instagram', 'asset_photos'])
 
 const MONTHS = [
   'January','February','March','April','May','June',
@@ -74,13 +73,40 @@ Deno.serve(async (req: Request) => {
     const month      = form.get('month') as string | null      // YYYY-MM
     const folderType = form.get('folder_type') as string | null
 
-    if (!file || !clientId || !month || !folderType) {
+    if (!file || !folderType) {
+      return json({ error: 'file and folder_type are required.' }, 400)
+    }
+
+    const validFolderTypes = ['approved_content', 'creatives', 'reports', 'analytics_linkedin', 'analytics_instagram', 'asset_photos']
+    if (!validFolderTypes.includes(folderType)) {
+      return json({ error: `Invalid folder_type: ${folderType}` }, 400)
+    }
+
+    if (folderType !== 'asset_photos' && (!clientId || !month)) {
       return json({ error: 'file, client_id, month, and folder_type are required.' }, 400)
     }
 
-    const validFolderTypes = ['approved_content', 'creatives', 'reports', 'analytics_linkedin', 'analytics_instagram']
-    if (!validFolderTypes.includes(folderType)) {
-      return json({ error: `Invalid folder_type: ${folderType}` }, 400)
+    // ── Asset photo upload (separate flow, own folder root) ────
+    if (folderType === 'asset_photos') {
+      const assetId = form.get('asset_id') as string | null
+      const context = (form.get('context') as string | null) || 'photo'
+      if (!assetId) return json({ error: 'asset_id is required for asset_photos.' }, 400)
+
+      const saJson      = JSON.parse(Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON')!)
+      const accessToken = await getGoogleAccessToken(saJson)
+
+      const rootId      = Deno.env.get('GOOGLE_DRIVE_ASSETS_FOLDER_ID')!
+      const assetFolder = await findOrCreateFolder(accessToken, assetId, rootId)
+
+      const ext       = file.name.includes('.') ? file.name.split('.').pop() : 'jpg'
+      const datestamp = new Date().toISOString().split('T')[0]
+      const fileName  = `${context}_${datestamp}_${Date.now()}.${ext}`
+
+      const fileBytes = new Uint8Array(await file.arrayBuffer())
+      const { driveFileId, webViewLink } = await uploadFileToDrive(
+        accessToken, assetFolder, fileName, fileBytes, file.type || 'image/jpeg',
+      )
+      return json({ success: true, drive_file_id: driveFileId, drive_url: webViewLink })
     }
 
     // ── Resolve client and entity names ───────────────────────
