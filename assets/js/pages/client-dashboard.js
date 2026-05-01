@@ -17,6 +17,7 @@ const ClientDashboard = (() => {
 
   let _user = null, _p = null, _clients = [], _currentClient = null, _currentEntity = null
   let _currentPlatform = 'LinkedIn', _currentRange = '30', _currentMonth = _thisMonth()
+  let _customDateFrom = '', _customDateTo = ''
   let _trendChart = null, _pubChart = null, _followersChart = null, _visitorsChart = null
   let _activeMetrics = ['impressions', 'clicks']
 
@@ -60,8 +61,17 @@ const ClientDashboard = (() => {
               <option value="7">Last 7 Days</option>
               <option value="30" selected>Last 30 Days</option>
               <option value="90">Last 90 Days</option>
+              <option value="180">Last 6 Months</option>
+              <option value="365">Last 12 Months</option>
               <option value="custom">Custom Range</option>
             </select>
+          </div>
+          <div id="db-custom-dates" style="display:none;flex-direction:column;gap:4px;">
+            <span class="db-filter-label">From → To</span>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="date" id="db-date-from" class="db-filter-select" style="min-width:130px;padding-right:8px;">
+              <input type="date" id="db-date-to"   class="db-filter-select" style="min-width:130px;padding-right:8px;">
+            </div>
           </div>
           <div class="db-filter-actions">
             <button class="btn btn--primary btn--sm" id="db-upload-btn">
@@ -143,10 +153,26 @@ const ClientDashboard = (() => {
 
   function _bindFilters() {
     document.getElementById('db-platform-select')?.addEventListener('change', e => { _currentPlatform = e.target.value; if (_currentClient) _loadDashboard() })
-    document.getElementById('db-range-select')?.addEventListener('change',   e => { _currentRange    = e.target.value; if (_currentClient) _loadDashboard() })
+    document.getElementById('db-range-select')?.addEventListener('change', e => {
+      _currentRange = e.target.value
+      const customEl = document.getElementById('db-custom-dates')
+      if (customEl) customEl.style.display = _currentRange === 'custom' ? 'flex' : 'none'
+      if (_currentRange !== 'custom' && _currentClient) _loadDashboard()
+    })
+    document.getElementById('db-date-from')?.addEventListener('change', e => {
+      _customDateFrom = e.target.value
+      if (_customDateTo && _currentClient) _loadDashboard()
+    })
+    document.getElementById('db-date-to')?.addEventListener('change', e => {
+      _customDateTo = e.target.value
+      if (_customDateFrom && _currentClient) _loadDashboard()
+    })
   }
 
   function _getDateRange() {
+    if (_currentRange === 'custom' && _customDateFrom && _customDateTo) {
+      return { dateFrom: _customDateFrom, dateTo: _customDateTo }
+    }
     const dateTo = new Date(), dateFrom = new Date()
     dateFrom.setDate(dateTo.getDate() - (parseInt(_currentRange, 10) || 30))
     return { dateFrom: dateFrom.toISOString().split('T')[0], dateTo: dateTo.toISOString().split('T')[0] }
@@ -182,41 +208,36 @@ const ClientDashboard = (() => {
 
     const kpis = _computeKPIs(metrics, posts)
     body.innerHTML = `
-      ${_renderDataBanner(uploadLog, dateFrom, dateTo)}
-      <div style="display:flex;flex-direction:column;gap:16px;margin-bottom:16px;">
-        ${_renderStatusCard()}
-        <div class="kpi-grid">${_renderKPICards(kpis)}</div>
+      ${_renderContextBar(uploadLog, dateFrom, dateTo)}
+      <div class="kpi-grid" style="margin-bottom:16px;">${_renderKPICards(kpis)}</div>
+      <div class="chart-card mb-4">
+        <div class="chart-card-header">
+          <span class="chart-card-title">Performance Trend</span>
+          <div class="chart-multi-select" id="trend-pills">
+            ${METRIC_KEYS.map(k => `<span class="chart-metric-pill${_activeMetrics.includes(k) ? ' active' : ''}" data-metric="${k}">${Utils.escapeHtml(METRIC_CONFIG[k].label)}</span>`).join('')}
+          </div>
+        </div>
+        <div class="chart-canvas-wrap" style="height:260px;"><canvas id="trend-chart"></canvas></div>
       </div>
       <div class="charts-row mb-4">
-        <div class="chart-card">
-          <div class="chart-card-header">
-            <span class="chart-card-title">Performance Trend</span>
-            <div class="chart-multi-select" id="trend-pills">
-              ${METRIC_KEYS.map(k => `<span class="chart-metric-pill${_activeMetrics.includes(k) ? ' active' : ''}" data-metric="${k}">${Utils.escapeHtml(METRIC_CONFIG[k].label)}</span>`).join('')}
-            </div>
-          </div>
-          <div class="chart-canvas-wrap"><canvas id="trend-chart"></canvas></div>
-        </div>
         <div class="chart-card">
           <div class="chart-card-header"><span class="chart-card-title">Weekly Publishing Activity</span></div>
           <div class="chart-canvas-wrap"><canvas id="pub-chart"></canvas></div>
         </div>
-      </div>
-      <div class="charts-row mb-4">
         <div class="section-card">
           <div class="section-card-header"><h3>SOW Progress</h3></div>
           <div class="section-card-body">${_renderSOW(reports.length)}</div>
         </div>
-        <div class="section-card">
-          <div class="section-card-header"><h3>Top Performing Content</h3></div>
-          <div class="section-card-body" style="padding:0;">${_renderTopContent(posts)}</div>
-        </div>
+      </div>
+      <div class="section-card mb-4">
+        <div class="section-card-header"><h3>Top Performing Content</h3></div>
+        <div class="section-card-body" style="padding:0;">${_renderTopContent(posts)}</div>
       </div>
       ${_renderAudienceSection(followers, visitors, demoFollowers, demoVisitors)}
     `
     _initTrendChart(metrics); _initPubChart(posts)
     _initFollowersChart(followers); _initVisitorsChart(visitors)
-    _bindStatusCard(); _bindTrendPills(metrics); _bindDemoTabs()
+    _bindContextBar(); _bindTrendPills(metrics); _bindDemoTabs()
   }
 
   /* ── Empty state ────────────────────────────────────────── */
@@ -230,40 +251,47 @@ const ClientDashboard = (() => {
       </div>`
   }
 
-  /* ── Data banner ────────────────────────────────────────── */
-  function _renderDataBanner(uploadLog, dateFrom, dateTo) {
+  /* ── Context bar (data info + status) ──────────────────── */
+  function _renderContextBar(uploadLog, dateFrom, dateTo) {
     const last = uploadLog[0]
-    let lastText = ''
+    let uploadChip = ''
     if (last) {
-      const name = Utils.escapeHtml(last.uploaded_by_emp?.name || 'someone')
       const daysAgo = Math.round((Date.now() - new Date(last.uploaded_at).getTime()) / 86400000)
       const ago = daysAgo === 0 ? 'today' : daysAgo === 1 ? '1 day ago' : `${daysAgo} days ago`
-      lastText = ` · Last uploaded ${ago} by ${name}`
+      uploadChip = `<span class="ctx-chip">
+        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Updated ${ago} by ${Utils.escapeHtml(last.uploaded_by_emp?.name || 'someone')}
+      </span>`
     }
-    return `<div class="sample-data-banner" style="background:var(--surface-alt,#f0f7ff);border-color:var(--primary,#0F4799)20;">
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-      Showing data for <strong>${Utils.escapeHtml(_currentPlatform)}</strong> · ${Utils.formatDate(dateFrom)} – ${Utils.formatDate(dateTo)}${lastText}
-    </div>`
-  }
+    const platIcon = _currentPlatform === 'LinkedIn'
+      ? `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg>`
+      : `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>`
 
-  /* ── Status card ────────────────────────────────────────── */
-  function _renderStatusCard() {
     const c = _currentClient, statusVal = c.client_status || 'on_track'
     const statusMap = { on_track: ['On Track', 'status--on-track'], at_risk: ['At Risk', 'status--at-risk'], off_track: ['Off Track', 'status--off-track'] }
     const [slabel, scls] = statusMap[statusVal] || statusMap.on_track
-    const updatedBy = c.status_updater?.name || null, updatedAt = c.client_status_updated_at ? Utils.formatDate(c.client_status_updated_at) : null
-    return `<div class="client-status-card">
-      <div class="client-status-badge ${scls}" id="status-badge">${slabel}</div>
-      ${_p.can_edit ? `<select class="client-status-select" id="status-select">
-        <option value="on_track" ${statusVal==='on_track'?'selected':''}>On Track</option>
-        <option value="at_risk" ${statusVal==='at_risk'?'selected':''}>At Risk</option>
-        <option value="off_track" ${statusVal==='off_track'?'selected':''}>Off Track</option>
-      </select>` : ''}
-      <div class="client-status-meta">${updatedBy && updatedAt ? `Last updated by ${Utils.escapeHtml(updatedBy)} on ${updatedAt}` : 'Status not yet updated'}</div>
+
+    return `<div class="db-context-bar">
+      <div class="db-context-left">
+        <span class="ctx-chip ctx-chip--platform">${platIcon} ${Utils.escapeHtml(_currentPlatform)}</span>
+        <span class="ctx-chip">
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          ${Utils.formatDate(dateFrom)} — ${Utils.formatDate(dateTo)}
+        </span>
+        ${uploadChip}
+      </div>
+      <div class="db-context-right">
+        <div class="client-status-badge ${scls}" id="status-badge">${slabel}</div>
+        ${_p.can_edit ? `<select class="client-status-select" id="status-select">
+          <option value="on_track" ${statusVal==='on_track'?'selected':''}>On Track</option>
+          <option value="at_risk" ${statusVal==='at_risk'?'selected':''}>At Risk</option>
+          <option value="off_track" ${statusVal==='off_track'?'selected':''}>Off Track</option>
+        </select>` : ''}
+      </div>
     </div>`
   }
 
-  function _bindStatusCard() {
+  function _bindContextBar() {
     const sel = document.getElementById('status-select'), badge = document.getElementById('status-badge')
     if (!sel || !badge) return
     const statusMap = { on_track: ['On Track', 'status--on-track'], at_risk: ['At Risk', 'status--at-risk'], off_track: ['Off Track', 'status--off-track'] }
@@ -277,21 +305,37 @@ const ClientDashboard = (() => {
   }
 
   /* ── KPI computation + cards ────────────────────────────── */
+  const _KPI_META = {
+    'Impressions':     { color: '#0F4799', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>` },
+    'Clicks':          { color: '#45BBF0', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><path d="M10 14L21 3"/><path d="M21 16v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>` },
+    'Reactions':       { color: '#1D9E75', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>` },
+    'Engagement Rate': { color: '#EF4444', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>` },
+    'Posts Published': { color: '#8B5CF6', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>` },
+    'Total Follows':   { color: '#F59E0B', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>` },
+  }
+
   function _computeKPIs(metrics, posts) {
     const sum = (arr, key) => arr.reduce((a, r) => a + _num(r[key]), 0), loc = n => n.toLocaleString('en-IN')
     const avgEng = metrics.length ? ((sum(metrics, 'engagement_rate') / metrics.length) * 100).toFixed(2) + '%' : '0.00%'
     return [
-      { label: 'Impressions',     value: loc(sum(metrics, 'impressions')), highlight: false },
-      { label: 'Clicks',          value: loc(sum(metrics, 'clicks')),      highlight: false },
-      { label: 'Reactions',       value: loc(sum(metrics, 'reactions')),   highlight: false },
-      { label: 'Engagement Rate', value: avgEng,                           highlight: true  },
-      { label: 'Posts Published', value: loc(posts.length),                highlight: false },
-      { label: 'Total Follows',   value: loc(sum(posts, 'follows')),       highlight: false },
+      { label: 'Impressions',     value: loc(sum(metrics, 'impressions')) },
+      { label: 'Clicks',          value: loc(sum(metrics, 'clicks'))      },
+      { label: 'Reactions',       value: loc(sum(metrics, 'reactions'))   },
+      { label: 'Engagement Rate', value: avgEng                           },
+      { label: 'Posts Published', value: loc(posts.length)                },
+      { label: 'Total Follows',   value: loc(sum(posts, 'follows'))       },
     ]
   }
 
   function _renderKPICards(kpis) {
-    return kpis.map(k => `<div class="kpi-card${k.highlight?' kpi-card--highlight':''}"><div class="kpi-label">${Utils.escapeHtml(k.label)}</div><div class="kpi-value">${Utils.escapeHtml(String(k.value))}</div></div>`).join('')
+    return kpis.map(k => {
+      const meta = _KPI_META[k.label] || { color: '#0F4799', icon: '' }
+      return `<div class="kpi-card" style="--kpi-color:${meta.color};">
+        <div class="kpi-icon-wrap">${meta.icon}</div>
+        <div class="kpi-label">${Utils.escapeHtml(k.label)}</div>
+        <div class="kpi-value">${Utils.escapeHtml(String(k.value))}</div>
+      </div>`
+    }).join('')
   }
 
   /* ── Chart helpers ──────────────────────────────────────── */
