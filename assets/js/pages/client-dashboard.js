@@ -20,6 +20,7 @@ const ClientDashboard = (() => {
   let _customDateFrom = '', _customDateTo = ''
   let _trendChart = null, _pubChart = null, _followersChart = null, _visitorsChart = null
   let _activeMetrics = ['impressions', 'clicks']
+  let _tcSort = { col: 'impressions', dir: 'desc' }, _tcPosts = []
 
   /* ── render ─────────────────────────────────────────────── */
   function render(user) {
@@ -178,13 +179,23 @@ const ClientDashboard = (() => {
     return { dateFrom: dateFrom.toISOString().split('T')[0], dateTo: dateTo.toISOString().split('T')[0] }
   }
 
+  function _getPrevDateRange() {
+    const { dateFrom, dateTo } = _getDateRange()
+    const from = new Date(dateFrom), to = new Date(dateTo)
+    const days = Math.round((to - from) / 86400000)
+    const prevTo   = new Date(from); prevTo.setDate(prevTo.getDate() - 1)
+    const prevFrom = new Date(prevTo); prevFrom.setDate(prevFrom.getDate() - days)
+    return { dateFrom: prevFrom.toISOString().split('T')[0], dateTo: prevTo.toISOString().split('T')[0] }
+  }
+
   /* ── Load dashboard ─────────────────────────────────────── */
   async function _loadDashboard() {
     const body = document.getElementById('db-body')
     if (!body || !_currentClient) return
     body.innerHTML = '<p class="loading-text">Loading dashboard…</p>'
     const { dateFrom, dateTo } = _getDateRange()
-    const [metricsRes, postsRes, reportsRes, uploadLogRes, followersRes, visitorsRes, demographicsFollowersRes, demographicsVisitorsRes] = await Promise.all([
+    const { dateFrom: prevFrom, dateTo: prevTo } = _getPrevDateRange()
+    const [metricsRes, postsRes, reportsRes, uploadLogRes, followersRes, visitorsRes, demographicsFollowersRes, demographicsVisitorsRes, prevMetricsRes, prevPostsRes, prevFollowersRes] = await Promise.all([
       API.getSocialMetrics(_currentClient.id, _currentPlatform, dateFrom, dateTo),
       API.getSocialPosts(_currentClient.id, _currentPlatform, dateFrom, dateTo),
       API.getMasterFolderFiles(_currentClient.id, _currentMonth, 'reports'),
@@ -193,11 +204,15 @@ const ClientDashboard = (() => {
       API.getSocialVisitors(_currentClient.id, _currentPlatform, dateFrom, dateTo),
       API.getSocialDemographics(_currentClient.id, _currentPlatform, 'followers'),
       API.getSocialDemographics(_currentClient.id, _currentPlatform, 'visitors'),
+      API.getSocialMetrics(_currentClient.id, _currentPlatform, prevFrom, prevTo),
+      API.getSocialPosts(_currentClient.id, _currentPlatform, prevFrom, prevTo),
+      API.getSocialFollowers(_currentClient.id, _currentPlatform, prevFrom, prevTo),
     ])
     const metrics = metricsRes.data || [], posts = postsRes.data || []
     const reports = reportsRes.data || [], uploadLog = uploadLogRes.data || []
     const followers = followersRes.data || [], visitors = visitorsRes.data || []
     const demoFollowers = demographicsFollowersRes.data || [], demoVisitors = demographicsVisitorsRes.data || []
+    const prevMetrics = prevMetricsRes.data || [], prevPosts = prevPostsRes.data || [], prevFollowers = prevFollowersRes.data || []
 
     if (!metrics.length && !posts.length) { _renderEmptyState(body); return }
 
@@ -206,7 +221,7 @@ const ClientDashboard = (() => {
     if (_followersChart) { _followersChart.destroy(); _followersChart = null }
     if (_visitorsChart)  { _visitorsChart.destroy();  _visitorsChart = null }
 
-    const kpis = _computeKPIs(metrics, posts)
+    const kpis = _computeKPIs(metrics, posts, followers, prevMetrics, prevPosts, prevFollowers)
     body.innerHTML = `
       ${_renderContextBar(uploadLog, dateFrom, dateTo)}
       <div class="kpi-grid" style="margin-bottom:16px;">${_renderKPICards(kpis)}</div>
@@ -225,13 +240,13 @@ const ClientDashboard = (() => {
       </div>
       <div class="section-card mb-4">
         <div class="section-card-header"><h3>Top Performing Content</h3></div>
-        <div class="section-card-body" style="padding:0;">${_renderTopContent(posts)}</div>
+        <div class="section-card-body" style="padding:0;" data-tc="1">${_renderTopContent(posts)}</div>
       </div>
       ${_renderAudienceSection(followers, visitors, demoFollowers, demoVisitors)}
     `
     _initTrendChart(metrics); _initPubChart(posts)
     _initFollowersChart(followers); _initVisitorsChart(visitors)
-    _bindContextBar(); _bindTrendPills(metrics); _bindDemoTabs()
+    _bindContextBar(); _bindTrendPills(metrics); _bindDemoTabs(); _bindTopContent()
   }
 
   /* ── Empty state ────────────────────────────────────────── */
@@ -305,29 +320,59 @@ const ClientDashboard = (() => {
     'Reactions':       { color: '#1D9E75', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>` },
     'Engagement Rate': { color: '#EF4444', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>` },
     'Posts Published': { color: '#8B5CF6', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>` },
-    'Total Follows':   { color: '#F59E0B', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>` },
+    'Total Followers': { color: '#F59E0B', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>` },
   }
 
-  function _computeKPIs(metrics, posts) {
-    const sum = (arr, key) => arr.reduce((a, r) => a + _num(r[key]), 0), loc = n => n.toLocaleString('en-IN')
-    const avgEng = metrics.length ? ((sum(metrics, 'engagement_rate') / metrics.length) * 100).toFixed(2) + '%' : '0.00%'
+  function _computeKPIs(metrics, posts, followers, prevMetrics, prevPosts, prevFollowers) {
+    const sum   = (arr, key) => arr.reduce((a, r) => a + _num(r[key]), 0)
+    const loc   = n => n.toLocaleString('en-IN')
+    const growthPct = (curr, prev) => {
+      if (!prev || prev === 0) return null
+      const pct = ((curr - prev) / prev) * 100
+      return isFinite(pct) ? +pct.toFixed(1) : null
+    }
+
+    const totalImpressions = sum(metrics, 'impressions')
+    const totalClicks      = sum(metrics, 'clicks')
+    const totalReactions   = sum(metrics, 'reactions')
+    const avgEng           = metrics.length ? (sum(metrics, 'engagement_rate') / metrics.length) * 100 : 0
+    // Total Followers = last cumulative value in the range (LinkedIn exports cumulative count per day)
+    const sortedF  = [...followers].sort((a, b) => (a.date > b.date ? 1 : -1))
+    const totalFollowers = sortedF.length ? _num(sortedF[sortedF.length - 1].total_new_followers) : 0
+
+    const pImpressions   = sum(prevMetrics,   'impressions')
+    const pClicks        = sum(prevMetrics,   'clicks')
+    const pReactions     = sum(prevMetrics,   'reactions')
+    const pAvgEng        = prevMetrics.length ? (sum(prevMetrics, 'engagement_rate') / prevMetrics.length) * 100 : 0
+    const sortedPF       = [...prevFollowers].sort((a, b) => (a.date > b.date ? 1 : -1))
+    const prevTotalFollowers = sortedPF.length ? _num(sortedPF[sortedPF.length - 1].total_new_followers) : 0
+
     return [
-      { label: 'Impressions',     value: loc(sum(metrics, 'impressions')) },
-      { label: 'Clicks',          value: loc(sum(metrics, 'clicks'))      },
-      { label: 'Reactions',       value: loc(sum(metrics, 'reactions'))   },
-      { label: 'Engagement Rate', value: avgEng                           },
-      { label: 'Posts Published', value: loc(posts.length)                },
-      { label: 'Total Follows',   value: loc(sum(posts, 'follows'))       },
+      { label: 'Impressions',     value: loc(totalImpressions),      growth: growthPct(totalImpressions, pImpressions)   },
+      { label: 'Clicks',          value: loc(totalClicks),           growth: growthPct(totalClicks,      pClicks)        },
+      { label: 'Reactions',       value: loc(totalReactions),        growth: growthPct(totalReactions,   pReactions)     },
+      { label: 'Engagement Rate', value: avgEng.toFixed(2) + '%',   growth: growthPct(avgEng,           pAvgEng)        },
+      { label: 'Posts Published', value: loc(posts.length),          growth: growthPct(posts.length,     prevPosts.length) },
+      { label: 'Total Followers', value: loc(totalFollowers),        growth: growthPct(totalFollowers,   prevTotalFollowers) },
     ]
   }
 
   function _renderKPICards(kpis) {
     return kpis.map(k => {
       const meta = _KPI_META[k.label] || { color: '#0F4799', icon: '' }
+      let deltaHtml = ''
+      if (k.growth !== null && k.growth !== undefined) {
+        const up  = k.growth >= 0
+        const arrow = up
+          ? `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>`
+          : `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`
+        deltaHtml = `<div class="kpi-delta kpi-delta--${up ? 'up' : 'down'}" style="margin-top:8px;">${arrow}${up ? '+' : ''}${k.growth}% vs prev period</div>`
+      }
       return `<div class="kpi-card" style="border-top:3px solid ${meta.color};">
         <div class="kpi-icon-wrap" style="background:${meta.color}1a;color:${meta.color};">${meta.icon}</div>
         <div class="kpi-label">${Utils.escapeHtml(k.label)}</div>
         <div class="kpi-value">${Utils.escapeHtml(String(k.value))}</div>
+        ${deltaHtml}
       </div>`
     }).join('')
   }
@@ -421,41 +466,64 @@ const ClientDashboard = (() => {
     if (!followers.length && !visitors.length && !demoFollowers.length && !demoVisitors.length) return ''
     const hasDemoF = demoFollowers.length > 0, hasDemoV = demoVisitors.length > 0
 
-    const growthHtml   = followers.length ? `<div style="margin-bottom:24px;"><h4 style="font-size:13px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:0 0 12px;">Audience Growth</h4><div class="chart-canvas-wrap"><canvas id="followers-chart"></canvas></div></div>` : ''
-    const visitorsHtml = visitors.length  ? `<div style="margin-bottom:24px;"><h4 style="font-size:13px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:0 0 12px;">Page Visitors</h4><div class="chart-canvas-wrap"><canvas id="visitors-chart"></canvas></div></div>` : ''
+    const chartCol = (title, canvasId) => `
+      <div>
+        <h4 style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:0 0 10px;">${title}</h4>
+        <div class="chart-canvas-wrap" style="height:200px;"><canvas id="${canvasId}"></canvas></div>
+      </div>`
+    const bothCharts = followers.length && visitors.length
+    const chartsHtml = (followers.length || visitors.length) ? `
+      <div style="display:grid;grid-template-columns:${bothCharts ? '1fr 1fr' : '1fr'};gap:20px;margin-bottom:20px;">
+        ${followers.length ? chartCol('Audience Growth', 'followers-chart') : ''}
+        ${visitors.length  ? chartCol('Page Visitors',   'visitors-chart')  : ''}
+      </div>` : ''
 
     let demosHtml = ''
     if (hasDemoF || hasDemoV) {
       const DIMS = [
-        { key: 'location',     label: 'Location',    limit: 10 },
-        { key: 'job_function', label: 'Job Function', limit: 10 },
+        { key: 'location',     label: 'Location',    limit: 8 },
+        { key: 'job_function', label: 'Job Function', limit: 8 },
         { key: 'seniority',    label: 'Seniority',    limit: null },
-        { key: 'industry',     label: 'Industry',     limit: 10 },
+        { key: 'industry',     label: 'Industry',     limit: 8 },
         { key: 'company_size', label: 'Company Size', limit: null },
       ]
-      const renderList = data => DIMS.map(dim => {
-        const rows = data.filter(r => r.dimension === dim.key).sort((a, b) => b.value - a.value)
-        if (!rows.length) return ''
-        const shown = dim.limit ? rows.slice(0, dim.limit) : rows, maxVal = shown[0]?.value || 1
-        return `<div style="margin-bottom:16px;"><div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">${dim.label}</div>${shown.map((r, i) => {
-          const pct = Math.round((_num(r.value) / maxVal) * 100)
-          return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;"><span style="width:16px;text-align:right;color:var(--text-muted);flex-shrink:0;">${i+1}</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${Utils.escapeHtml(r.label)}">${Utils.escapeHtml(r.label)}</span><div style="width:80px;height:6px;background:var(--border);border-radius:3px;flex-shrink:0;"><div style="width:${pct}%;height:100%;background:var(--primary,#0F4799);border-radius:3px;"></div></div><span style="width:40px;text-align:right;color:var(--text-muted);flex-shrink:0;">${_num(r.value).toLocaleString('en-IN')}</span></div>`
-        }).join('')}</div>`
-      }).join('')
+      const renderList = data => {
+        const blocks = DIMS.map(dim => {
+          const rows = data.filter(r => r.dimension === dim.key).sort((a, b) => b.value - a.value)
+          if (!rows.length) return ''
+          const shown = dim.limit ? rows.slice(0, dim.limit) : rows, maxVal = shown[0]?.value || 1
+          return `<div>
+            <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid var(--border);">${dim.label}</div>
+            ${shown.map((r, i) => {
+              const pct = Math.round((_num(r.value) / maxVal) * 100)
+              return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;">
+                <span style="width:14px;text-align:right;color:var(--text-muted);flex-shrink:0;font-size:10px;">${i+1}</span>
+                <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${Utils.escapeHtml(r.label)}">${Utils.escapeHtml(r.label)}</span>
+                <div style="width:60px;height:5px;background:var(--border);border-radius:3px;flex-shrink:0;"><div style="width:${pct}%;height:100%;background:var(--primary,#0F4799);border-radius:3px;"></div></div>
+                <span style="width:36px;text-align:right;color:var(--text-muted);flex-shrink:0;font-size:11px;">${_num(r.value).toLocaleString('en-IN')}</span>
+              </div>`
+            }).join('')}
+          </div>`
+        }).filter(Boolean)
+        return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px 24px;">${blocks.join('')}</div>`
+      }
 
       const tabs = [
         hasDemoF ? `<button class="demo-tab demo-tab--active" data-tab="followers">Followers</button>` : '',
         hasDemoV ? `<button class="demo-tab${!hasDemoF ? ' demo-tab--active' : ''}" data-tab="visitors">Visitors</button>` : '',
       ].filter(Boolean).join('')
 
-      demosHtml = `<div><h4 style="font-size:13px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:0 0 12px;">Audience Demographics</h4>
-        <div style="display:flex;gap:8px;margin-bottom:16px;" id="demo-tabs">${tabs}</div>
+      demosHtml = `<div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <h4 style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:0;">Audience Demographics</h4>
+          <div style="display:flex;gap:6px;" id="demo-tabs">${tabs}</div>
+        </div>
         ${hasDemoF ? `<div id="demo-panel-followers" class="demo-panel">${renderList(demoFollowers)}</div>` : ''}
         ${hasDemoV ? `<div id="demo-panel-visitors" class="demo-panel" style="display:none;">${renderList(demoVisitors)}</div>` : ''}
       </div>`
     }
 
-    return `<div class="section-card mb-4"><div class="section-card-header"><h3>Audience</h3></div><div class="section-card-body">${growthHtml}${visitorsHtml}${demosHtml}</div></div>`
+    return `<div class="section-card mb-4"><div class="section-card-header"><h3>Audience</h3></div><div class="section-card-body">${chartsHtml}${demosHtml}</div></div>`
   }
 
   function _bindDemoTabs() {
@@ -489,14 +557,61 @@ const ClientDashboard = (() => {
 
   /* ── Top content ────────────────────────────────────────── */
   function _renderTopContent(posts) {
+    _tcPosts = posts
     if (!posts.length) return '<p style="padding:24px;color:var(--text-muted);font-size:13px;">No posts in selected range.</p>'
-    const top = posts.slice(0, 10)
+    return _buildTopContentTable()
+  }
+
+  function _buildTopContentTable() {
+    if (!_tcPosts.length) return ''
     const CTCOLORS = { Video: '#8B5CF6', Image: '#0F4799', Text: '#64748B', Carousel: '#F59E0B' }
-    return `<table class="data-table"><thead><tr><th>Post Preview</th><th>Type</th><th>Posted By</th><th>Date</th><th style="text-align:right;">Impressions</th><th style="text-align:right;">Likes</th><th style="text-align:right;">Eng. Rate</th></tr></thead><tbody>${top.map(p => {
+    const sorted = [..._tcPosts].sort((a, b) => {
+      let av, bv
+      if (_tcSort.col === 'impressions')    { av = _num(a.impressions);    bv = _num(b.impressions) }
+      else if (_tcSort.col === 'likes')     { av = _num(a.likes);          bv = _num(b.likes) }
+      else                                  { av = _num(a.engagement_rate); bv = _num(b.engagement_rate) }
+      return _tcSort.dir === 'desc' ? bv - av : av - bv
+    }).slice(0, 10)
+
+    const sortIcon = col => {
+      const active = _tcSort.col === col
+      if (!active) return `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="opacity:.35;vertical-align:middle;margin-left:3px;"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="5 12 12 19 19 12"/></svg>`
+      return _tcSort.dir === 'desc'
+        ? `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.5" style="vertical-align:middle;margin-left:3px;"><polyline points="6 9 12 15 18 9"/></svg>`
+        : `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.5" style="vertical-align:middle;margin-left:3px;"><polyline points="18 15 12 9 6 15"/></svg>`
+    }
+    const thSort = (col, label, align = 'right') =>
+      `<th style="text-align:${align};cursor:pointer;user-select:none;" class="tc-sort-th" data-sort-col="${col}">${label}${sortIcon(col)}</th>`
+
+    return `<table class="data-table" id="top-content-table"><thead><tr>
+      <th>Post Preview</th><th>Type</th><th>Posted By</th><th>Date</th>
+      ${thSort('impressions', 'Impressions')}
+      ${thSort('likes', 'Likes')}
+      ${thSort('engagement_rate', 'Eng. Rate')}
+    </tr></thead><tbody>${sorted.map(p => {
       const title = Utils.truncate(p.post_title || '(no title)', 80), url = p.post_url ? Utils.escapeHtml(p.post_url) : null
       const ct = p.content_type || p.post_type || '—', engRate = p.engagement_rate != null ? (_num(p.engagement_rate) * 100).toFixed(2) + '%' : '—'
-      return `<tr><td>${url ? `<a href="${url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;" title="${Utils.escapeHtml(p.post_title||'')}">${Utils.escapeHtml(title)}</a>` : Utils.escapeHtml(title)}</td><td><span style="font-size:11px;font-weight:600;color:${CTCOLORS[ct]||'#64748B'};">${Utils.escapeHtml(ct)}</span></td><td style="white-space:nowrap;">${Utils.escapeHtml(p.posted_by||'—')}</td><td style="white-space:nowrap;">${p.created_date?Utils.formatDate(p.created_date):'—'}</td><td style="text-align:right;">${_num(p.impressions).toLocaleString('en-IN')}</td><td style="text-align:right;">${_num(p.likes).toLocaleString('en-IN')}</td><td style="text-align:right;font-weight:600;">${engRate}</td></tr>`
+      return `<tr>
+        <td>${url ? `<a href="${url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;" title="${Utils.escapeHtml(p.post_title||'')}">${Utils.escapeHtml(title)}</a>` : Utils.escapeHtml(title)}</td>
+        <td><span style="font-size:11px;font-weight:600;color:${CTCOLORS[ct]||'#64748B'};">${Utils.escapeHtml(ct)}</span></td>
+        <td style="white-space:nowrap;">${Utils.escapeHtml(p.posted_by||'—')}</td>
+        <td style="white-space:nowrap;">${p.created_date?Utils.formatDate(p.created_date):'—'}</td>
+        <td style="text-align:right;">${_num(p.impressions).toLocaleString('en-IN')}</td>
+        <td style="text-align:right;">${_num(p.likes).toLocaleString('en-IN')}</td>
+        <td style="text-align:right;font-weight:600;">${engRate}</td>
+      </tr>`
     }).join('')}</tbody></table>`
+  }
+
+  function _bindTopContent() {
+    document.querySelectorAll('.tc-sort-th').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.sortCol
+        _tcSort.col === col ? (_tcSort.dir = _tcSort.dir === 'desc' ? 'asc' : 'desc') : (_tcSort.col = col, _tcSort.dir = 'desc')
+        const wrap = document.querySelector('.section-card-body[data-tc]')
+        if (wrap) { wrap.innerHTML = _buildTopContentTable(); _bindTopContent() }
+      })
+    })
   }
 
   /* ── Upload modal ───────────────────────────────────────── */
