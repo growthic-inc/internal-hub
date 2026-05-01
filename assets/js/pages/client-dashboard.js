@@ -141,11 +141,25 @@ const ClientDashboard = (() => {
           _currentClient = full; _currentEntity = null
           const entities = full?.client_entities || []
           const entityGroup = document.getElementById('db-entity-group'), entitySel = document.getElementById('db-entity-select')
+          // Remove any previously bound change listener by replacing the element clone
+          const freshEntitySel = entitySel.cloneNode(false)
+          entitySel.parentNode.replaceChild(freshEntitySel, entitySel)
+          const activeEntitySel = document.getElementById('db-entity-select')
           if (entities.length > 1) {
-            entitySel.innerHTML = entities.map(e => `<option value="${e.id}">${Utils.escapeHtml(e.entity_name)}</option>`).join('')
-            _currentEntity = entities[0].id; entityGroup.style.display = 'flex'
-            entitySel.addEventListener('change', () => { _currentEntity = entitySel.value; _loadDashboard() })
-          } else { entityGroup.style.display = 'none' }
+            // Multi-entity: show dropdown, default to first entity
+            activeEntitySel.innerHTML = entities.map(e => `<option value="${e.id}">${Utils.escapeHtml(e.entity_name)}</option>`).join('')
+            _currentEntity = entities[0].id
+            entityGroup.style.display = 'flex'
+            activeEntitySel.addEventListener('change', () => { _currentEntity = activeEntitySel.value; _loadDashboard() })
+          } else if (entities.length === 1) {
+            // Single-entity: assign silently, hide dropdown
+            _currentEntity = entities[0].id
+            entityGroup.style.display = 'none'
+          } else {
+            // No entities (legacy client): keep null so queries use .is('entity_id', null)
+            _currentEntity = null
+            entityGroup.style.display = 'none'
+          }
           _loadDashboard()
         })
       })
@@ -195,117 +209,20 @@ const ClientDashboard = (() => {
     body.innerHTML = '<p class="loading-text">Loading dashboard…</p>'
     const { dateFrom, dateTo } = _getDateRange()
     const { dateFrom: prevFrom, dateTo: prevTo } = _getPrevDateRange()
-    /*const [metricsRes, postsRes, reportsRes, uploadLogRes, followersRes, visitorsRes, demographicsFollowersRes, demographicsVisitorsRes, prevMetricsRes, prevPostsRes, prevFollowersRes] = await Promise.all([
-      API.getSocialMetrics(_currentClient.id, _currentPlatform, dateFrom, dateTo),
-      API.getSocialPosts(_currentClient.id, _currentPlatform, dateFrom, dateTo),
+    const currentEntity = _currentEntity  // capture once for this load cycle
+    const [metricsRes, postsRes, reportsRes, uploadLogRes, followersRes, visitorsRes, demographicsFollowersRes, demographicsVisitorsRes, prevMetricsRes, prevPostsRes, prevFollowersRes] = await Promise.all([
+      API.getSocialMetrics(_currentClient.id, _currentPlatform, dateFrom, dateTo, currentEntity),
+      API.getSocialPosts(_currentClient.id, _currentPlatform, dateFrom, dateTo, currentEntity),
       API.getMasterFolderFiles(_currentClient.id, _currentMonth, 'reports'),
       API.getAnalyticsUploadLog(_currentClient.id, _currentPlatform),
-      API.getSocialFollowers(_currentClient.id, _currentPlatform, dateFrom, dateTo),
-      API.getSocialVisitors(_currentClient.id, _currentPlatform, dateFrom, dateTo),
-      API.getSocialDemographics(_currentClient.id, _currentPlatform, 'followers'),
-      API.getSocialDemographics(_currentClient.id, _currentPlatform, 'visitors'),
-      API.getSocialMetrics(_currentClient.id, _currentPlatform, prevFrom, prevTo),
-      API.getSocialPosts(_currentClient.id, _currentPlatform, prevFrom, prevTo),
-      API.getSocialFollowers(_currentClient.id, _currentPlatform, prevFrom, prevTo),
-    ])*/
-
-     const entityId = _currentEntity || null
-
-const [
-  metricsRes,
-  postsRes,
-  reportsRes,
-  uploadLogRes,
-  followersRes,
-  visitorsRes,
-  demographicsFollowersRes,
-  demographicsVisitorsRes,
-  prevMetricsRes,
-  prevPostsRes,
-  prevFollowersRes
-] = await Promise.all([
-  API.getSocialMetrics(
-    _currentClient.id,
-    entityId,
-    _currentPlatform,
-    dateFrom,
-    dateTo
-  ),
-
-  API.getSocialPosts(
-    _currentClient.id,
-    entityId,
-    _currentPlatform,
-    dateFrom,
-    dateTo
-  ),
-
-  API.getMasterFolderFiles(
-    _currentClient.id,
-    _currentMonth,
-    'reports'
-  ),
-
-  API.getAnalyticsUploadLog(
-    _currentClient.id,
-    entityId,
-    _currentPlatform
-  ),
-
-  API.getSocialFollowers(
-    _currentClient.id,
-    entityId,
-    _currentPlatform,
-    dateFrom,
-    dateTo
-  ),
-
-  API.getSocialVisitors(
-    _currentClient.id,
-    entityId,
-    _currentPlatform,
-    dateFrom,
-    dateTo
-  ),
-
-  API.getSocialDemographics(
-    _currentClient.id,
-    entityId,
-    _currentPlatform,
-    'followers'
-  ),
-
-  API.getSocialDemographics(
-    _currentClient.id,
-    entityId,
-    _currentPlatform,
-    'visitors'
-  ),
-
-  API.getSocialMetrics(
-    _currentClient.id,
-    entityId,
-    _currentPlatform,
-    prevFrom,
-    prevTo
-  ),
-
-  API.getSocialPosts(
-    _currentClient.id,
-    entityId,
-    _currentPlatform,
-    prevFrom,
-    prevTo
-  ),
-
-  API.getSocialFollowers(
-    _currentClient.id,
-    entityId,
-    _currentPlatform,
-    prevFrom,
-    prevTo
-  ),
-])
+      API.getSocialFollowers(_currentClient.id, _currentPlatform, dateFrom, dateTo, currentEntity),
+      API.getSocialVisitors(_currentClient.id, _currentPlatform, dateFrom, dateTo, currentEntity),
+      API.getSocialDemographics(_currentClient.id, _currentPlatform, 'followers', currentEntity),
+      API.getSocialDemographics(_currentClient.id, _currentPlatform, 'visitors', currentEntity),
+      API.getSocialMetrics(_currentClient.id, _currentPlatform, prevFrom, prevTo, currentEntity),
+      API.getSocialPosts(_currentClient.id, _currentPlatform, prevFrom, prevTo, currentEntity),
+      API.getSocialFollowers(_currentClient.id, _currentPlatform, prevFrom, prevTo, currentEntity),
+    ])
     const metrics = metricsRes.data || [], posts = postsRes.data || []
     const reports = reportsRes.data || [], uploadLog = uploadLogRes.data || []
     const followers = followersRes.data || [], visitors = visitorsRes.data || []
