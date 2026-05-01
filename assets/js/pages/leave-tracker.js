@@ -1053,8 +1053,8 @@ const LeaveTracker = (() => {
         <div class="lt-approval-card section-card" style="margin-bottom:12px;"
           data-approval-id="${r.id}" data-approval-type="${type}">
           <div style="display:flex;align-items:flex-start;gap:12px;padding:14px 16px;">
-            <div style="width:36px;height:36px;border-radius:50%;background:var(--primary-light,#e8f0fe);color:var(--primary);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-              ${initials}
+            <div style="width:36px;height:36px;border-radius:50%;background:var(--primary-light,#e8f0fe);color:var(--primary);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">
+              ${emp.profile_image_url ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" alt="" style="width:100%;height:100%;object-fit:cover;">` : Utils.getInitials(emp.name || '?')}
             </div>
             <div style="flex:1;min-width:0;">
               <div style="font-weight:600;font-size:14px;">${Utils.escapeHtml(emp.name || '—')}</div>
@@ -1254,8 +1254,8 @@ const LeaveTracker = (() => {
       const emp = r.employee || {}
       return `
         <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);">
-          <div style="width:30px;height:30px;border-radius:50%;background:var(--primary-light,#e8f0fe);color:var(--primary);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-            ${Utils.getInitials(emp.name || '?')}
+          <div style="width:30px;height:30px;border-radius:50%;background:var(--primary-light,#e8f0fe);color:var(--primary);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">
+            ${emp.profile_image_url ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" alt="" style="width:100%;height:100%;object-fit:cover;">` : Utils.getInitials(emp.name || '?')}
           </div>
           <div style="flex:1;min-width:0;">
             <div style="font-weight:500;font-size:13px;">${Utils.escapeHtml(emp.name || '—')}</div>

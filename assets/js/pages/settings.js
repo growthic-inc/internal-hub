@@ -84,7 +84,7 @@ const Settings = (() => {
           <div class="section-card-header"><h3>Profile</h3></div>
           <div class="section-card-body">
             <div class="settings-profile-row">
-              <div class="settings-avatar">${Utils.getInitials(user.name)}</div>
+              <div class="settings-avatar">${user.profile_image_url ? `<img src="${Utils.escapeHtml(user.profile_image_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : Utils.getInitials(user.name)}</div>
               <div>
                 <div class="settings-name">${Utils.escapeHtml(user.name)}</div>
                 <div class="settings-role">${Utils.getRoleLabel(user.role)} &middot; ${Utils.escapeHtml(user.department || 'Growthic')}</div>

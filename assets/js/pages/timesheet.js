@@ -686,7 +686,7 @@ const Timesheet = (() => {
     const name   = emp?.name || 'Unknown'
     const dept   = emp?.department ? emp.department.replace(/_/g, ' ') : ''
     const total  = entries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
-    const initials = name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+    const imgUrl   = emp?.profile_image_url || null
 
     const rows = entries.map(e => {
       const desc = e.work_description || e.task_description || '—'
@@ -720,7 +720,7 @@ const Timesheet = (() => {
       <div class="section-card mb-3">
         <div class="section-card-header" style="display:flex;align-items:center;justify-content:space-between;">
           <div style="display:flex;align-items:center;gap:10px;">
-            <div style="width:34px;height:34px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;">${initials}</div>
+            <div style="width:34px;height:34px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;overflow:hidden;">${imgUrl ? `<img src="${Utils.escapeHtml(imgUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;">` : Utils.getInitials(name)}</div>
             <div>
               <div style="font-weight:600;font-size:14px;">${Utils.escapeHtml(name)}</div>
               ${dept ? `<div style="font-size:11px;color:var(--text-muted);text-transform:capitalize;">${Utils.escapeHtml(dept)}</div>` : ''}

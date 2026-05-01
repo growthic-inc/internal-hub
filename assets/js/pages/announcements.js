@@ -127,7 +127,7 @@ const Announcements = (() => {
 
   function _cardHTML(a) {
     const authorName   = a.author?.name || 'People & Culture'
-    const initials     = Utils.getInitials(authorName)
+    const authorImg    = a.author?.profile_image_url || null
     const isDraft      = !a.published
     const counts       = _reactionCounts.get(a.id) || {}
     const mine         = _myReactions.get(a.id) || new Set()
@@ -142,7 +142,7 @@ const Announcements = (() => {
     return `
       <div class="ann-card${isDraft ? ' ann-card--draft' : ''}" data-ann-id="${a.id}">
         <div class="ann-card-header">
-          <div class="ann-author-avatar">${Utils.escapeHtml(initials)}</div>
+          <div class="ann-author-avatar">${authorImg ? `<img src="${Utils.escapeHtml(authorImg)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : Utils.escapeHtml(Utils.getInitials(authorName))}</div>
           <div class="ann-meta">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
               <span style="font-weight:600;font-size:13px;">${Utils.escapeHtml(authorName)}</span>

@@ -371,7 +371,7 @@ const App = (() => {
             <div class="pw-section-label">Profile Picture</div>
             <div class="pw-avatar-row">
               <div class="pw-avatar-preview" id="pw-avatar-preview">
-                <span>${Utils.getInitials(user.name)}</span>
+                ${user.profile_image_url ? `<img src="${Utils.escapeHtml(user.profile_image_url)}" alt="">` : `<span>${Utils.getInitials(user.name)}</span>`}
               </div>
               <label class="btn btn--secondary btn--sm" style="cursor:pointer;">
                 Upload Photo

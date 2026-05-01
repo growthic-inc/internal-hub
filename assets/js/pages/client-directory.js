@@ -232,7 +232,7 @@ const ClientDirectory = (() => {
 
         <div class="client-card-footer">
           <div class="client-card-am">
-            <div class="client-card-am-avatar">${Utils.getInitials(amName)}</div>
+            <div class="client-card-am-avatar">${c.account_manager?.profile_image_url ? `<img src="${Utils.escapeHtml(c.account_manager.profile_image_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : Utils.getInitials(amName)}</div>
             <span>${Utils.escapeHtml(amName)}</span>
           </div>
           <div class="client-card-meta">
