@@ -1535,10 +1535,10 @@
   align-items: start;
 }
 
-/* 5 day columns */
+/* 6 day columns */
 .ts-day-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 12px;
   align-items: start;
 }

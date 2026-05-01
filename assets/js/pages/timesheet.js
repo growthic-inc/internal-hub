@@ -20,13 +20,6 @@ const Timesheet = (() => {
   let _teamEmpId   = ''
 
   /* ── Constants ──────────────────────────────────────────── */
-  const ACTIVITY_TYPES = [
-    'Strategy & Planning', 'Content Creation', 'Content Writing',
-    'Graphic Design', 'Video Editing', 'Social Media Management',
-    'Client Communication', 'Research & Analysis', 'Reporting & Analytics',
-    'Internal Meeting', 'Administrative', 'Other',
-  ]
-
   const CHART_COLORS = [
     '#0F4799','#1D9E75','#45BBF0','#F59E0B',
     '#8B5CF6','#EF4444','#EC4899','#14B8A6',
@@ -147,7 +140,7 @@ const Timesheet = (() => {
     const content = document.getElementById('ts-content')
     if (!content) return
 
-    const days = Array.from({ length: 5 }, (_, i) => {
+    const days = Array.from({ length: 6 }, (_, i) => {
       const d = new Date(_weekStart)
       d.setDate(d.getDate() + i)
       return d
@@ -436,10 +429,6 @@ const Timesheet = (() => {
       `<option value="${en.id}" ${existingEntry?.entity_id === en.id ? 'selected' : ''}>${Utils.escapeHtml(en.entity_name)}</option>`
     ).join('')
 
-    const activityOpts = ACTIVITY_TYPES.map(a =>
-      `<option value="${a}" ${existingEntry?.activity_type === a ? 'selected' : ''}>${a}</option>`
-    ).join('')
-
     Utils.openModal(`
       <div class="modal-header">
         <h3 class="modal-title">${isEdit ? 'Edit Entry' : 'Log Time Entry'}</h3>
@@ -483,14 +472,6 @@ const Timesheet = (() => {
         </div>
 
         <div class="form-group">
-          <label class="form-label">Task / Activity <span class="required">*</span></label>
-          <select class="form-select" id="ts-f-activity">
-            <option value="">— Select activity —</option>
-            ${activityOpts}
-          </select>
-        </div>
-
-        <div class="form-group">
           <label class="form-label">Work Description <span class="required">*</span></label>
           <textarea class="form-input" id="ts-f-desc" rows="3"
             placeholder="Describe what you worked on in detail…"
@@ -528,7 +509,6 @@ const Timesheet = (() => {
       const hours    = parseFloat(document.getElementById('ts-f-hours').value)
       const clientId = document.getElementById('ts-f-client').value || null
       const entityId = document.getElementById('ts-f-entity')?.value || null
-      const activity = document.getElementById('ts-f-activity').value
       const desc     = document.getElementById('ts-f-desc').value.trim()
 
       errEl.style.display = 'none'
@@ -536,7 +516,6 @@ const Timesheet = (() => {
       const errs = []
       if (!date)                          errs.push('Date is required.')
       if (!clientId)                      errs.push('Please select a client.')
-      if (!activity)                      errs.push('Please select a task/activity type.')
       if (!desc)                          errs.push('Work description is required.')
       if (isNaN(hours) || hours <= 0)     errs.push('Hours must be greater than 0.')
       if (hours > 12)                     errs.push('Hours cannot exceed 12 per entry.')
@@ -557,7 +536,6 @@ const Timesheet = (() => {
         client_id:        clientId,
         entity_id:        entityId || null,
         project_code:     clientObj?.project_code || null,
-        activity_type:    activity,
         work_description: desc,
         task_description: desc,   // keep populated for backward compat
         updated_at:       new Date().toISOString(),
@@ -845,7 +823,7 @@ const Timesheet = (() => {
     d.setHours(0, 0, 0, 0); return d
   }
   function _toISO(date)   { return date.toISOString().split('T')[0] }
-  function _weekEnd(ws)   { const e = new Date(ws); e.setDate(e.getDate() + 6); return e }
+  function _weekEnd(ws)   { const e = new Date(ws); e.setDate(e.getDate() + 5); return e }
   function _weekLabel(ws) {
     const opts = { month:'short', day:'numeric' }
     return `${ws.toLocaleDateString('en-IN', opts)} – ${_weekEnd(ws).toLocaleDateString('en-IN', { ...opts, year:'numeric' })}`
