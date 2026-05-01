@@ -426,8 +426,25 @@ const Announcements = (() => {
         const { error } = await API.updateAnnouncement(_editingId, record)
         if (error) throw error
       } else {
-        const { error } = await API.createAnnouncement({ ...record, created_by: _user.id })
+        const { data: annData, error } = await API.createAnnouncement({ ...record, created_by: _user.id })
         if (error) throw error
+
+        // Notify all active employees (except author)
+        const { data: employees } = await API.getEmployees(true)
+        if (employees?.length) {
+          const notifications = employees
+            .filter(e => e.id !== _user.id)
+            .map(e => ({
+              recipient_employee_id: e.id,
+              type: 'info',
+              message: `New announcement: "${title}"`,
+              module: 'announcements',
+              record_id: annData?.id || null,
+            }))
+          if (notifications.length) {
+            Config.supabase.from('notifications').insert(notifications)
+          }
+        }
       }
 
       Utils.closeModal()

@@ -351,6 +351,19 @@ const Tools = (() => {
       })
     }
 
+    if (req.employee_id) {
+      const toolName = req.tools?.name || req.tool_name_requested || 'tool'
+      API.createNotification({
+        recipient_employee_id: req.employee_id,
+        type: decision === 'approved' ? 'approval' : 'rejection',
+        message: decision === 'approved'
+          ? `Your request for access to ${toolName} has been approved.`
+          : `Your request for access to ${toolName} was rejected${comment ? ': ' + comment : '.'}`,
+        module: 'tools',
+        record_id: req.id,
+      })
+    }
+
     Utils.closeModal()
     Utils.showToast(decision === 'approved' ? 'Request approved.' : 'Request rejected.', 'success')
     _loadRequestsInbox()

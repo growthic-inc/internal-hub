@@ -294,7 +294,8 @@ const Reimbursements = (() => {
                   ? `<td>${r.status === 'approved'
                       ? `<button class="btn btn--xs btn--success" data-pay="${r.id}"
                             data-name="${Utils.escapeHtml(employeeName)}"
-                            data-amount="${r.hr_approved_amount || r.amount}">Mark Paid</button>`
+                            data-amount="${r.hr_approved_amount || r.amount}"
+                            data-employee="${r.employee_id}">Mark Paid</button>`
                       : '<span class="text-muted text-sm">—</span>'
                     }</td>`
                   : ''}
@@ -395,7 +396,7 @@ const Reimbursements = (() => {
     `
 
     document.querySelectorAll('[data-pay]').forEach(btn => {
-      btn.addEventListener('click', () => _openMarkPaidModal(btn.dataset.pay, btn.dataset.name, btn.dataset.amount))
+      btn.addEventListener('click', () => _openMarkPaidModal(btn.dataset.pay, btn.dataset.name, btn.dataset.amount, btn.dataset.employee))
     })
   }
 
@@ -1060,6 +1061,18 @@ const Reimbursements = (() => {
 
     if (error) { Utils.showToast('Action failed: ' + error.message, 'error'); return }
 
+    if (record.employee_id) {
+      const label = isClaim ? 'reimbursement claim' : 'pre-approval request'
+      API.createNotification({
+        recipient_employee_id: record.employee_id,
+        type: decision === 'approved' ? 'approval' : 'rejection',
+        message: decision === 'approved'
+          ? `Your ${label} has been approved.`
+          : `Your ${label} was rejected${remarks ? ': ' + remarks : '.'}`,
+        module: 'reimbursements',
+        record_id: record.id,
+      })
+    }
     Utils.closeModal()
     Utils.showToast(`${decision === 'approved' ? 'Approved' : 'Rejected'} successfully.`, 'success')
     _loadTab(_activeTab)
@@ -1068,7 +1081,7 @@ const Reimbursements = (() => {
   /* ══════════════════════════════════════════════════════════
      MARK AS PAID MODAL (unchanged)
   ══════════════════════════════════════════════════════════ */
-  function _openMarkPaidModal(claimId, employeeName, amount) {
+  function _openMarkPaidModal(claimId, employeeName, amount, employeeId) {
     Utils.openModal(`
       <div class="modal-header">
         <h3 class="modal-title">Mark as Paid</h3>
@@ -1103,6 +1116,15 @@ const Reimbursements = (() => {
         return
       }
 
+      if (employeeId) {
+        API.createNotification({
+          recipient_employee_id: employeeId,
+          type: 'approval',
+          message: `Your reimbursement of ${Utils.formatCurrency(amount)} has been paid.`,
+          module: 'reimbursements',
+          record_id: claimId,
+        })
+      }
       Utils.closeModal()
       Utils.showToast('Marked as paid.', 'success')
       _loadPaymentTab()

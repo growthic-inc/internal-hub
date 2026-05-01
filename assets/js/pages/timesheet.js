@@ -404,6 +404,14 @@ const Timesheet = (() => {
     if (error) {
       Utils.showToast('Failed to submit. Try again.', 'error')
     } else {
+      if (_user.manager_id) {
+        API.createNotification({
+          recipient_employee_id: _user.manager_id,
+          type: 'info',
+          message: `${_user.name} submitted timesheet entries for ${date}.`,
+          module: 'timesheet',
+        })
+      }
       Utils.showToast('Entries submitted for review.', 'success')
       await _loadWeek()
     }

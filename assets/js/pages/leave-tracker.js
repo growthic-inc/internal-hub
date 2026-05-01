@@ -763,6 +763,23 @@ const LeaveTracker = (() => {
         return
       }
 
+      if (approverId) {
+        API.createNotification({
+          recipient_employee_id: approverId,
+          type: 'info',
+          message: `${_user.name} submitted a leave request.`,
+          module: 'leave_tracker',
+        })
+      } else {
+        _employees
+          .filter(e => (e.role === 'super_admin' || e.department === 'people_culture') && e.id !== _user.id)
+          .forEach(hr => API.createNotification({
+            recipient_employee_id: hr.id,
+            type: 'info',
+            message: `${_user.name} submitted a leave request (no manager assigned).`,
+            module: 'leave_tracker',
+          }))
+      }
       Utils.closeModal()
       Utils.showToast('Leave request submitted.', 'success')
       await _refreshMyLeaveData()
@@ -807,6 +824,7 @@ const LeaveTracker = (() => {
           <th>Days</th>
           <th>Status</th>
           <th>Reason</th>
+          <th>Work Plan</th>
           <th>Approver</th>
           <th></th>
         </tr></thead>
@@ -822,6 +840,7 @@ const LeaveTracker = (() => {
                 ${r.approver_comment ? `<div class="text-sm text-muted" style="margin-top:2px;">${Utils.escapeHtml(Utils.truncate(r.approver_comment, 40))}</div>` : ''}
               </td>
               <td class="text-muted" style="font-size:12px;">${Utils.escapeHtml(Utils.truncate(r.reason || '—', 50))}</td>
+              <td style="font-size:12px;max-width:200px;">${r.work_plan ? Utils.escapeHtml(Utils.truncate(r.work_plan, 80)) : '<span class="text-muted">—</span>'}</td>
               <td style="font-size:12px;">${Utils.escapeHtml(r.approver?.name || '—')}</td>
               <td style="white-space:nowrap;">
                 ${r.status === 'pending' ? `<button class="btn btn--xs btn--ghost" data-cancel-wfh="${r.id}" style="color:var(--danger);">Cancel</button>` : ''}
@@ -916,8 +935,16 @@ const LeaveTracker = (() => {
 
         <div class="form-group">
           <label class="form-label">Reason</label>
-          <textarea class="form-input" id="lt-f-wfh-reason" rows="3"
+          <textarea class="form-input" id="lt-f-wfh-reason" rows="2"
             placeholder="Reason for WFH…" style="resize:vertical;"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Work Plan <span class="required">*</span></label>
+          <textarea class="form-input" id="lt-f-wfh-work-plan" rows="4"
+            placeholder="What will you wrap up today? List your tasks for the day…"
+            style="resize:vertical;"></textarea>
+          <div class="form-hint">Visible to your manager and HR.</div>
         </div>
       </div>
       <div class="modal-footer">
@@ -949,16 +976,18 @@ const LeaveTracker = (() => {
     _updateWfhCount()
 
     document.getElementById('lt-submit-wfh-btn')?.addEventListener('click', async () => {
-      const errEl  = document.getElementById('lt-wfh-modal-err')
-      const btn    = document.getElementById('lt-submit-wfh-btn')
-      const start  = document.getElementById('lt-f-wfh-start').value
-      const end    = document.getElementById('lt-f-wfh-end').value
-      const reason = document.getElementById('lt-f-wfh-reason').value.trim()
+      const errEl    = document.getElementById('lt-wfh-modal-err')
+      const btn      = document.getElementById('lt-submit-wfh-btn')
+      const start    = document.getElementById('lt-f-wfh-start').value
+      const end      = document.getElementById('lt-f-wfh-end').value
+      const reason   = document.getElementById('lt-f-wfh-reason').value.trim()
+      const workPlan = document.getElementById('lt-f-wfh-work-plan').value.trim()
 
       errEl.style.display = 'none'
       if (!start) { errEl.textContent = 'Please select a start date.'; errEl.style.display = 'block'; return }
       if (!end)   { errEl.textContent = 'Please select an end date.';   errEl.style.display = 'block'; return }
       if (end < start) { errEl.textContent = 'End date cannot be before start date.'; errEl.style.display = 'block'; return }
+      if (!workPlan) { errEl.textContent = 'Please describe your work plan for the day.'; errEl.style.display = 'block'; return }
 
       const days = _calcLeaveDays(start, end, false)
 
@@ -985,6 +1014,7 @@ const LeaveTracker = (() => {
         end_date:     end,
         days,
         reason:       reason || null,
+        work_plan:    workPlan,
         status:       'pending',
         approver_id:  approverId,
       })
@@ -998,6 +1028,23 @@ const LeaveTracker = (() => {
         return
       }
 
+      if (approverId) {
+        API.createNotification({
+          recipient_employee_id: approverId,
+          type: 'info',
+          message: `${_user.name} submitted a WFH request.`,
+          module: 'leave_tracker',
+        })
+      } else {
+        _employees
+          .filter(e => (e.role === 'super_admin' || e.department === 'people_culture') && e.id !== _user.id)
+          .forEach(hr => API.createNotification({
+            recipient_employee_id: hr.id,
+            type: 'info',
+            message: `${_user.name} submitted a WFH request (no manager assigned).`,
+            module: 'leave_tracker',
+          }))
+      }
       Utils.closeModal()
       Utils.showToast('WFH request submitted.', 'success')
       await _refreshMyLeaveData()
@@ -1066,6 +1113,12 @@ const LeaveTracker = (() => {
                 ${type === 'leave' && r.is_half_day ? `<span class="badge badge--muted" style="font-size:10px;margin-left:4px;">Half-day ${r.half_day_period || ''}</span>` : ''}
               </div>
               ${r.reason ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px;">${Utils.escapeHtml(Utils.truncate(r.reason, 80))}</div>` : ''}
+              ${type === 'wfh' && r.work_plan ? `
+                <div style="margin-top:8px;padding:8px 10px;background:var(--bg-muted,rgba(0,0,0,0.04));border-radius:6px;border-left:3px solid var(--accent);">
+                  <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;">Work Plan</div>
+                  <div style="font-size:13px;white-space:pre-line;">${Utils.escapeHtml(r.work_plan)}</div>
+                </div>
+              ` : ''}
               ${r.cancellation_reason ? `<div style="font-size:12px;color:var(--warning);margin-top:3px;">Cancellation reason: ${Utils.escapeHtml(r.cancellation_reason)}</div>` : ''}
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0;align-items:flex-start;">
@@ -1189,6 +1242,9 @@ const LeaveTracker = (() => {
   }
 
   async function _approveCancellation(id, type) {
+    const arr = type === 'leave' ? _pendingApprovals : _pendingWfh
+    const req = arr.find(r => r.id === id)
+
     const updateFn = type === 'leave' ? API.updateLeaveRequest : API.updateWfhRequest
     const { error } = await updateFn(id, {
       status:   'cancelled',
@@ -1197,6 +1253,16 @@ const LeaveTracker = (() => {
     if (error) {
       Utils.showToast('Failed: ' + error.message, 'error')
     } else {
+      if (req?.employee?.id) {
+        const label = type === 'leave' ? 'leave' : 'WFH'
+        API.createNotification({
+          recipient_employee_id: req.employee.id,
+          type: 'approval',
+          message: `Your ${label} cancellation request has been approved.`,
+          module: 'leave_tracker',
+          record_id: id,
+        })
+      }
       Utils.showToast('Cancellation approved.', 'success')
       await _refreshApprovalData()
       _loadTab('pending-approvals')
@@ -1204,11 +1270,24 @@ const LeaveTracker = (() => {
   }
 
   async function _denyCancellation(id, type) {
+    const arr = type === 'leave' ? _pendingApprovals : _pendingWfh
+    const req = arr.find(r => r.id === id)
+
     const updateFn = type === 'leave' ? API.updateLeaveRequest : API.updateWfhRequest
     const { error } = await updateFn(id, { status: 'approved' })
     if (error) {
       Utils.showToast('Failed: ' + error.message, 'error')
     } else {
+      if (req?.employee?.id) {
+        const label = type === 'leave' ? 'leave' : 'WFH'
+        API.createNotification({
+          recipient_employee_id: req.employee.id,
+          type: 'rejection',
+          message: `Your ${label} cancellation request was denied. The original request remains approved.`,
+          module: 'leave_tracker',
+          record_id: id,
+        })
+      }
       Utils.showToast('Cancellation denied. Request restored to approved.', 'success')
       await _refreshApprovalData()
       _loadTab('pending-approvals')
