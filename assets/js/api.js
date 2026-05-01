@@ -655,6 +655,33 @@ const API = (() => {
       .like('joining_date', `%-${mm}-${dd}`)
   }
 
+  async function getWhoIsOutToday() {
+    const today = new Date().toISOString().split('T')[0]
+    return supabase
+      .from('leave_requests')
+      .select('employees!employee_id(id, name, profile_image_url, designation, department)')
+      .eq('status', 'approved')
+      .lte('start_date', today)
+      .gte('end_date', today)
+  }
+
+  async function getPendingTimesheetApprovalsCount(employeeId) {
+    const res = await supabase
+      .from('timesheets')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'submitted')
+      .neq('employee_id', employeeId)
+    return res.count || 0
+  }
+
+  async function getBirthdayEmployees() {
+    return supabase
+      .from('employees')
+      .select('id, name, date_of_birth, profile_image_url, designation')
+      .eq('status', 'active')
+      .not('date_of_birth', 'is', null)
+  }
+
   async function updateEmployeeFull(employeeId, data) {
     return supabase.from('employees').update(data).eq('id', employeeId)
   }
@@ -955,6 +982,7 @@ const API = (() => {
     createEmployee, updateOwnProfile, uploadAvatar,
     getHomeLeaveData, getUpcomingHolidays, getRecentAnnouncements,
     getPendingApprovalsCount, getWorkAnniversaries,
+    getWhoIsOutToday, getPendingTimesheetApprovalsCount, getBirthdayEmployees,
     // Phase 7
     getDepartments, addDepartment, deleteDepartment,
     getEmployeesFull, updateEmployeeFull,
