@@ -74,22 +74,25 @@ const API = (() => {
   async function getTimesheetEntries(employeeId, from, to) {
     return supabase
       .from('timesheets')
-      .select('*, clients(client_name, project_code)')
+      .select('*, clients(client_name, project_code), entity:client_entities!entity_id(entity_name)')
       .eq('employee_id', employeeId)
       .gte('date', from)
       .lte('date', to)
       .order('date')
+      .order('created_at')
   }
 
-  async function getTeamTimesheetEntries(from, to) {
+  async function getTeamTimesheetEntries(from, to, empId = null) {
     // RLS policy on timesheets filters to the team lead's reports automatically.
-    return supabase
+    let q = supabase
       .from('timesheets')
-      .select('*, employees(name), clients(client_name, project_code)')
+      .select('*, employees(id, name, avatar_url, department), clients(client_name, project_code), entity:client_entities!entity_id(entity_name)')
       .gte('date', from)
       .lte('date', to)
       .in('status', ['submitted', 'approved', 'rejected'])
       .order('date', { ascending: false })
+    if (empId) q = q.eq('employee_id', empId)
+    return q
   }
 
   async function upsertTimesheetEntry(entry) {

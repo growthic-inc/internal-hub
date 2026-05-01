@@ -1,41 +1,57 @@
 /* ============================================================
-   TIMESHEET — Phase 5 design language
-   Two tabs: My Timesheet (week view) + Team Submissions
-   Modals via Utils.openModal().
+   TIMESHEET — Phase 10 Redesign
+   Calendar week view + per-day submission + entity support
+   Two tabs: My Timesheet · Team's Timesheet (managers)
    ============================================================ */
 
 const Timesheet = (() => {
 
-  let _user      = null
-  let _entries   = []
-  let _clients   = []
-  let _weekStart = null
-  let _activeTab = 'mine'
-  let _p         = null  // department permissions
+  /* ── State ──────────────────────────────────────────────── */
+  let _user        = null
+  let _entries     = []
+  let _clients     = []
+  let _weekStart   = null
+  let _activeTab   = 'mine'
+  let _p           = null
+  let _sideChart   = null   // Chart.js donut
+  // Team tab
+  let _teamEntries = []
+  let _teamWeek    = null
+  let _teamEmpId   = ''
 
-  const CAN_APPROVE = ['super_admin', 'founders_office', 'team_lead', 'hr']
+  /* ── Constants ──────────────────────────────────────────── */
+  const ACTIVITY_TYPES = [
+    'Strategy & Planning', 'Content Creation', 'Content Writing',
+    'Graphic Design', 'Video Editing', 'Social Media Management',
+    'Client Communication', 'Research & Analysis', 'Reporting & Analytics',
+    'Internal Meeting', 'Administrative', 'Other',
+  ]
 
-  const STATUS_BADGE = {
-    draft:     '<span class="badge badge--muted">Draft</span>',
-    submitted: '<span class="badge badge--warning">Submitted</span>',
-    approved:  '<span class="badge badge--success">Approved</span>',
-    rejected:  '<span class="badge badge--danger">Rejected</span>',
+  const CHART_COLORS = [
+    '#0F4799','#1D9E75','#45BBF0','#F59E0B',
+    '#8B5CF6','#EF4444','#EC4899','#14B8A6',
+  ]
+
+  const STATUS = {
+    draft:     { label:'Draft',      cls:'badge--muted'   },
+    submitted: { label:'In Review',  cls:'badge--warning' },
+    approved:  { label:'Approved',   cls:'badge--success' },
+    rejected:  { label:'Rejected',   cls:'badge--danger'  },
   }
 
-  /* ── render ──────────────────────────────────────────────── */
+  /* ── render ─────────────────────────────────────────────── */
   function render(user) {
-    const showTeam = CAN_APPROVE.includes(user.role) && App.hasAccess('timesheet', 'approve_timesheets', 'can_approve')
-    const tabs = [{ id: 'mine', label: 'My Timesheet' }]
-    if (showTeam) tabs.push({ id: 'team', label: 'Team Submissions' })
+    const showTeam = App.hasAccess('timesheet', 'approve_timesheets', 'can_approve')
+    const tabs = [{ id:'mine', label:'My Timesheet' }]
+    if (showTeam) tabs.push({ id:'team', label:"Team's Timesheet" })
 
     return `
       <div class="page-inner">
         <div class="page-toolbar">
           <div class="tabs" id="ts-tabs">
-            ${tabs.map(t => `
-              <button class="tab-btn${t.id === 'mine' ? ' tab-btn--active' : ''}" data-tab="${t.id}">
-                ${t.label}
-              </button>`).join('')}
+            ${tabs.map((t,i) => `
+              <button class="tab-btn${i===0?' tab-btn--active':''}" data-tab="${t.id}">${t.label}</button>
+            `).join('')}
           </div>
           <div id="ts-toolbar-actions"></div>
         </div>
@@ -44,7 +60,7 @@ const Timesheet = (() => {
     `
   }
 
-  /* ── init ────────────────────────────────────────────────── */
+  /* ── init ───────────────────────────────────────────────── */
   async function init(user) {
     _user      = user
     _p         = {
@@ -53,6 +69,7 @@ const Timesheet = (() => {
       can_approve: App.hasAccess('timesheet', 'approve_timesheets', 'can_approve'),
     }
     _weekStart = _getMondayOf(new Date())
+    _teamWeek  = _getMondayOf(new Date())
     _activeTab = 'mine'
 
     const { data } = await API.getClients(false)
@@ -62,6 +79,7 @@ const Timesheet = (() => {
     _loadTab('mine')
   }
 
+  /* ── Tab management ─────────────────────────────────────── */
   function _bindTabs() {
     document.querySelectorAll('#ts-tabs .tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -76,6 +94,7 @@ const Timesheet = (() => {
   function _loadTab(tab) {
     const toolbar = document.getElementById('ts-toolbar-actions')
     if (toolbar) toolbar.innerHTML = ''
+    if (_sideChart) { _sideChart.destroy(); _sideChart = null }
     switch (tab) {
       case 'mine': return _loadMineTab()
       case 'team': return _loadTeamTab()
@@ -90,15 +109,15 @@ const Timesheet = (() => {
     if (toolbar) {
       toolbar.innerHTML = `
         <div style="display:flex;align-items:center;gap:6px;">
-          <button class="btn btn--ghost btn--sm" id="ts-prev">← Prev</button>
-          <span id="ts-week-label"
-            style="font-size:13px;font-weight:600;min-width:220px;text-align:center;">—</span>
-          <button class="btn btn--ghost btn--sm" id="ts-next">Next →</button>
+          <button class="btn btn--ghost btn--sm" id="ts-prev" title="Previous week">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <span id="ts-week-label" style="font-size:13px;font-weight:600;min-width:180px;text-align:center;">—</span>
+          <button class="btn btn--ghost btn--sm" id="ts-next" title="Next week">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
         </div>
-        <div style="display:flex;gap:8px;">
-          ${_p.can_edit ? `<button class="btn btn--secondary btn--sm" id="ts-submit-btn" style="display:none;">Submit Drafts</button>` : ''}
-          ${_p.can_create ? `<button class="btn btn--primary btn--sm" id="ts-log-btn">+ Log Entry</button>` : ''}
-        </div>
+        ${_p.can_create ? `<button class="btn btn--primary btn--sm" id="ts-log-btn">+ Enter Log</button>` : ''}
       `
       document.getElementById('ts-prev').addEventListener('click', () => {
         _weekStart.setDate(_weekStart.getDate() - 7); _loadWeek()
@@ -106,152 +125,282 @@ const Timesheet = (() => {
       document.getElementById('ts-next').addEventListener('click', () => {
         _weekStart.setDate(_weekStart.getDate() + 7); _loadWeek()
       })
-      if (_p.can_edit)   document.getElementById('ts-submit-btn')?.addEventListener('click', _submitDrafts)
-      if (_p.can_create) document.getElementById('ts-log-btn')?.addEventListener('click', _openLogModal)
+      if (_p.can_create) document.getElementById('ts-log-btn')?.addEventListener('click', () => _openEntryModal())
     }
     _loadWeek()
   }
 
   async function _loadWeek() {
     const label = document.getElementById('ts-week-label')
-    if (label) label.textContent = _weekLabel()
+    if (label) label.textContent = _weekLabel(_weekStart)
 
     const content = document.getElementById('ts-content')
     if (content) content.innerHTML = '<p class="loading-text">Loading…</p>'
 
-    const { data, error } = await API.getTimesheetEntries(
-      _user.id, _toISO(_weekStart), _toISO(_weekEnd())
-    )
+    const { data, error } = await API.getTimesheetEntries(_user.id, _toISO(_weekStart), _toISO(_weekEnd(_weekStart)))
     if (error) { Utils.showToast('Failed to load timesheet.', 'error'); return }
     _entries = data || []
     _renderWeek()
-    _updateSubmitBtn()
   }
 
   function _renderWeek() {
     const content = document.getElementById('ts-content')
     if (!content) return
 
-    const days = Array.from({ length: 7 }, (_, i) => {
+    const days = Array.from({ length: 5 }, (_, i) => {
       const d = new Date(_weekStart)
       d.setDate(d.getDate() + i)
       return d
     })
 
-    const totalHours = _entries.reduce((s, e) => s + parseFloat(e.hours), 0)
-    const drafts     = _entries.filter(e => e.status === 'draft').length
-    const approved   = _entries.filter(e => e.status === 'approved').length
+    // Build sidebar data
+    const clientHours = {}
+    _entries.forEach(e => {
+      const name = e.clients?.client_name || 'Internal'
+      clientHours[name] = (clientHours[name] || 0) + parseFloat(e.hours || 0)
+    })
+    const totalHours = Object.values(clientHours).reduce((s, h) => s + h, 0)
+
+    // Pending: past weekdays with unsent drafts
+    const today = _toISO(new Date())
+    const pending = days.filter(d => {
+      const iso = _toISO(d)
+      if (iso >= today) return false
+      return _entries.some(e => e.date === iso && e.status === 'draft')
+    })
 
     content.innerHTML = `
-      <div class="grid-3 mb-4">
-        <div class="stat-card">
-          <div class="stat-label">This Week</div>
-          <div class="stat-value">${totalHours.toFixed(1)}h</div>
-          <div class="stat-delta">${_entries.length} entr${_entries.length === 1 ? 'y' : 'ies'} logged</div>
+      <div class="ts-layout">
+        <div class="ts-day-grid">
+          ${days.map(d => _renderDayCol(d)).join('')}
         </div>
-        <div class="stat-card">
-          <div class="stat-label">Drafts</div>
-          <div class="stat-value">${drafts}</div>
-          <div class="stat-delta">pending submission</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Approved</div>
-          <div class="stat-value stat-value--positive">${approved}</div>
-          <div class="stat-delta">entries confirmed</div>
-        </div>
-      </div>
-
-      <div class="section-card">
-        <div class="section-card-body" style="padding:0;">
-          ${days.map(day => {
-            const iso        = _toISO(day)
-            const dayEntries = _entries.filter(e => e.date === iso)
-            const dayLabel   = day.toLocaleDateString('en-IN', {
-              weekday: 'long', month: 'short', day: 'numeric',
-            })
-            const isToday  = iso === _toISO(new Date())
-            const dayHours = dayEntries.reduce((s, e) => s + parseFloat(e.hours), 0)
-
-            return `
-              <div class="ts-day">
-                <div class="ts-day-header">
-                  <span class="ts-day-label${isToday ? ' ts-day-label--today' : ''}">
-                    ${dayLabel}
-                    ${isToday ? '<span class="ts-today-tag">Today</span>' : ''}
-                  </span>
-                  ${dayHours > 0
-                    ? `<span class="ts-day-hours">${dayHours.toFixed(1)}h</span>`
-                    : ''}
-                </div>
-                ${dayEntries.length ? `
-                  <table class="data-table">
-                    <tbody>
-                      ${dayEntries.map(entry => `
-                        <tr>
-                          <td style="width:110px;">${STATUS_BADGE[entry.status] || entry.status}</td>
-                          <td>
-                            <div style="font-size:13px;">${Utils.escapeHtml(entry.task_description)}</div>
-                            ${entry.clients
-                              ? `<div class="text-sm text-muted" style="margin-top:2px;">
-                                   ${entry.clients.project_code} — ${Utils.escapeHtml(entry.clients.client_name)}
-                                 </div>`
-                              : ''}
-                            ${entry.rejection_comment
-                              ? `<div class="text-sm" style="color:var(--danger);margin-top:2px;">
-                                   ↳ ${Utils.escapeHtml(entry.rejection_comment)}
-                                 </div>`
-                              : ''}
-                          </td>
-                          <td style="width:60px;text-align:right;font-weight:700;font-size:13px;">
-                            ${entry.hours}h
-                          </td>
-                          <td style="width:40px;text-align:right;">
-                            ${entry.status === 'draft' && _p.can_edit ? `
-                              <button class="btn btn--xs btn--ghost ts-delete"
-                                data-id="${entry.id}" title="Delete entry"
-                                style="padding:4px 6px;color:var(--danger);">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
-                                  viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                  <polyline points="3 6 5 6 21 6"/>
-                                  <path d="M19 6l-1 14H6L5 6"/>
-                                  <path d="M10 11v6"/><path d="M14 11v6"/>
-                                  <path d="M9 6V4h6v2"/>
-                                </svg>
-                              </button>
-                            ` : ''}
-                          </td>
-                        </tr>
-                      `).join('')}
-                    </tbody>
-                  </table>
-                ` : `<div class="ts-day-empty">No entries</div>`}
-              </div>
-            `
-          }).join('')}
+        <div class="ts-sidebar">
+          ${_renderSidebar(totalHours, clientHours, days, pending)}
         </div>
       </div>
     `
 
-    content.querySelectorAll('.ts-delete').forEach(btn =>
+    // Bind interactions
+    content.querySelectorAll('.ts-add-btn').forEach(btn =>
+      btn.addEventListener('click', () => _openEntryModal(btn.dataset.date))
+    )
+    content.querySelectorAll('.ts-submit-day').forEach(btn =>
+      btn.addEventListener('click', () => _submitDay(btn.dataset.date))
+    )
+    content.querySelectorAll('.ts-edit-entry').forEach(btn =>
+      btn.addEventListener('click', () => {
+        const entry = _entries.find(e => e.id === btn.dataset.id)
+        if (entry) _openEntryModal(entry.date, entry)
+      })
+    )
+    content.querySelectorAll('.ts-delete-entry').forEach(btn =>
       btn.addEventListener('click', () => _deleteEntry(btn.dataset.id))
     )
+
+    _initSidebarChart(clientHours)
   }
 
-  function _updateSubmitBtn() {
-    if (!_p.can_edit) return
-    const btn = document.getElementById('ts-submit-btn')
-    if (!btn) return
-    const drafts = _entries.filter(e => e.status === 'draft').length
-    btn.style.display = drafts > 0 ? 'inline-flex' : 'none'
-    if (drafts > 0) btn.textContent = `Submit ${drafts} Draft${drafts > 1 ? 's' : ''}`
+  /* ── Day column ─────────────────────────────────────────── */
+  function _renderDayCol(day) {
+    const iso        = _toISO(day)
+    const dayEntries = _entries.filter(e => e.date === iso)
+    const isToday    = iso === _toISO(new Date())
+    const dayHours   = dayEntries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+
+    // Determine day-level status
+    const drafts    = dayEntries.filter(e => e.status === 'draft').length
+    const submitted = dayEntries.filter(e => e.status === 'submitted').length
+    const approved  = dayEntries.filter(e => e.status === 'approved').length
+    const rejected  = dayEntries.filter(e => e.status === 'rejected').length
+
+    let headerIcon = ''
+    if (dayEntries.length && approved === dayEntries.length) {
+      headerIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1D9E75" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
+    } else if (submitted > 0 && drafts === 0 && rejected === 0) {
+      headerIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`
+    } else if (rejected > 0) {
+      headerIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`
+    }
+
+    let footerHtml = ''
+    if (drafts > 0 && _p.can_edit) {
+      footerHtml = `<button class="ts-day-action ts-day-action--submit ts-submit-day" data-date="${iso}">Submit ${drafts} Draft${drafts > 1 ? 's' : ''}</button>`
+    } else if (approved === dayEntries.length && dayEntries.length > 0) {
+      footerHtml = `<div class="ts-day-action ts-day-action--approved">Approved</div>`
+    } else if (submitted > 0 && drafts === 0 && rejected === 0) {
+      footerHtml = `<div class="ts-day-action ts-day-action--review">In Review</div>`
+    } else if (rejected > 0) {
+      footerHtml = `<div class="ts-day-action ts-day-action--rejected">Has Rejections</div>`
+    }
+
+    return `
+      <div class="ts-col${isToday ? ' ts-col--today' : ''}">
+        <div class="ts-col-header">
+          <div class="ts-col-top">
+            <span class="ts-col-weekday">${day.toLocaleDateString('en-IN', { weekday:'short' }).toUpperCase()}</span>
+            <span class="ts-col-status-icon">${headerIcon}</span>
+          </div>
+          <span class="ts-col-date${isToday ? ' ts-col-date--today' : ''}">${day.getDate()}</span>
+          ${dayHours > 0 ? `<span class="ts-col-hours">${dayHours.toFixed(1)}h</span>` : ''}
+        </div>
+
+        <div class="ts-col-body">
+          ${dayEntries.map(e => _renderCard(e)).join('')}
+          ${_p.can_create ? `
+            <button class="ts-add-btn" data-date="${iso}">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Entry
+            </button>
+          ` : ''}
+        </div>
+
+        <div class="ts-col-footer">${footerHtml}</div>
+      </div>
+    `
   }
 
-  async function _submitDrafts() {
-    const draftIds = _entries.filter(e => e.status === 'draft').map(e => e.id)
+  /* ── Entry card ─────────────────────────────────────────── */
+  function _renderCard(e) {
+    const canAct     = e.status === 'draft' || e.status === 'rejected'
+    const clientName = e.clients?.client_name || null
+    const projCode   = e.clients?.project_code || null
+    const entityName = e.entity?.entity_name || null
+    const desc       = e.work_description || e.task_description || ''
+
+    return `
+      <div class="ts-card ts-card--${e.status}">
+        ${clientName ? `
+          <div class="ts-card-client">
+            <span class="ts-card-client-name">${Utils.escapeHtml(clientName)}</span>
+            ${projCode ? `<span class="ts-card-code">${Utils.escapeHtml(projCode)}</span>` : ''}
+          </div>
+        ` : '<div class="ts-card-client"><span class="ts-card-client-name" style="color:var(--text-muted);">Internal</span></div>'}
+        ${entityName ? `<div class="ts-card-entity">${Utils.escapeHtml(entityName)}</div>` : ''}
+        ${e.activity_type ? `<div class="ts-card-activity">${Utils.escapeHtml(e.activity_type)}</div>` : ''}
+        ${desc ? `<div class="ts-card-desc">${Utils.escapeHtml(Utils.truncate(desc, 70))}</div>` : ''}
+        <div class="ts-card-footer">
+          <span class="ts-card-hours">${parseFloat(e.hours).toFixed(1)}h</span>
+          <span class="badge ${STATUS[e.status]?.cls || 'badge--muted'}">${STATUS[e.status]?.label || e.status}</span>
+        </div>
+        ${e.rejection_comment ? `
+          <div class="ts-card-rejection">
+            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            ${Utils.escapeHtml(e.rejection_comment)}
+          </div>
+        ` : ''}
+        ${canAct ? `
+          <div class="ts-card-actions">
+            <button class="ts-edit-entry" data-id="${e.id}" title="Edit">
+              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Edit
+            </button>
+            <button class="ts-delete-entry" data-id="${e.id}" title="Delete">
+              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+              Delete
+            </button>
+          </div>
+        ` : ''}
+      </div>
+    `
+  }
+
+  /* ── Sidebar ────────────────────────────────────────────── */
+  function _renderSidebar(totalHours, clientHours, days, pending) {
+    const dayBarsHtml = days.map(d => {
+      const iso    = _toISO(d)
+      const de     = _entries.filter(e => e.date === iso)
+      const h      = de.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+      const allApp = de.length > 0 && de.every(e => e.status === 'approved')
+      const allSub = de.length > 0 && de.every(e => ['submitted','approved'].includes(e.status))
+      const hasDraft = de.some(e => e.status === 'draft')
+      const color  = allApp ? '#1D9E75' : allSub ? '#F59E0B' : hasDraft ? '#0F4799' : 'var(--border)'
+      const pct    = Math.max(h > 0 ? Math.round((h / 9) * 100) : 0, 0)
+      const label  = d.toLocaleDateString('en-IN', { weekday:'short' }).slice(0,1)
+      return `
+        <div class="ts-sb-bar-wrap">
+          <span class="ts-sb-bar-val">${h > 0 ? h.toFixed(0) : ''}</span>
+          <div class="ts-sb-bar-track">
+            <div class="ts-sb-bar-fill" style="height:${pct}%;background:${color};"></div>
+          </div>
+          <span class="ts-sb-bar-label">${label}</span>
+        </div>
+      `
+    }).join('')
+
+    const clientLegend = Object.entries(clientHours).map(([name, h], i) => `
+      <div class="ts-sb-legend-row">
+        <span class="ts-sb-legend-dot" style="background:${CHART_COLORS[i % CHART_COLORS.length]};"></span>
+        <span class="ts-sb-legend-name">${Utils.escapeHtml(name)}</span>
+        <span class="ts-sb-legend-val">${h.toFixed(0)}h</span>
+      </div>
+    `).join('')
+
+    const pendingHtml = pending.length ? `
+      <div class="ts-sb-section">
+        <div class="ts-sb-label">Pending</div>
+        ${pending.map(d => {
+          const iso  = _toISO(d)
+          const dHrs = _entries.filter(e => e.date === iso && e.status === 'draft')
+                               .reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+          const dateLabel = d.toLocaleDateString('en-IN', { month:'short', day:'numeric' })
+          return `
+            <div class="ts-sb-pending-row">
+              <span>${dateLabel}</span>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-weight:600;font-size:12px;">${dHrs.toFixed(0)}h</span>
+                ${_p.can_edit ? `<button class="btn btn--xs ts-submit-day" data-date="${iso}" style="background:#EF4444;color:#fff;border:none;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;cursor:pointer;">Fix</button>` : ''}
+              </div>
+            </div>
+          `
+        }).join('')}
+      </div>
+    ` : ''
+
+    return `
+      <div class="ts-sb-section">
+        <div class="ts-sb-label">Weekly Hours</div>
+        <div class="ts-sb-total">${totalHours.toFixed(1)}</div>
+        <div class="ts-sb-bars">${dayBarsHtml}</div>
+      </div>
+
+      ${Object.keys(clientHours).length ? `
+        <div class="ts-sb-section" style="margin-top:20px;">
+          <div class="ts-sb-label">Distribution</div>
+          <div class="ts-sb-donut-wrap">
+            <canvas id="ts-donut" width="120" height="120"></canvas>
+          </div>
+          <div class="ts-sb-legend">${clientLegend}</div>
+        </div>
+      ` : ''}
+
+      ${pendingHtml}
+    `
+  }
+
+  function _initSidebarChart(clientHours) {
+    const canvas = document.getElementById('ts-donut')
+    if (!canvas || typeof Chart === 'undefined') return
+    if (_sideChart) { _sideChart.destroy(); _sideChart = null }
+    const labels = Object.keys(clientHours)
+    const data   = Object.values(clientHours)
+    if (!labels.length) return
+    _sideChart = new Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{ data, backgroundColor: CHART_COLORS.slice(0, data.length), borderWidth: 2, borderColor: '#fff' }],
+      },
+      options: {
+        cutout: '68%',
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed.toFixed(1)}h` } } },
+      },
+    })
+  }
+
+  /* ── Per-day submit ─────────────────────────────────────── */
+  async function _submitDay(date) {
+    const draftIds = _entries.filter(e => e.date === date && e.status === 'draft').map(e => e.id)
     if (!draftIds.length) return
-    const btn = document.getElementById('ts-submit-btn')
-    if (btn) { btn.disabled = true; btn.textContent = 'Submitting…' }
 
     const { error } = await Config.supabase
       .from('timesheets')
@@ -259,202 +408,377 @@ const Timesheet = (() => {
       .in('id', draftIds)
       .eq('employee_id', _user.id)
 
-    if (btn) btn.disabled = false
     if (error) {
       Utils.showToast('Failed to submit. Try again.', 'error')
     } else {
-      Utils.showToast('Timesheet submitted for approval.', 'success')
+      Utils.showToast('Entries submitted for review.', 'success')
       await _loadWeek()
     }
   }
 
-  async function _deleteEntry(id) {
-    const { error } = await Config.supabase
-      .from('timesheets')
-      .delete()
-      .eq('id', id)
-      .eq('employee_id', _user.id)
-      .eq('status', 'draft')
-
-    if (error) {
-      Utils.showToast('Failed to delete entry.', 'error')
-    } else {
-      _entries = _entries.filter(e => e.id !== id)
-      _renderWeek()
-      _updateSubmitBtn()
-    }
-  }
-
-  /* ══════════════════════════════════════════════════════════
-     LOG ENTRY MODAL
-  ══════════════════════════════════════════════════════════ */
-  function _openLogModal() {
-    const today        = _toISO(new Date())
+  /* ── Entry modal (create + edit) ────────────────────────── */
+  function _openEntryModal(preDate = null, existingEntry = null) {
+    const isEdit      = !!existingEntry
+    const weekEndISO  = _toISO(_weekEnd(_weekStart))
     const weekStartISO = _toISO(_weekStart)
-    const weekEndISO   = _toISO(_weekEnd())
-    const defaultDate  = (today >= weekStartISO && today <= weekEndISO) ? today : weekStartISO
+    const todayISO    = _toISO(new Date())
+    const defaultDate = preDate || (todayISO >= weekStartISO && todayISO <= weekEndISO ? todayISO : weekStartISO)
 
-    const clientOptions = _clients.map(c =>
-      `<option value="${c.id}">${c.project_code} — ${Utils.escapeHtml(c.client_name)}</option>`
+    // Client options
+    const clientOpts = _clients.map(c =>
+      `<option value="${c.id}" ${existingEntry?.client_id === c.id ? 'selected' : ''}>${Utils.escapeHtml(c.project_code + ' — ' + c.client_name)}</option>`
+    ).join('')
+
+    // Pre-select entities
+    const preClientId = existingEntry?.client_id || ''
+    const preEntities = preClientId ? (_clients.find(c => c.id === preClientId)?.client_entities || []) : []
+    const entityOpts  = preEntities.map(en =>
+      `<option value="${en.id}" ${existingEntry?.entity_id === en.id ? 'selected' : ''}>${Utils.escapeHtml(en.entity_name)}</option>`
+    ).join('')
+
+    const activityOpts = ACTIVITY_TYPES.map(a =>
+      `<option value="${a}" ${existingEntry?.activity_type === a ? 'selected' : ''}>${a}</option>`
     ).join('')
 
     Utils.openModal(`
       <div class="modal-header">
-        <h3 class="modal-title">Log Time Entry</h3>
+        <h3 class="modal-title">${isEdit ? 'Edit Entry' : 'Log Time Entry'}</h3>
         <button class="modal-close" onclick="Utils.closeModal()">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-            fill="none" stroke="currentColor" stroke-width="2.5">
-            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
       <div class="modal-body">
-        <div id="ts-modal-err" class="alert alert--danger" style="display:none;"></div>
+        <div id="ts-modal-err" class="alert alert--danger" style="display:none;margin-bottom:12px;"></div>
+
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Date <span class="required">*</span></label>
             <input class="form-input" type="date" id="ts-f-date"
-              value="${defaultDate}" min="${weekStartISO}" max="${weekEndISO}" />
+              value="${existingEntry?.date || defaultDate}"
+              min="${weekStartISO}" max="${weekEndISO}" />
           </div>
           <div class="form-group">
-            <label class="form-label">Hours <span class="required">*</span></label>
+            <label class="form-label">Hours Spent <span class="required">*</span></label>
             <input class="form-input" type="number" id="ts-f-hours"
-              min="0.5" max="8" step="0.5" placeholder="Max 8h" />
+              min="0.5" max="12" step="0.5"
+              value="${existingEntry?.hours || ''}"
+              placeholder="e.g. 2.5" />
           </div>
         </div>
+
         <div class="form-group">
-          <label class="form-label">Client</label>
+          <label class="form-label">Client <span class="required">*</span></label>
           <select class="form-select" id="ts-f-client">
-            <option value="">— No client / Internal —</option>
-            ${clientOptions}
+            <option value="">— Select client —</option>
+            ${clientOpts}
           </select>
         </div>
+
+        <div class="form-group" id="ts-entity-wrap" style="${preEntities.length ? '' : 'display:none;'}">
+          <label class="form-label">Entity <span class="required">*</span></label>
+          <select class="form-select" id="ts-f-entity">
+            <option value="">— Select entity —</option>
+            ${entityOpts}
+          </select>
+        </div>
+
         <div class="form-group">
-          <label class="form-label">Task Description <span class="required">*</span></label>
+          <label class="form-label">Task / Activity <span class="required">*</span></label>
+          <select class="form-select" id="ts-f-activity">
+            <option value="">— Select activity —</option>
+            ${activityOpts}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Work Description <span class="required">*</span></label>
           <textarea class="form-input" id="ts-f-desc" rows="3"
-            placeholder="What did you work on?" style="resize:vertical;"></textarea>
+            placeholder="Describe what you worked on in detail…"
+            style="resize:vertical;">${Utils.escapeHtml(existingEntry?.work_description || existingEntry?.task_description || '')}</textarea>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
-        <button class="btn btn--primary" id="ts-modal-save">Save Entry</button>
+        <button class="btn btn--primary" id="ts-modal-save">${isEdit ? 'Update Entry' : 'Save Entry'}</button>
       </div>
-    `)
+    `, { width: '520px' })
 
-    document.getElementById('ts-modal-save').addEventListener('click', async () => {
-      const errEl   = document.getElementById('ts-modal-err')
-      const saveBtn = document.getElementById('ts-modal-save')
-      const date    = document.getElementById('ts-f-date').value
-      const hours   = parseFloat(document.getElementById('ts-f-hours').value)
-      const desc    = document.getElementById('ts-f-desc').value.trim()
+    // Entity cascade on client change
+    document.getElementById('ts-f-client')?.addEventListener('change', e => {
+      const clientId = e.target.value
+      const client   = _clients.find(c => c.id === clientId)
+      const entities = client?.client_entities || []
+      const wrap     = document.getElementById('ts-entity-wrap')
+      const sel      = document.getElementById('ts-f-entity')
+      if (entities.length) {
+        sel.innerHTML = `<option value="">— Select entity —</option>` +
+          entities.map(en => `<option value="${en.id}">${Utils.escapeHtml(en.entity_name)}</option>`).join('')
+        wrap.style.display = ''
+      } else {
+        sel.innerHTML = ''
+        wrap.style.display = 'none'
+      }
+    })
+
+    // Save
+    document.getElementById('ts-modal-save')?.addEventListener('click', async () => {
+      const errEl    = document.getElementById('ts-modal-err')
+      const saveBtn  = document.getElementById('ts-modal-save')
+      const date     = document.getElementById('ts-f-date').value
+      const hours    = parseFloat(document.getElementById('ts-f-hours').value)
       const clientId = document.getElementById('ts-f-client').value || null
+      const entityId = document.getElementById('ts-f-entity')?.value || null
+      const activity = document.getElementById('ts-f-activity').value
+      const desc     = document.getElementById('ts-f-desc').value.trim()
 
       errEl.style.display = 'none'
-      if (!date)                                    { errEl.textContent = 'Please select a date.';             errEl.style.display = 'block'; return }
-      if (!desc)                                    { errEl.textContent = 'Please enter a task description.';  errEl.style.display = 'block'; return }
-      if (isNaN(hours) || hours <= 0 || hours > 8)  { errEl.textContent = 'Hours must be between 0.5 and 8.'; errEl.style.display = 'block'; return }
+
+      const errs = []
+      if (!date)                          errs.push('Date is required.')
+      if (!clientId)                      errs.push('Please select a client.')
+      if (!activity)                      errs.push('Please select a task/activity type.')
+      if (!desc)                          errs.push('Work description is required.')
+      if (isNaN(hours) || hours <= 0)     errs.push('Hours must be greater than 0.')
+      if (hours > 12)                     errs.push('Hours cannot exceed 12 per entry.')
+
+      // Entity required if client has entities
+      const clientObj  = _clients.find(c => c.id === clientId)
+      const hasEntities = (clientObj?.client_entities || []).length > 0
+      if (hasEntities && !entityId)       errs.push('Please select an entity for this client.')
+
+      if (errs.length) { errEl.textContent = errs[0]; errEl.style.display = 'block'; return }
 
       saveBtn.disabled    = true
-      saveBtn.textContent = 'Saving…'
+      saveBtn.textContent = isEdit ? 'Updating…' : 'Saving…'
 
-      const { error } = await Config.supabase.from('timesheets').insert({
-        employee_id:      _user.id,
+      const payload = {
         date,
         hours,
-        task_description: desc,
         client_id:        clientId,
-        project_code:     clientId ? (_clients.find(c => c.id === clientId)?.project_code || null) : null,
-        status:           'draft',
-      })
+        entity_id:        entityId || null,
+        project_code:     clientObj?.project_code || null,
+        activity_type:    activity,
+        work_description: desc,
+        task_description: desc,   // keep populated for backward compat
+        updated_at:       new Date().toISOString(),
+      }
+
+      let error
+      if (isEdit) {
+        // Editing a rejected entry resets it to draft for resubmission
+        if (existingEntry.status === 'rejected') payload.status = 'draft'
+        ;({ error } = await Config.supabase.from('timesheets').update(payload).eq('id', existingEntry.id).eq('employee_id', _user.id))
+      } else {
+        ;({ error } = await Config.supabase.from('timesheets').insert({ ...payload, employee_id: _user.id, status: 'draft' }))
+      }
 
       saveBtn.disabled    = false
-      saveBtn.textContent = 'Save Entry'
+      saveBtn.textContent = isEdit ? 'Update Entry' : 'Save Entry'
 
       if (error) {
         errEl.textContent   = error.message
         errEl.style.display = 'block'
       } else {
         Utils.closeModal()
-        Utils.showToast('Entry logged.', 'success')
+        Utils.showToast(isEdit ? 'Entry updated.' : 'Entry logged.', 'success')
         await _loadWeek()
       }
     })
   }
 
+  async function _deleteEntry(id) {
+    if (!confirm('Delete this entry?')) return
+    const { error } = await Config.supabase
+      .from('timesheets')
+      .delete()
+      .eq('id', id)
+      .eq('employee_id', _user.id)
+      .in('status', ['draft', 'rejected'])
+
+    if (error) {
+      Utils.showToast('Failed to delete entry.', 'error')
+    } else {
+      _entries = _entries.filter(e => e.id !== id)
+      _renderWeek()
+    }
+  }
+
   /* ══════════════════════════════════════════════════════════
-     TEAM SUBMISSIONS TAB
+     TEAM'S TIMESHEET TAB
   ══════════════════════════════════════════════════════════ */
   async function _loadTeamTab() {
+    const toolbar = document.getElementById('ts-toolbar-actions')
+    if (toolbar) {
+      toolbar.innerHTML = `
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button class="btn btn--ghost btn--sm" id="ts-team-prev">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <span id="ts-team-week-label" style="font-size:13px;font-weight:600;min-width:180px;text-align:center;">—</span>
+          <button class="btn btn--ghost btn--sm" id="ts-team-next">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+      `
+      document.getElementById('ts-team-prev')?.addEventListener('click', () => {
+        _teamWeek.setDate(_teamWeek.getDate() - 7); _fetchTeamWeek()
+      })
+      document.getElementById('ts-team-next')?.addEventListener('click', () => {
+        _teamWeek.setDate(_teamWeek.getDate() + 7); _fetchTeamWeek()
+      })
+    }
+    _fetchTeamWeek()
+  }
+
+  async function _fetchTeamWeek() {
+    const label = document.getElementById('ts-team-week-label')
+    if (label) label.textContent = _weekLabel(_teamWeek)
+
     const content = document.getElementById('ts-content')
-    content.innerHTML = '<p class="loading-text">Loading team submissions…</p>'
+    if (content) content.innerHTML = '<p class="loading-text">Loading team submissions…</p>'
 
-    const from = new Date()
-    from.setDate(from.getDate() - 30)
+    const from = _toISO(_teamWeek)
+    const to   = _toISO(_weekEnd(_teamWeek))
 
-    const { data, error } = await API.getTeamTimesheetEntries(_toISO(from), _toISO(new Date()))
+    const { data, error } = await API.getTeamTimesheetEntries(from, to, _teamEmpId || null)
     if (error) { Utils.showToast('Failed to load team data.', 'error'); return }
+    _teamEntries = data || []
+    _renderTeamView()
+  }
 
-    const entries = data || []
+  function _renderTeamView() {
+    const content = document.getElementById('ts-content')
+    if (!content) return
+
+    // Group by employee
+    const empMap = {}
+    _teamEntries.forEach(e => {
+      const empId = e.employee_id
+      if (!empMap[empId]) empMap[empId] = { emp: e.employees, entries: [] }
+      empMap[empId].entries.push(e)
+    })
+
+    const groups = Object.values(empMap)
+
+    // Summary row
+    const submitted = _teamEntries.filter(e => e.status === 'submitted').length
+    const approved  = _teamEntries.filter(e => e.status === 'approved').length
+    const rejected  = _teamEntries.filter(e => e.status === 'rejected').length
+    const totalHrs  = _teamEntries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
 
     content.innerHTML = `
-      <div class="section-card">
-        <div class="section-card-header">
-          <h3>Team Submissions</h3>
-          <span class="text-muted text-sm">Last 30 days</span>
+      <div class="grid-4 mb-4">
+        <div class="stat-card">
+          <div class="stat-label">Total Hours</div>
+          <div class="stat-value">${totalHrs.toFixed(1)}h</div>
+          <div class="stat-delta">${_teamEntries.length} entr${_teamEntries.length === 1 ? 'y' : 'ies'}</div>
         </div>
-        <div class="section-card-body">
-          ${!entries.length
-            ? '<p class="empty-state">No submissions in the last 30 days.</p>'
-            : `<table class="data-table">
-                <thead><tr>
-                  <th>Date</th>
-                  <th>Employee</th>
-                  <th>Client</th>
-                  <th>Task</th>
-                  <th style="text-align:right;">Hours</th>
-                  <th>Status</th>
-                  <th></th>
-                </tr></thead>
-                <tbody>
-                  ${entries.map(e => `
-                    <tr>
-                      <td style="white-space:nowrap;font-size:12px;">${Utils.formatDate(e.date)}</td>
-                      <td>${e.employees ? Utils.escapeHtml(e.employees.name) : '—'}</td>
-                      <td class="text-sm text-muted">${e.clients ? e.clients.project_code : '—'}</td>
-                      <td style="max-width:260px;">
-                        ${Utils.escapeHtml(Utils.truncate(e.task_description, 60))}
-                      </td>
-                      <td style="text-align:right;font-weight:700;">${e.hours}h</td>
-                      <td>${STATUS_BADGE[e.status] || e.status}</td>
-                      <td style="white-space:nowrap;">
-                        ${e.status === 'submitted' ? `
-                          <button class="btn btn--xs btn--secondary ts-approve"
-                            data-id="${e.id}" style="margin-right:4px;">Approve</button>
-                          <button class="btn btn--xs btn--danger ts-reject"
-                            data-id="${e.id}">Reject</button>
-                        ` : ''}
-                      </td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>`
-          }
+        <div class="stat-card">
+          <div class="stat-label">Awaiting Review</div>
+          <div class="stat-value stat-value--warning">${submitted}</div>
+          <div class="stat-delta">need your action</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Approved</div>
+          <div class="stat-value stat-value--positive">${approved}</div>
+          <div class="stat-delta">confirmed</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Rejected</div>
+          <div class="stat-value${rejected > 0 ? ' stat-value--negative' : ''}">${rejected}</div>
+          <div class="stat-delta">sent back</div>
+        </div>
+      </div>
+
+      ${!groups.length
+        ? `<div class="section-card"><div class="section-card-body"><p class="empty-state">No submissions for this week.</p></div></div>`
+        : groups.map(g => _renderTeamEmployeeGroup(g)).join('')
+      }
+    `
+
+    content.querySelectorAll('.ts-approve-entry').forEach(btn =>
+      btn.addEventListener('click', () => _approveEntry(btn.dataset.id))
+    )
+    content.querySelectorAll('.ts-reject-entry').forEach(btn =>
+      btn.addEventListener('click', () => _openRejectModal(btn.dataset.id))
+    )
+  }
+
+  function _renderTeamEmployeeGroup({ emp, entries }) {
+    const name   = emp?.name || 'Unknown'
+    const dept   = emp?.department ? emp.department.replace(/_/g, ' ') : ''
+    const total  = entries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+    const initials = name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+
+    const rows = entries.map(e => {
+      const desc = e.work_description || e.task_description || '—'
+      return `
+        <tr>
+          <td style="white-space:nowrap;font-size:12px;color:var(--text-muted);">${Utils.formatDate(e.date)}</td>
+          <td>
+            ${e.clients ? `<span style="font-weight:500;">${Utils.escapeHtml(e.clients.client_name)}</span>
+            <span class="badge-code" style="margin-left:4px;">${Utils.escapeHtml(e.clients.project_code)}</span>` : '<span class="text-muted">—</span>'}
+            ${e.entity ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${Utils.escapeHtml(e.entity.entity_name)}</div>` : ''}
+          </td>
+          <td style="color:var(--text-muted);font-size:12px;">${Utils.escapeHtml(e.activity_type || '—')}</td>
+          <td style="max-width:220px;">
+            <div style="font-size:12px;" title="${Utils.escapeHtml(desc)}">${Utils.escapeHtml(Utils.truncate(desc, 55))}</div>
+          </td>
+          <td style="text-align:right;font-weight:700;white-space:nowrap;">${parseFloat(e.hours).toFixed(1)}h</td>
+          <td>${_statusBadge(e.status)}</td>
+          <td style="white-space:nowrap;">
+            ${e.status === 'submitted' ? `
+              <button class="btn btn--xs btn--secondary ts-approve-entry" data-id="${e.id}" style="margin-right:4px;">Approve</button>
+              <button class="btn btn--xs btn--danger ts-reject-entry"  data-id="${e.id}">Reject</button>
+            ` : e.status === 'rejected' && e.rejection_comment ? `
+              <span style="font-size:11px;color:var(--text-muted);max-width:120px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${Utils.escapeHtml(e.rejection_comment)}">↳ ${Utils.escapeHtml(e.rejection_comment)}</span>
+            ` : ''}
+          </td>
+        </tr>
+      `
+    }).join('')
+
+    return `
+      <div class="section-card mb-3">
+        <div class="section-card-header" style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:34px;height:34px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;">${initials}</div>
+            <div>
+              <div style="font-weight:600;font-size:14px;">${Utils.escapeHtml(name)}</div>
+              ${dept ? `<div style="font-size:11px;color:var(--text-muted);text-transform:capitalize;">${Utils.escapeHtml(dept)}</div>` : ''}
+            </div>
+          </div>
+          <span style="font-weight:700;font-size:14px;color:var(--primary);">${total.toFixed(1)}h</span>
+        </div>
+        <div class="section-card-body" style="padding:0;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Client</th>
+                <th>Activity</th>
+                <th>Description</th>
+                <th style="text-align:right;">Hours</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
         </div>
       </div>
     `
+  }
 
-    content.querySelectorAll('.ts-approve').forEach(btn =>
-      btn.addEventListener('click', () => _approveEntry(btn.dataset.id))
-    )
-    content.querySelectorAll('.ts-reject').forEach(btn =>
-      btn.addEventListener('click', () => _openRejectModal(btn.dataset.id))
-    )
+  function _statusBadge(status) {
+    const cfg = STATUS[status] || { label: status, cls: 'badge--muted' }
+    return `<span class="badge ${cfg.cls}">${cfg.label}</span>`
   }
 
   async function _approveEntry(entryId) {
     const { error } = await Config.supabase
       .from('timesheets')
-      .update({ status: 'approved', approved_by: _user.id, updated_at: new Date().toISOString() })
+      .update({ status: 'approved', approved_by: _user.id, acted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq('id', entryId)
       .eq('status', 'submitted')
 
@@ -462,7 +786,7 @@ const Timesheet = (() => {
       Utils.showToast('Failed to approve.', 'error')
     } else {
       Utils.showToast('Entry approved.', 'success')
-      _loadTeamTab()
+      _fetchTeamWeek()
     }
   }
 
@@ -471,17 +795,15 @@ const Timesheet = (() => {
       <div class="modal-header">
         <h3 class="modal-title">Reject Entry</h3>
         <button class="modal-close" onclick="Utils.closeModal()">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-            fill="none" stroke="currentColor" stroke-width="2.5">
-            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
       <div class="modal-body">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Provide a reason so the employee can fix and resubmit.</p>
         <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">Reason for rejection</label>
           <textarea class="form-input" id="ts-reject-comment" rows="3"
-            placeholder="Explain why this entry is being rejected…"
+            placeholder="e.g. Hours don't match the work described…"
             style="resize:vertical;"></textarea>
         </div>
       </div>
@@ -491,19 +813,15 @@ const Timesheet = (() => {
       </div>
     `)
 
-    document.getElementById('ts-reject-confirm').addEventListener('click', async () => {
-      const comment  = document.getElementById('ts-reject-comment').value.trim()
-      const btn      = document.getElementById('ts-reject-confirm')
+    document.getElementById('ts-reject-confirm')?.addEventListener('click', async () => {
+      const comment = document.getElementById('ts-reject-comment').value.trim()
+      const btn     = document.getElementById('ts-reject-confirm')
       btn.disabled    = true
       btn.textContent = 'Rejecting…'
 
       const { error } = await Config.supabase
         .from('timesheets')
-        .update({
-          status:            'rejected',
-          rejection_comment: comment || null,
-          updated_at:        new Date().toISOString(),
-        })
+        .update({ status: 'rejected', rejection_comment: comment || null, acted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         .eq('id', entryId)
         .eq('status', 'submitted')
 
@@ -515,35 +833,22 @@ const Timesheet = (() => {
       } else {
         Utils.closeModal()
         Utils.showToast('Entry rejected.', 'success')
-        _loadTeamTab()
+        _fetchTeamWeek()
       }
     })
   }
 
-  /* ── Date helpers ──────────────────────────────────────────── */
+  /* ── Date helpers ───────────────────────────────────────── */
   function _getMondayOf(date) {
-    const d   = new Date(date)
-    const day = d.getDay()
+    const d = new Date(date); const day = d.getDay()
     d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day))
-    d.setHours(0, 0, 0, 0)
-    return d
+    d.setHours(0, 0, 0, 0); return d
   }
-
-  function _toISO(date) {
-    return date.toISOString().split('T')[0]
-  }
-
-  function _weekEnd() {
-    const e = new Date(_weekStart)
-    e.setDate(e.getDate() + 6)
-    return e
-  }
-
-  function _weekLabel() {
-    const opts = { month: 'short', day: 'numeric' }
-    const s    = _weekStart.toLocaleDateString('en-IN', opts)
-    const e    = _weekEnd().toLocaleDateString('en-IN', { ...opts, year: 'numeric' })
-    return `${s} – ${e}`
+  function _toISO(date)   { return date.toISOString().split('T')[0] }
+  function _weekEnd(ws)   { const e = new Date(ws); e.setDate(e.getDate() + 6); return e }
+  function _weekLabel(ws) {
+    const opts = { month:'short', day:'numeric' }
+    return `${ws.toLocaleDateString('en-IN', opts)} – ${_weekEnd(ws).toLocaleDateString('en-IN', { ...opts, year:'numeric' })}`
   }
 
   return { render, init }
