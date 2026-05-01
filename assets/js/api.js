@@ -137,8 +137,86 @@ const API = (() => {
   async function getAssets() {
     return supabase
       .from('assets')
-      .select('*, employees(name)')
+      .select('*, employees!assigned_to(name)')
       .order('name')
+  }
+
+  async function createAsset(data) {
+    return supabase.from('assets').insert(data).select().single()
+  }
+
+  async function updateAsset(id, data) {
+    return supabase.from('assets').update(data).eq('id', id)
+  }
+
+  async function getAssetHistory(assetId) {
+    return supabase
+      .from('asset_history')
+      .select(`
+        *,
+        to_emp:employees!to_employee_id(name),
+        from_emp:employees!from_employee_id(name),
+        performed_by_emp:employees!performed_by(name)
+      `)
+      .eq('asset_id', assetId)
+      .order('created_at', { ascending: false })
+  }
+
+  async function addAssetHistory(data) {
+    return supabase.from('asset_history').insert(data)
+  }
+
+  async function getAllAssetRepairs() {
+    return supabase
+      .from('asset_repairs')
+      .select('*, reported_by_emp:employees!reported_by(name)')
+      .order('created_at', { ascending: false })
+  }
+
+  async function getAssetRepairsForAsset(assetId) {
+    return supabase
+      .from('asset_repairs')
+      .select('*, reported_by_emp:employees!reported_by(name)')
+      .eq('asset_id', assetId)
+      .order('created_at', { ascending: false })
+  }
+
+  async function createAssetRepair(data) {
+    return supabase.from('asset_repairs').insert(data)
+  }
+
+  async function updateAssetRepair(id, data) {
+    return supabase.from('asset_repairs').update(data).eq('id', id)
+  }
+
+  async function getAssetTypes() {
+    return supabase.from('asset_types').select('*').order('is_default', { ascending: false }).order('name')
+  }
+
+  async function createAssetType(name) {
+    return supabase.from('asset_types').insert({ name }).select().single()
+  }
+
+  async function deleteAssetType(id) {
+    return supabase.from('asset_types').delete().eq('id', id)
+  }
+
+  async function uploadAssetPhoto(file, assetId, context) {
+    const { data: { session } } = await supabase.auth.getSession()
+    const form = new FormData()
+    form.append('file',        file)
+    form.append('asset_id',    assetId)
+    form.append('context',     context)
+    form.append('folder_type', 'asset_photos')
+    const res = await fetch(
+      `${Config.SUPABASE_URL}/functions/v1/upload-to-drive`,
+      {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session?.access_token}`, 'apikey': Config.SUPABASE_ANON_KEY },
+        body: form,
+      }
+    )
+    return res.json()
   }
 
   async function getMyAssetRequests(employeeId) {
@@ -965,7 +1043,12 @@ const API = (() => {
     insertMasterFolderFile, softDeleteMasterFolderFile,
     getMyReimbursements, getReimbursementInbox, getApprovedClaims,
     insertReimbursement, getMyPreApprovals,
-    getAssets, getMyAssetRequests,
+    getAssets, createAsset, updateAsset,
+    getAssetHistory, addAssetHistory,
+    getAllAssetRepairs, getAssetRepairsForAsset, createAssetRepair, updateAssetRepair,
+    getAssetTypes, createAssetType, deleteAssetType,
+    uploadAssetPhoto,
+    getMyAssetRequests,
     getPendingApprovals, updateApproval,
     getTools, getToolAccess, getMyToolAccess, getToolRequests, getMyToolRequests,
     getUnreadNotifications, markNotificationRead, markAllNotificationsRead,

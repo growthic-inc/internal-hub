@@ -4172,3 +4172,94 @@
   flex-shrink: 0;
   font-size: 12px;
 }
+
+/* ============================================================
+   PHASE 10 — Asset Management v2
+   ============================================================ */
+
+.ast-stats-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.ast-stat {
+  flex: 1;
+  min-width: 80px;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  text-align: center;
+}
+
+.ast-stat--alert {
+  border-color: var(--danger);
+}
+
+.ast-stat-val {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.ast-stat-lbl {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 500;
+}
+
+.ast-filter-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.ast-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.ast-asset-card {
+  padding: 16px;
+}
+
+.ast-card-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.ast-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.ast-detail-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 3px;
+  font-weight: 500;
+}
+
+@media (max-width: 900px) {
+  .ast-cards-grid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 600px) {
+  .ast-cards-grid  { grid-template-columns: 1fr; }
+  .ast-stats-row   { grid-template-columns: repeat(3, 1fr); display: grid; }
+  .ast-filter-bar  { flex-direction: column; align-items: stretch; }
+}
