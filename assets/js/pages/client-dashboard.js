@@ -468,6 +468,11 @@ const ClientDashboard = (() => {
       <div class="modal-header"><h3 class="modal-title">Upload Performance Data</h3><button class="modal-close" onclick="Utils.closeModal()"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div>
       <div class="modal-body" id="up-modal-body">
         <div class="form-group"><label class="form-label">Client</label><select class="form-select" id="up-client">${clientOpts}</select></div>
+        <div class="form-group" id="up-entity-group" style="display:none;">
+          <label class="form-label">Entity</label>
+          <select class="form-select" id="up-entity"></select>
+          <span class="form-hint">This client has multiple entities — select which one this data is for.</span>
+        </div>
         <div class="form-row">
           <div class="form-group"><label class="form-label">Platform</label><select class="form-select" id="up-platform"><option value="LinkedIn">LinkedIn</option><option value="Instagram">Instagram</option></select></div>
           <div class="form-group"><label class="form-label">Project Code</label><input class="form-input" type="text" id="up-code" value="${Utils.escapeHtml(_currentClient?.project_code||'')}" readonly style="background:var(--surface);color:var(--text-muted);" /></div>
@@ -490,9 +495,27 @@ const ClientDashboard = (() => {
 
     let _parsedPayload = null
 
+    function _refreshEntityDropdown(clientId) {
+      const c = _clients.find(cl => cl.id === clientId)
+      const entities = c?.client_entities || []
+      const group = document.getElementById('up-entity-group')
+      const sel   = document.getElementById('up-entity')
+      if (entities.length > 1) {
+        sel.innerHTML = entities.map(e => `<option value="${e.id}">${Utils.escapeHtml(e.entity_name)}</option>`).join('')
+        group.style.display = 'block'
+      } else {
+        sel.innerHTML = entities.length === 1 ? `<option value="${entities[0].id}">${Utils.escapeHtml(entities[0].entity_name)}</option>` : ''
+        group.style.display = 'none'
+      }
+    }
+
+    // Populate entity dropdown for the initially selected client
+    _refreshEntityDropdown(document.getElementById('up-client')?.value)
+
     document.getElementById('up-client')?.addEventListener('change', e => {
       const c = _clients.find(cl => cl.id === e.target.value)
       const codeEl = document.getElementById('up-code'); if (c && codeEl) codeEl.value = c.project_code
+      _refreshEntityDropdown(e.target.value)
       _resetPreview()
     })
     document.getElementById('up-platform')?.addEventListener('change', _resetPreview)
@@ -504,7 +527,8 @@ const ClientDashboard = (() => {
     })
     document.getElementById('up-submit-btn')?.addEventListener('click', async () => {
       if (!_parsedPayload) return
-      await _doUpload({ ..._parsedPayload, client_id: document.getElementById('up-client')?.value, platform: document.getElementById('up-platform')?.value?.toLowerCase() })
+      const entityId = document.getElementById('up-entity')?.value || null
+      await _doUpload({ ..._parsedPayload, client_id: document.getElementById('up-client')?.value, platform: document.getElementById('up-platform')?.value?.toLowerCase(), entity_id: entityId })
     })
 
     function _resetPreview() {
