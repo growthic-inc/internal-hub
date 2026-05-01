@@ -665,6 +665,17 @@ const ClientDashboard = (() => {
   function _num(val)    { const n = parseFloat(val); return isNaN(n) ? 0 : n }
   function _parseDate(str) {
     if (!str || typeof str !== 'string') return null
+    str = str.trim()
+    if (!str) return null
+    // Excel serial number (e.g. "45292") — LinkedIn date cells come back as serials when cellDates:false
+    if (/^\d+$/.test(str)) {
+      const d = new Date((parseInt(str, 10) - 25569) * 86400 * 1000)
+      if (isNaN(d.getTime())) return null
+      return d.toISOString().slice(0, 10)
+    }
+    // YYYY-MM-DD (ISO)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str
+    // M/D/YYYY or MM/DD/YYYY
     const [m, d, y] = str.split('/'); if (!m || !d || !y) return null
     return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`
   }

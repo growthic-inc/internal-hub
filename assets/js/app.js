@@ -204,7 +204,7 @@ const App = (() => {
 
     footer.innerHTML = `
       <div class="sidebar-user">
-        <div class="sidebar-user-avatar">${Utils.getInitials(currentUser.name)}</div>
+        <div class="sidebar-user-avatar">${currentUser.profile_image_url ? `<img src="${Utils.escapeHtml(currentUser.profile_image_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : Utils.getInitials(currentUser.name)}</div>
         <div class="sidebar-user-info">
           <div class="sidebar-user-name">${Utils.escapeHtml(currentUser.name)}</div>
           <div class="sidebar-user-role">${Utils.getRoleLabel(currentUser.role)}</div>
@@ -219,7 +219,13 @@ const App = (() => {
   function _renderHeaderUser() {
     const avatar = document.getElementById('user-avatar')
     const info   = document.getElementById('user-dropdown-info')
-    if (avatar) avatar.textContent = Utils.getInitials(currentUser.name)
+    if (avatar) {
+      if (currentUser.profile_image_url) {
+        avatar.innerHTML = `<img src="${Utils.escapeHtml(currentUser.profile_image_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
+      } else {
+        avatar.textContent = Utils.getInitials(currentUser.name)
+      }
+    }
     if (info) info.innerHTML = `
       <div class="dropdown-user-name">${Utils.escapeHtml(currentUser.name)}</div>
       <div class="dropdown-user-role">${Utils.getRoleLabel(currentUser.role)}</div>
