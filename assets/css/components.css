@@ -1127,7 +1127,6 @@
 .kpi-card {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-top: 3px solid var(--kpi-color, var(--primary));
   border-radius: var(--radius-lg);
   padding: 16px 18px;
   transition: box-shadow 0.15s;
@@ -1137,12 +1136,11 @@
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--kpi-color, var(--primary)) 12%, transparent);
-  color: var(--kpi-color, var(--primary));
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 12px;
+  flex-shrink: 0;
 }
 .kpi-label {
   font-size: 11px;

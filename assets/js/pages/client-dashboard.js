@@ -219,15 +219,9 @@ const ClientDashboard = (() => {
         </div>
         <div class="chart-canvas-wrap" style="height:260px;"><canvas id="trend-chart"></canvas></div>
       </div>
-      <div class="charts-row mb-4">
-        <div class="chart-card">
-          <div class="chart-card-header"><span class="chart-card-title">Weekly Publishing Activity</span></div>
-          <div class="chart-canvas-wrap"><canvas id="pub-chart"></canvas></div>
-        </div>
-        <div class="section-card">
-          <div class="section-card-header"><h3>SOW Progress</h3></div>
-          <div class="section-card-body">${_renderSOW(reports.length)}</div>
-        </div>
+      <div class="chart-card mb-4">
+        <div class="chart-card-header"><span class="chart-card-title">Weekly Publishing Activity</span></div>
+        <div class="chart-canvas-wrap"><canvas id="pub-chart"></canvas></div>
       </div>
       <div class="section-card mb-4">
         <div class="section-card-header"><h3>Top Performing Content</h3></div>
@@ -330,8 +324,8 @@ const ClientDashboard = (() => {
   function _renderKPICards(kpis) {
     return kpis.map(k => {
       const meta = _KPI_META[k.label] || { color: '#0F4799', icon: '' }
-      return `<div class="kpi-card" style="--kpi-color:${meta.color};">
-        <div class="kpi-icon-wrap">${meta.icon}</div>
+      return `<div class="kpi-card" style="border-top:3px solid ${meta.color};">
+        <div class="kpi-icon-wrap" style="background:${meta.color}1a;color:${meta.color};">${meta.icon}</div>
         <div class="kpi-label">${Utils.escapeHtml(k.label)}</div>
         <div class="kpi-value">${Utils.escapeHtml(String(k.value))}</div>
       </div>`
