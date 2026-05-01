@@ -74,7 +74,7 @@ const API = (() => {
   async function getTimesheetEntries(employeeId, from, to) {
     return supabase
       .from('timesheets')
-      .select('*, clients(client_name, project_code), entity:client_entities(entity_name)')
+      .select('*, clients(client_name, project_code)')
       .eq('employee_id', employeeId)
       .gte('date', from)
       .lte('date', to)
@@ -86,7 +86,7 @@ const API = (() => {
     // RLS policy on timesheets filters to the team lead's reports automatically.
     let q = supabase
       .from('timesheets')
-      .select('*, employees(id, name, profile_image_url, department), clients(client_name, project_code), entity:client_entities(entity_name)')
+      .select('*, employees!employee_id(id, name, profile_image_url, department), clients!client_id(client_name, project_code)')
       .gte('date', from)
       .lte('date', to)
       .in('status', ['submitted', 'approved', 'rejected'])
