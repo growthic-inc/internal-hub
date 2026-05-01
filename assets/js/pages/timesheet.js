@@ -754,6 +754,8 @@ const Timesheet = (() => {
   }
 
   async function _approveEntry(entryId) {
+    const entry = _teamEntries.find(e => e.id === entryId)
+
     const { error } = await Config.supabase
       .from('timesheets')
       .update({ status: 'approved', approved_by: _user.id, acted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
@@ -763,12 +765,23 @@ const Timesheet = (() => {
     if (error) {
       Utils.showToast('Failed to approve.', 'error')
     } else {
+      if (entry?.employee_id) {
+        API.createNotification({
+          recipient_employee_id: entry.employee_id,
+          type: 'approval',
+          message: 'Your timesheet entry has been approved.',
+          module: 'timesheet',
+          record_id: entryId,
+        })
+      }
       Utils.showToast('Entry approved.', 'success')
       _fetchTeamWeek()
     }
   }
 
   function _openRejectModal(entryId) {
+    const entry = _teamEntries.find(e => e.id === entryId)
+
     Utils.openModal(`
       <div class="modal-header">
         <h3 class="modal-title">Reject Entry</h3>
@@ -809,6 +822,15 @@ const Timesheet = (() => {
       if (error) {
         Utils.showToast('Failed to reject.', 'error')
       } else {
+        if (entry?.employee_id) {
+          API.createNotification({
+            recipient_employee_id: entry.employee_id,
+            type: 'rejection',
+            message: `Your timesheet entry was rejected${comment ? ': ' + comment : '.'}`,
+            module: 'timesheet',
+            record_id: entryId,
+          })
+        }
         Utils.closeModal()
         Utils.showToast('Entry rejected.', 'success')
         _fetchTeamWeek()

@@ -179,6 +179,7 @@ const App = (() => {
     _setupUserMenu()
     _setupLogout()
     _loadNotificationCount()
+    _initNotificationPanel()
 
     router()
     window.addEventListener('hashchange', router)
@@ -262,12 +263,140 @@ const App = (() => {
 
   async function _loadNotificationCount() {
     const { data } = await API.getUnreadNotifications(currentUser.id)
-    if (!data || data.length === 0) return
+    _updateNotifBadge(data ? data.length : 0)
+  }
+
+  function _updateNotifBadge(count) {
     const badge = document.getElementById('notif-badge')
-    if (badge) {
-      badge.textContent = data.length > 9 ? '9+' : data.length
+    if (!badge) return
+    if (count > 0) {
+      badge.textContent = count > 9 ? '9+' : count
       badge.style.display = 'flex'
+    } else {
+      badge.style.display = 'none'
     }
+  }
+
+  function _timeAgo(dateStr) {
+    const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
+    if (diff < 60)   return 'Just now'
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+    return `${Math.floor(diff / 86400)}d ago`
+  }
+
+  function _notifIcon(type) {
+    if (type === 'approval')  return `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`
+    if (type === 'rejection') return `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
+  }
+
+  async function _openNotifPanel() {
+    const panel = document.getElementById('notif-panel')
+    const btn   = document.getElementById('notif-btn')
+    if (!panel || !btn) return
+
+    const isOpen = panel.style.display !== 'none'
+    if (isOpen) { panel.style.display = 'none'; return }
+
+    // Position relative to button (panel is in body, position:fixed)
+    const rect = btn.getBoundingClientRect()
+    panel.style.top   = `${rect.bottom + 8}px`
+    panel.style.right = `${window.innerWidth - rect.right}px`
+
+    panel.style.display = 'flex'
+    panel.innerHTML = `<div class="notif-panel-loading">Loading…</div>`
+
+    const { data: notifications } = await API.getRecentNotifications(currentUser.id)
+    const items = notifications || []
+
+    const unreadCount = items.filter(n => !n.read).length
+
+    panel.innerHTML = `
+      <div class="notif-panel-header">
+        <span class="notif-panel-title">Notifications</span>
+        ${unreadCount > 0 ? `<button class="notif-mark-all" id="notif-mark-all">Mark all read</button>` : ''}
+      </div>
+      <div class="notif-panel-body" id="notif-panel-body">
+        ${items.length === 0
+          ? `<div class="notif-empty">You're all caught up!</div>`
+          : items.map(n => `
+            <div class="notif-item${n.read ? '' : ' notif-item--unread'}" data-id="${n.id}">
+              <div class="notif-item-icon">${_notifIcon(n.type)}</div>
+              <div class="notif-item-body">
+                <div class="notif-item-msg">${Utils.escapeHtml(n.message)}</div>
+                <div class="notif-item-time">${_timeAgo(n.created_at)}</div>
+              </div>
+              ${!n.read ? `<div class="notif-item-dot"></div>` : ''}
+            </div>
+          `).join('')}
+      </div>
+    `
+
+    document.getElementById('notif-mark-all')?.addEventListener('click', async () => {
+      await API.markAllNotificationsRead(currentUser.id)
+      _updateNotifBadge(0)
+      panel.querySelectorAll('.notif-item--unread').forEach(el => {
+        el.classList.remove('notif-item--unread')
+        el.querySelector('.notif-item-dot')?.remove()
+      })
+      document.getElementById('notif-mark-all')?.remove()
+    })
+
+    panel.querySelectorAll('.notif-item--unread').forEach(el => {
+      el.addEventListener('click', async () => {
+        const id = el.dataset.id
+        await API.markNotificationRead(id)
+        el.classList.remove('notif-item--unread')
+        el.querySelector('.notif-item-dot')?.remove()
+        const remaining = panel.querySelectorAll('.notif-item--unread').length
+        _updateNotifBadge(remaining)
+        if (remaining === 0) document.getElementById('notif-mark-all')?.remove()
+      })
+    })
+  }
+
+  function _initNotificationPanel() {
+    const btn = document.getElementById('notif-btn')
+    if (!btn) return
+
+    // Inject panel into body so overflow:hidden on parents doesn't clip it
+    const existing = document.getElementById('notif-panel')
+    if (!existing) {
+      const panel = document.createElement('div')
+      panel.id = 'notif-panel'
+      panel.className = 'notif-panel'
+      panel.style.display = 'none'
+      document.body.appendChild(panel)
+    }
+
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      _openNotifPanel()
+    })
+
+    document.addEventListener('click', (e) => {
+      const panel = document.getElementById('notif-panel')
+      if (!panel) return
+      if (!panel.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
+        panel.style.display = 'none'
+      }
+    })
+
+    // Realtime subscription for live badge updates
+    Config.supabase
+      .channel('notifications_live')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'notifications',
+        filter: `recipient_employee_id=eq.${currentUser.id}`,
+      }, () => {
+        API.getUnreadNotifications(currentUser.id).then(({ data }) => {
+          _updateNotifBadge(data ? data.length : 0)
+        })
+      })
+      .subscribe()
   }
 
   function router() {

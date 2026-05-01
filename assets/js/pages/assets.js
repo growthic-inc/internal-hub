@@ -798,6 +798,15 @@ const Assets = (() => {
       btn.disabled = false; btn.textContent = 'Assign'
       if (error) { errEl.textContent = error.message; errEl.style.display = 'block'; return }
 
+      if (empId !== _user.id) {
+        API.createNotification({
+          recipient_employee_id: empId,
+          type: 'info',
+          message: `Asset "${Utils.escapeHtml(asset.name)}" has been assigned to you.`,
+          module: 'assets',
+          record_id: asset.id,
+        })
+      }
       Utils.closeModal()
       Utils.showToast('Asset assigned.', 'success')
       await _refresh()

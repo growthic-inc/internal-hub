@@ -272,6 +272,21 @@ const API = (() => {
       .eq('read', false)
   }
 
+  async function createNotification({ recipient_employee_id, type, message, module, record_id = null }) {
+    return supabase.from('notifications').insert({
+      recipient_employee_id, type, message, module, record_id,
+    })
+  }
+
+  async function getRecentNotifications(employeeId, limit = 25) {
+    return supabase
+      .from('notifications')
+      .select('*')
+      .eq('recipient_employee_id', employeeId)
+      .order('created_at', { ascending: false })
+      .limit(limit)
+  }
+
   /* ── Reimbursements (Phase 2) ────────────────────────────── */
   async function getMyReimbursements(employeeId, type = null) {
     let q = supabase
@@ -1052,6 +1067,7 @@ const API = (() => {
     getPendingApprovals, updateApproval,
     getTools, getToolAccess, getMyToolAccess, getToolRequests, getMyToolRequests,
     getUnreadNotifications, markNotificationRead, markAllNotificationsRead,
+    createNotification, getRecentNotifications,
     getPerformanceData,
     getClientDashboard, updateClientStatus,
     getMasterFolderFiles,

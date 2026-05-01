@@ -1098,6 +1098,9 @@ const LeaveTracker = (() => {
   }
 
   async function _approveRequest(id, type) {
+    const arr = type === 'leave' ? _pendingApprovals : _pendingWfh
+    const req = arr.find(r => r.id === id)
+
     const updateFn = type === 'leave' ? API.updateLeaveRequest : API.updateWfhRequest
     const { error } = await updateFn(id, {
       status:   'approved',
@@ -1106,6 +1109,16 @@ const LeaveTracker = (() => {
     if (error) {
       Utils.showToast('Failed to approve: ' + error.message, 'error')
     } else {
+      if (req?.employee?.id) {
+        const label = type === 'leave' ? 'leave' : 'WFH'
+        API.createNotification({
+          recipient_employee_id: req.employee.id,
+          type: 'approval',
+          message: `Your ${label} request has been approved.`,
+          module: 'leave_tracker',
+          record_id: id,
+        })
+      }
       Utils.showToast('Request approved.', 'success')
       await _refreshApprovalData()
       _loadTab('pending-approvals')
@@ -1113,6 +1126,9 @@ const LeaveTracker = (() => {
   }
 
   function _openRejectModal(id, type) {
+    const arr = type === 'leave' ? _pendingApprovals : _pendingWfh
+    const req = arr.find(r => r.id === id)
+
     Utils.openModal(`
       <div class="modal-header">
         <h3 class="modal-title">Reject Request</h3>
@@ -1155,6 +1171,16 @@ const LeaveTracker = (() => {
         return
       }
 
+      if (req?.employee?.id) {
+        const label = type === 'leave' ? 'leave' : 'WFH'
+        API.createNotification({
+          recipient_employee_id: req.employee.id,
+          type: 'rejection',
+          message: `Your ${label} request was rejected${comment ? ': ' + comment : '.'}`,
+          module: 'leave_tracker',
+          record_id: id,
+        })
+      }
       Utils.closeModal()
       Utils.showToast('Request rejected.', 'success')
       await _refreshApprovalData()
