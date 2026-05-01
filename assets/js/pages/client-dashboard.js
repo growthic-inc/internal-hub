@@ -725,6 +725,8 @@ const ClientDashboard = (() => {
       } catch (err) { console.error('[ClientDashboard] parse error', err); _showError('Failed to parse file: ' + (err.message || 'Unknown error.')) }
     }
 
+    /*=====Added by YC=======
+
     async function _parseContentFile(wb) {
       const sn = wb.SheetNames.map(n => n.trim())
       const mS = wb.Sheets[sn.find(n => n.toLowerCase() === 'metrics')   || '']
@@ -752,6 +754,40 @@ const ClientDashboard = (() => {
       _parsedPayload = { data_type: 'content', metrics, posts }
       _showPreview(_previewAlert(`Found <strong>${metrics.length}</strong> days of metrics + <strong>${posts.length}</strong> posts.`, dFrom, dTo))
     }
+
+    =============*/
+
+    /* This is added by YC, earlier code was generated */
+
+    async function _parseContentFile(wb) {
+      const sn = wb.SheetNames.map(n => n.trim())
+      const mS = wb.Sheets[sn.find(n => n.toLowerCase() === 'metrics')   || '']
+      const pS = wb.Sheets[sn.find(n => n.toLowerCase() === 'all posts') || '']
+      if (!mS || !pS) { _showError('Could not find "Metrics" and "All posts" sheets. Please upload a LinkedIn Analytics export.'); return }
+      const mRows = XLSX.utils.sheet_to_json(mS, { header: 1, defval: '' })
+      const pRows = XLSX.utils.sheet_to_json(pS, { header: 1, defval: '' })
+      if (mRows.length < 3 || pRows.length < 3) { _showError('The file appears to be empty or incorrectly formatted.'); return }
+      const mH = mRows[1].map(h => String(h).trim()), pH = pRows[1].map(h => String(h).trim())
+      const mI = h => mH.indexOf(h), pI = h => pH.indexOf(h)
+      const metrics = []
+      for (let i = 2; i < mRows.length; i++) {
+        const row = mRows[i], date = _parseDate(String(row[mI('Date')] || ''))
+        if (!date) continue
+        metrics.push({ date, impressions: _num(row[mI('Impressions (total)')]), reach: _num(row[mI('Unique impressions (organic)')]), clicks: _num(row[mI('Clicks (total)')]), reactions: _num(row[mI('Reactions (total)')]), comments: _num(row[mI('Comments (total)')]), reposts_shares: _num(row[mI('Reposts (total)')]), total_new_followers: 0, engagement_rate: _num(row[mI('Engagement rate (total)')]), impressions_organic: _num(row[mI('Impressions (organic)')]), impressions_sponsored: _num(row[mI('Impressions (sponsored)')]), unique_impressions_organic: _num(row[mI('Unique impressions (organic)')]), clicks_organic: _num(row[mI('Clicks (organic)')]), clicks_sponsored: _num(row[mI('Clicks (sponsored)')]), reactions_organic: _num(row[mI('Reactions (organic)')]), reactions_sponsored: _num(row[mI('Reactions (sponsored)')]), comments_organic: _num(row[mI('Comments (organic)')]), comments_sponsored: _num(row[mI('Comments (sponsored)')]), reposts_organic: _num(row[mI('Reposts (organic)')]), reposts_sponsored: _num(row[mI('Reposts (sponsored)')]), engagement_rate_organic: _num(row[mI('Engagement rate (organic)')]), engagement_rate_sponsored: _num(row[mI('Engagement rate (sponsored)')]) })
+      }
+      const posts = []
+      for (let i = 2; i < pRows.length; i++) {
+        const row = pRows[i]; if (!row[pI('Post link')]) continue
+        posts.push({ post_title: String(row[pI('Post title')]||'').slice(0,2000), post_url: String(row[pI('Post link')]||''), post_type: String(row[pI('Post type')]||''), content_type: String(row[pI('Content Type')]||''), campaign_name: String(row[pI('Campaign name')]||''), posted_by: String(row[pI('Posted by')]||''), created_date: _parseDate(String(row[pI('Created date')])), campaign_start_date: _parseDate(String(row[pI('Campaign start date')]||'')), campaign_end_date: _parseDate(String(row[pI('Campaign end date')]||'')), audience: String(row[pI('Audience')]||''), impressions: _num(row[pI('Impressions')]), views: _num(row[pI('Views')]), offsite_views: _num(row[pI('Offsite Views')]), clicks: _num(row[pI('Clicks')]), ctr: _num(row[pI('Click through rate (CTR)')]), likes: _num(row[pI('Likes')]), comments: _num(row[pI('Comments')]), reposts_shares: _num(row[pI('Reposts')]), total_new_followers: _num(row[pI('Follows')]), engagement_rate: _num(row[pI('Engagement rate')]), saves: 0 })
+      }
+      if (!metrics.length && !posts.length) { _showError('No data rows found in the file. Please check the export format.'); return }
+      const allDates = metrics.map(m => m.date).filter(Boolean).sort()
+      const dFrom = allDates[0]||'—', dTo = allDates[allDates.length-1]||'—'
+      _parsedPayload = { data_type: 'content', metrics, posts }
+      _showPreview(_previewAlert(`Found <strong>${metrics.length}</strong> days of metrics + <strong>${posts.length}</strong> posts.`, dFrom, dTo))
+    }
+
+    /* async ends here - replace by above if needed */
 
     function _parseFollowersFile(wb) {
       const sn = wb.SheetNames.map(n => n.trim())
