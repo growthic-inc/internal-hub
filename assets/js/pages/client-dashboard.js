@@ -195,18 +195,19 @@ const ClientDashboard = (() => {
     body.innerHTML = '<p class="loading-text">Loading dashboard…</p>'
     const { dateFrom, dateTo } = _getDateRange()
     const { dateFrom: prevFrom, dateTo: prevTo } = _getPrevDateRange()
+    const eid = _currentEntity || null
     const [metricsRes, postsRes, reportsRes, uploadLogRes, followersRes, visitorsRes, demographicsFollowersRes, demographicsVisitorsRes, prevMetricsRes, prevPostsRes, prevFollowersRes] = await Promise.all([
-      API.getSocialMetrics(_currentClient.id, _currentPlatform, dateFrom, dateTo),
-      API.getSocialPosts(_currentClient.id, _currentPlatform, dateFrom, dateTo),
+      API.getSocialMetrics(_currentClient.id, _currentPlatform, dateFrom, dateTo, eid),
+      API.getSocialPosts(_currentClient.id, _currentPlatform, dateFrom, dateTo, eid),
       API.getMasterFolderFiles(_currentClient.id, _currentMonth, 'reports'),
-      API.getAnalyticsUploadLog(_currentClient.id, _currentPlatform),
-      API.getSocialFollowers(_currentClient.id, _currentPlatform, dateFrom, dateTo),
-      API.getSocialVisitors(_currentClient.id, _currentPlatform, dateFrom, dateTo),
-      API.getSocialDemographics(_currentClient.id, _currentPlatform, 'followers'),
-      API.getSocialDemographics(_currentClient.id, _currentPlatform, 'visitors'),
-      API.getSocialMetrics(_currentClient.id, _currentPlatform, prevFrom, prevTo),
-      API.getSocialPosts(_currentClient.id, _currentPlatform, prevFrom, prevTo),
-      API.getSocialFollowers(_currentClient.id, _currentPlatform, prevFrom, prevTo),
+      API.getAnalyticsUploadLog(_currentClient.id, _currentPlatform, eid),
+      API.getSocialFollowers(_currentClient.id, _currentPlatform, dateFrom, dateTo, eid),
+      API.getSocialVisitors(_currentClient.id, _currentPlatform, dateFrom, dateTo, eid),
+      API.getSocialDemographics(_currentClient.id, _currentPlatform, 'followers', null, eid),
+      API.getSocialDemographics(_currentClient.id, _currentPlatform, 'visitors', null, eid),
+      API.getSocialMetrics(_currentClient.id, _currentPlatform, prevFrom, prevTo, eid),
+      API.getSocialPosts(_currentClient.id, _currentPlatform, prevFrom, prevTo, eid),
+      API.getSocialFollowers(_currentClient.id, _currentPlatform, prevFrom, prevTo, eid),
     ])
     const metrics = metricsRes.data || [], posts = postsRes.data || []
     const reports = reportsRes.data || [], uploadLog = uploadLogRes.data || []

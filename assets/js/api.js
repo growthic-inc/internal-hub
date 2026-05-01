@@ -484,13 +484,14 @@ const API = (() => {
    * Fetch daily metrics for a client+platform in a date window.
    * Returns rows ordered by date ASC.
    */
-  async function getSocialMetrics(clientId, platform, dateFrom, dateTo) {
+  async function getSocialMetrics(clientId, platform, dateFrom, dateTo, entityId = null) {
     let q = supabase
       .from('social_metrics_daily')
       .select('*')
       .eq('client_id', clientId)
       .eq('platform', platform.toLowerCase())
       .order('date', { ascending: true })
+    if (entityId) q = q.eq('entity_id', entityId)
     if (dateFrom) q = q.gte('date', dateFrom)
     if (dateTo)   q = q.lte('date', dateTo)
     return q
@@ -500,13 +501,14 @@ const API = (() => {
    * Fetch individual posts for a client+platform in a date window.
    * Returns rows ordered by engagement_rate DESC (best posts first).
    */
-  async function getSocialPosts(clientId, platform, dateFrom, dateTo) {
+  async function getSocialPosts(clientId, platform, dateFrom, dateTo, entityId = null) {
     let q = supabase
       .from('social_posts')
       .select('*')
       .eq('client_id', clientId)
       .eq('platform', platform.toLowerCase())
       .order('engagement_rate', { ascending: false })
+    if (entityId) q = q.eq('entity_id', entityId)
     if (dateFrom) q = q.gte('created_date', dateFrom)
     if (dateTo)   q = q.lte('created_date', dateTo)
     return q
@@ -515,37 +517,41 @@ const API = (() => {
   /**
    * Fetch the upload history for a client+platform (last 10 uploads).
    */
-  async function getAnalyticsUploadLog(clientId, platform) {
-    return supabase
+  async function getAnalyticsUploadLog(clientId, platform, entityId = null) {
+    let q = supabase
       .from('analytics_upload_log')
       .select('*, uploaded_by_emp:employees!uploaded_by(name)')
       .eq('client_id', clientId)
       .eq('platform', platform.toLowerCase())
       .order('uploaded_at', { ascending: false })
       .limit(10)
+    if (entityId) q = q.eq('entity_id', entityId)
+    return q
   }
 
   /** Daily new-follower rows for the selected date window. */
-  async function getSocialFollowers(clientId, platform, dateFrom, dateTo) {
+  async function getSocialFollowers(clientId, platform, dateFrom, dateTo, entityId = null) {
     let q = supabase
       .from('social_followers_daily')
       .select('*')
       .eq('client_id', clientId)
       .eq('platform', platform.toLowerCase())
       .order('date', { ascending: true })
+    if (entityId) q = q.eq('entity_id', entityId)
     if (dateFrom) q = q.gte('date', dateFrom)
     if (dateTo)   q = q.lte('date', dateTo)
     return q
   }
 
   /** Daily visitor/page-view rows for the selected date window. */
-  async function getSocialVisitors(clientId, platform, dateFrom, dateTo) {
+  async function getSocialVisitors(clientId, platform, dateFrom, dateTo, entityId = null) {
     let q = supabase
       .from('social_visitors_daily')
       .select('*')
       .eq('client_id', clientId)
       .eq('platform', platform.toLowerCase())
       .order('date', { ascending: true })
+    if (entityId) q = q.eq('entity_id', entityId)
     if (dateFrom) q = q.gte('date', dateFrom)
     if (dateTo)   q = q.lte('date', dateTo)
     return q
@@ -556,7 +562,7 @@ const API = (() => {
    * Pass exportType = 'followers' or 'visitors'.
    * Optionally filter to a single dimension.
    */
-  async function getSocialDemographics(clientId, platform, exportType, dimension = null) {
+  async function getSocialDemographics(clientId, platform, exportType, dimension = null, entityId = null) {
     let q = supabase
       .from('social_audience_demographics')
       .select('*')
@@ -564,6 +570,7 @@ const API = (() => {
       .eq('platform', platform.toLowerCase())
       .eq('export_type', exportType)
       .order('value', { ascending: false })
+    if (entityId)  q = q.eq('entity_id', entityId)
     if (dimension) q = q.eq('dimension', dimension)
     return q
   }
