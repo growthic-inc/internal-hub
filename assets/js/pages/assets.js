@@ -11,6 +11,7 @@ const Assets = (() => {
   let _types        = []
   let _repairs      = []
   let _requests     = []   // asset requests visible to this user
+  let _locations    = []
   let _isManager    = false
   let _activeTab    = 'all'
   let _p            = null
@@ -133,14 +134,16 @@ const Assets = (() => {
     const canManage = _p.can_manage
 
     // Parallel data loads
-    const [assetsRes, typesRes, managerCheckRes] = await Promise.all([
+    const [assetsRes, typesRes, locationsRes, managerCheckRes] = await Promise.all([
       API.getAssets(),
       API.getAssetTypes(),
+      API.getAssetLocations(),
       // Check if this user is a reporting manager for anyone
       Config.supabase.from('employees').select('id', { count: 'exact', head: true }).eq('manager_id', user.id).eq('status', 'active'),
     ])
-    _assets    = assetsRes.data  || []
-    _types     = typesRes.data   || []
+    _assets    = assetsRes.data    || []
+    _types     = typesRes.data     || []
+    _locations = locationsRes.data || []
     _isManager = (managerCheckRes.count || 0) > 0
 
     // Load repairs
@@ -696,87 +699,158 @@ const Assets = (() => {
     const content = document.getElementById('ast-content')
     if (!content) return
 
+    // Stats per type / location
+    const typeCount = {}
+    const locCount  = {}
+    _assets.forEach(a => {
+      if (a.type)     typeCount[a.type]     = (typeCount[a.type]     || 0) + 1
+      if (a.location) locCount[a.location]  = (locCount[a.location]  || 0) + 1
+    })
+
+    function _managedList(items, idAttr, countMap, isDefault) {
+      if (!items.length) return '<p class="empty-state-text" style="padding:12px 0;">None added yet.</p>'
+      return items.map(item => `
+        <div class="ast-setting-row" data-row-id="${item.id}">
+          <div style="flex:1;min-width:0;">
+            <span class="ast-setting-name">${Utils.escapeHtml(item.name)}</span>
+            <span class="ast-setting-count">${countMap[item.name] || 0} asset${(countMap[item.name] || 0) !== 1 ? 's' : ''}</span>
+          </div>
+          ${item.is_default ? '<span style="font-size:11px;color:var(--text-muted);">Default</span>' : `
+            <div class="ast-setting-actions">
+              <button class="ast-setting-btn ast-setting-edit" data-id="${item.id}" data-name="${Utils.escapeHtml(item.name)}" title="Rename">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+              <button class="ast-setting-btn ast-setting-del" data-id="${item.id}" data-name="${Utils.escapeHtml(item.name)}" title="Remove" style="color:var(--danger);">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+              </button>
+            </div>`}
+        </div>`).join('')
+    }
+
+    // Summary stats
+    const totalAssets    = _assets.length
+    const activeAssigned = _assets.filter(a => a.status === 'in_use').length
+    const available      = _assets.filter(a => a.status === 'available').length
+    const underRepair    = _assets.filter(a => a.status === 'under_repair').length
+
     content.innerHTML = `
-      <div class="section-card" style="max-width:480px;">
-        <div class="section-card-header"><h3>Asset Types</h3></div>
-        <div class="section-card-body">
-          <div style="display:flex;gap:8px;margin-bottom:16px;">
-            <input class="form-input" id="ast-type-input" placeholder="New type name…" style="flex:1;">
-            <button class="btn btn--primary btn--sm" id="ast-type-add">Add</button>
+      <div class="ast-settings-wrap">
+
+        <!-- Summary strip -->
+        <div class="ast-settings-summary">
+          <div class="ast-settings-stat"><div class="ast-settings-stat-val">${totalAssets}</div><div class="ast-settings-stat-lbl">Total Assets</div></div>
+          <div class="ast-settings-stat"><div class="ast-settings-stat-val" style="color:var(--primary)">${activeAssigned}</div><div class="ast-settings-stat-lbl">Assigned</div></div>
+          <div class="ast-settings-stat"><div class="ast-settings-stat-val" style="color:var(--success)">${available}</div><div class="ast-settings-stat-lbl">Available</div></div>
+          <div class="ast-settings-stat"><div class="ast-settings-stat-val" style="color:var(--warning)">${underRepair}</div><div class="ast-settings-stat-lbl">Under Repair</div></div>
+          <div class="ast-settings-stat"><div class="ast-settings-stat-val">${_types.length}</div><div class="ast-settings-stat-lbl">Asset Types</div></div>
+          <div class="ast-settings-stat"><div class="ast-settings-stat-val">${_locations.length}</div><div class="ast-settings-stat-lbl">Locations</div></div>
+        </div>
+
+        <!-- Two-column managed lists -->
+        <div class="ast-settings-grid">
+
+          <!-- Asset Types -->
+          <div class="section-card">
+            <div class="section-card-header">
+              <h3>Asset Types</h3>
+              <span class="text-muted" style="font-size:12px;">${_types.length} types</span>
+            </div>
+            <div class="section-card-body">
+              <div style="display:flex;gap:8px;margin-bottom:14px;">
+                <input class="form-input" id="ast-type-input" placeholder="New type name…" style="flex:1;">
+                <button class="btn btn--primary btn--sm" id="ast-type-add">Add</button>
+              </div>
+              <div id="ast-type-list">${_managedList(_types, 'type', typeCount)}</div>
+            </div>
           </div>
-          <div id="ast-type-list">
-            ${_types.map(t => `
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);" data-type-id="${t.id}">
-                <span class="ast-type-name" style="font-size:14px;flex:1;">${Utils.escapeHtml(t.name)}</span>
-                ${!t.is_default ? `
-                  <div style="display:flex;gap:4px;flex-shrink:0;">
-                    <button class="btn btn--xs btn--ghost ast-type-edit" data-id="${t.id}" data-name="${Utils.escapeHtml(t.name)}" title="Rename">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                    </button>
-                    <button class="btn btn--xs btn--ghost ast-type-del" data-id="${t.id}" style="color:var(--danger);" title="Remove">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                    </button>
-                  </div>` : '<span class="text-muted" style="font-size:12px;">Default</span>'}
-              </div>`).join('')}
+
+          <!-- Asset Locations -->
+          <div class="section-card">
+            <div class="section-card-header">
+              <h3>Locations</h3>
+              <span class="text-muted" style="font-size:12px;">${_locations.length} locations</span>
+            </div>
+            <div class="section-card-body">
+              <div style="display:flex;gap:8px;margin-bottom:14px;">
+                <input class="form-input" id="ast-loc-input" placeholder="New location name…" style="flex:1;">
+                <button class="btn btn--primary btn--sm" id="ast-loc-add">Add</button>
+              </div>
+              <div id="ast-loc-list">${_managedList(_locations, 'loc', locCount)}</div>
+            </div>
           </div>
+
         </div>
       </div>`
 
-    document.getElementById('ast-type-add').addEventListener('click', async () => {
-      const input = document.getElementById('ast-type-input')
-      const name  = input.value.trim()
-      if (!name) return
+    _bindSettingsEvents(content)
+  }
+
+  function _bindSettingsEvents(content) {
+    // ── Types ──
+    content.querySelector('#ast-type-add')?.addEventListener('click', async () => {
+      const input = content.querySelector('#ast-type-input')
+      const name  = input.value.trim(); if (!name) return
       const { error } = await API.createAssetType(name)
       if (error) { Utils.showToast(error.message, 'error'); return }
       input.value = ''
-      const { data } = await API.getAssetTypes()
-      _types = data || []
-      _renderSettingsTab()
-      Utils.showToast('Asset type added.', 'success')
+      const { data } = await API.getAssetTypes(); _types = data || []
+      _renderSettingsTab(); Utils.showToast('Type added.', 'success')
     })
 
-    document.querySelectorAll('.ast-type-edit').forEach(btn =>
+    // ── Locations ──
+    content.querySelector('#ast-loc-add')?.addEventListener('click', async () => {
+      const input = content.querySelector('#ast-loc-input')
+      const name  = input.value.trim(); if (!name) return
+      const { error } = await API.createAssetLocation(name)
+      if (error) { Utils.showToast(error.message, 'error'); return }
+      input.value = ''
+      const { data } = await API.getAssetLocations(); _locations = data || []
+      _renderSettingsTab(); Utils.showToast('Location added.', 'success')
+    })
+
+    // ── Inline edit (both lists) ──
+    content.querySelectorAll('.ast-setting-edit').forEach(btn => {
+      const isType = !!btn.closest('#ast-type-list')
       btn.addEventListener('click', () => {
-        const row      = btn.closest('[data-type-id]')
-        const nameSpan = row.querySelector('.ast-type-name')
-        const actions  = btn.parentElement
+        const row      = btn.closest('.ast-setting-row')
+        const nameSpan = row.querySelector('.ast-setting-name')
+        const actions  = row.querySelector('.ast-setting-actions')
         const original = btn.dataset.name
 
-        // Replace name span with inline input
-        nameSpan.innerHTML = `<input class="form-input ast-type-rename-input" value="${Utils.escapeHtml(original)}"
-          style="padding:4px 8px;font-size:13px;height:30px;" maxlength="60">`
-        actions.innerHTML = `
-          <button class="btn btn--xs btn--primary ast-type-save" data-id="${btn.dataset.id}">Save</button>
-          <button class="btn btn--xs btn--ghost ast-type-cancel">Cancel</button>`
+        nameSpan.outerHTML = `<input class="form-input ast-inline-input" value="${Utils.escapeHtml(original)}" style="flex:1;padding:4px 8px;font-size:13px;height:30px;" maxlength="80">`
+        actions.innerHTML  = `
+          <button class="btn btn--xs btn--primary ast-inline-save" data-id="${btn.dataset.id}">Save</button>
+          <button class="btn btn--xs btn--ghost ast-inline-cancel">Cancel</button>`
 
-        const input = nameSpan.querySelector('input')
+        const input = row.querySelector('.ast-inline-input')
         input.focus(); input.select()
 
-        row.querySelector('.ast-type-cancel').addEventListener('click', _renderSettingsTab)
-        row.querySelector('.ast-type-save').addEventListener('click', async () => {
-          const newName = input.value.trim()
-          if (!newName) return
-          const { error } = await API.updateAssetType(btn.dataset.id, newName)
+        row.querySelector('.ast-inline-cancel').addEventListener('click', _renderSettingsTab)
+        row.querySelector('.ast-inline-save').addEventListener('click', async () => {
+          const newName = input.value.trim(); if (!newName) return
+          const fn = isType ? API.updateAssetType : API.updateAssetLocation
+          const { error } = await fn(btn.dataset.id, newName)
           if (error) { Utils.showToast(error.message, 'error'); return }
-          const { data } = await API.getAssetTypes()
-          _types = data || []
-          _renderSettingsTab()
-          Utils.showToast('Asset type renamed.', 'success')
+          if (isType) { const { data } = await API.getAssetTypes();     _types     = data || [] }
+          else        { const { data } = await API.getAssetLocations(); _locations = data || [] }
+          _renderSettingsTab(); Utils.showToast('Renamed.', 'success')
         })
       })
-    )
+    })
 
-    document.querySelectorAll('.ast-type-del').forEach(btn =>
+    // ── Delete (both lists) ──
+    content.querySelectorAll('.ast-setting-del').forEach(btn => {
+      const isType = !!btn.closest('#ast-type-list')
       btn.addEventListener('click', async () => {
-        if (!confirm(`Remove asset type "${btn.closest('[data-type-id]').querySelector('.ast-type-name').textContent.trim()}"?`)) return
-        const { error } = await API.deleteAssetType(btn.dataset.id)
+        if (!confirm(`Remove "${btn.dataset.name}"?`)) return
+        const fn = isType ? API.deleteAssetType : API.deleteAssetLocation
+        const { error } = await fn(btn.dataset.id)
         if (error) { Utils.showToast(error.message, 'error'); return }
-        const { data } = await API.getAssetTypes()
-        _types = data || []
-        _renderSettingsTab()
-        Utils.showToast('Type removed.', 'success')
+        if (isType) { const { data } = await API.getAssetTypes();     _types     = data || [] }
+        else        { const { data } = await API.getAssetLocations(); _locations = data || [] }
+        _renderSettingsTab(); Utils.showToast('Removed.', 'success')
       })
-    )
+    })
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -925,7 +999,11 @@ const Assets = (() => {
           </div>
           <div class="form-group">
             <label class="form-label">Location</label>
-            <input class="form-input" id="ast-f-location" value="${Utils.escapeHtml(asset?.location || '')}" placeholder="e.g. Delhi Office">
+            <select class="form-select" id="ast-f-location">
+              <option value="">— Select location —</option>
+              ${_locations.map(l => `<option value="${Utils.escapeHtml(l.name)}"${asset?.location === l.name ? ' selected' : ''}>${Utils.escapeHtml(l.name)}</option>`).join('')}
+              ${asset?.location && !_locations.find(l => l.name === asset.location) ? `<option value="${Utils.escapeHtml(asset.location)}" selected>${Utils.escapeHtml(asset.location)}</option>` : ''}
+            </select>
           </div>
         </div>
         <div class="form-row">

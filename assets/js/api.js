@@ -205,6 +205,22 @@ const API = (() => {
     return supabase.from('asset_types').update({ name }).eq('id', id)
   }
 
+  async function getAssetLocations() {
+    return supabase.from('asset_locations').select('*').order('name')
+  }
+
+  async function createAssetLocation(name) {
+    return supabase.from('asset_locations').insert({ name }).select().single()
+  }
+
+  async function updateAssetLocation(id, name) {
+    return supabase.from('asset_locations').update({ name }).eq('id', id)
+  }
+
+  async function deleteAssetLocation(id) {
+    return supabase.from('asset_locations').delete().eq('id', id)
+  }
+
   async function getMyAssetRepairs(employeeId) {
     return supabase
       .from('asset_repairs')
@@ -1140,6 +1156,7 @@ const API = (() => {
     getAssetHistory, addAssetHistory,
     getAllAssetRepairs, getAssetRepairsForAsset, createAssetRepair, updateAssetRepair,
     getAssetTypes, createAssetType, updateAssetType, deleteAssetType, getMyAssetRepairs,
+    getAssetLocations, createAssetLocation, updateAssetLocation, deleteAssetLocation,
     uploadAssetPhoto,
     getMyAssetRequests, createAssetRequest, getMySubmittedAssetRequests,
     getPendingManagerAssetRequests, getPendingHRAssetRequests, getAllAssetRequests,
