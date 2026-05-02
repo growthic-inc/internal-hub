@@ -13,10 +13,14 @@ const Announcements = (() => {
   let _reactionCounts  = new Map()   // announcementId → { emoji: count }
 
   // Form state
-  let _editingId       = null
-  let _pendingFile     = null        // File object awaiting upload
-  let _existingFileUrl = null
+  let _editingId        = null
+  let _pendingFile      = null        // File object awaiting upload
+  let _existingFileUrl  = null
   let _existingFileName = null
+  // Image state: array of { type:'existing', url } or { type:'pending', file, preview }
+  let _images           = []
+  const MAX_IMAGES      = 4
+  const MAX_IMG_BYTES   = 2 * 1024 * 1024   // 2 MB
 
   const EMOJIS = ['👍', '🎉', '🌟', '❤️', '😂', '😭', '🔥']
 
@@ -52,17 +56,28 @@ const Announcements = (() => {
     _user = user
     _isHR = user.role === 'super_admin' || user.department === 'people_culture'
 
+    const avatarHtml = user.profile_image_url
+      ? `<img src="${Utils.escapeHtml(user.profile_image_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
+      : `<span style="font-size:12px;font-weight:700;">${Utils.escapeHtml(Utils.getInitials(user.name || ''))}</span>`
+
     return `
       <div class="page-inner">
         <div class="page-header">
-          <div style="display:flex;align-items:center;gap:8px;">
-            <h2 style="margin:0;font-size:18px;font-weight:700;color:var(--text);">Announcements</h2>
+          <div>
+            <h2 style="margin:0;font-size:18px;font-weight:700;color:var(--text);">Feed</h2>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">What's happening at Growthic</div>
           </div>
-          ${_isHR ? `
-          <button class="btn btn-primary btn-sm" id="ann-new-btn">+ New Announcement</button>
-          ` : ''}
+          ${_isHR ? `<button class="btn btn-primary btn-sm" id="ann-new-btn" style="display:none;">+ New</button>` : ''}
         </div>
-        <div id="ann-feed" class="page-loading">Loading announcements…</div>
+        <div class="ann-feed-wrap">
+          ${_isHR ? `
+            <div class="ann-compose-bar">
+              <div class="ann-post-avatar" style="width:38px;height:38px;font-size:12px;">${avatarHtml}</div>
+              <button class="ann-compose-prompt" id="ann-compose-btn">📢 Share an update with the team…</button>
+            </div>
+          ` : ''}
+          <div id="ann-feed" class="page-loading">Loading…</div>
+        </div>
       </div>`
   }
 
@@ -72,6 +87,7 @@ const Announcements = (() => {
     _isHR = user.role === 'super_admin' || user.department === 'people_culture'
 
     if (_isHR) {
+      document.getElementById('ann-compose-btn')?.addEventListener('click', () => _openModal(null))
       document.getElementById('ann-new-btn')?.addEventListener('click', () => _openModal(null))
     }
 
@@ -115,64 +131,90 @@ const Announcements = (() => {
 
     if (!_announcements.length) {
       el.className = ''
-      el.innerHTML = `<div class="ann-empty empty-state"><h3>No announcements yet</h3><p>Check back soon for updates from People &amp; Culture.</p></div>`
+      el.innerHTML = `
+        <div class="ann-empty-state">
+          <div style="font-size:48px;margin-bottom:12px;">📭</div>
+          <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:6px;">Nothing here yet</div>
+          <div style="font-size:14px;color:var(--text-muted);">Updates from the team will appear here.</div>
+        </div>`
       return
     }
 
     el.className = ''
-    el.innerHTML = `<div class="announcements-feed">${_announcements.map(_cardHTML).join('')}</div>`
-
+    el.innerHTML = `<div class="announcements-feed">${_announcements.map(_postHTML).join('')}</div>`
     _bindFeedEvents()
   }
 
-  function _cardHTML(a) {
-    const authorName   = a.author?.name || 'People & Culture'
-    const authorImg    = a.author?.profile_image_url || null
-    const isDraft      = !a.published
-    const counts       = _reactionCounts.get(a.id) || {}
-    const mine         = _myReactions.get(a.id) || new Set()
+  function _postHTML(a, idx) {
+    const authorName = a.author?.name || 'People & Culture'
+    const authorImg  = a.author?.profile_image_url || null
+    const isDraft    = !a.published
+    const counts     = _reactionCounts.get(a.id) || {}
+    const mine       = _myReactions.get(a.id) || new Set()
 
-    const reactionBtns = EMOJIS.map(emoji => {
-      const count   = counts[emoji] || 0
-      const active  = mine.has(emoji) ? ' ann-reaction-btn--active' : ''
-      const label   = count > 0 ? `${emoji} ${count}` : emoji
-      return `<button class="ann-reaction-btn${active}" data-ann-id="${a.id}" data-emoji="${emoji}" title="${emoji}">${label}</button>`
+    const avatarHtml = authorImg
+      ? `<img src="${Utils.escapeHtml(authorImg)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
+      : Utils.escapeHtml(Utils.getInitials(authorName))
+
+    // Reaction summary line
+    const totalReactions = Object.values(counts).reduce((s, c) => s + c, 0)
+    const reactedEmojis  = EMOJIS.filter(e => counts[e] > 0).slice(0, 4).join(' ')
+    const summary = totalReactions > 0
+      ? `<div class="ann-react-summary">${reactedEmojis} &nbsp;${totalReactions} reaction${totalReactions !== 1 ? 's' : ''}</div>`
+      : ''
+
+    const pills = EMOJIS.map(emoji => {
+      const count  = counts[emoji] || 0
+      const active = mine.has(emoji) ? ' ann-react-pill--active' : ''
+      return `<button class="ann-react-pill${active}" data-ann-id="${a.id}" data-emoji="${emoji}" title="${emoji}">
+        <span>${emoji}</span>${count > 0 ? `<span class="ann-react-count">${count}</span>` : ''}
+      </button>`
     }).join('')
 
     return `
-      <div class="ann-card${isDraft ? ' ann-card--draft' : ''}" data-ann-id="${a.id}">
-        <div class="ann-card-header">
-          <div class="ann-author-avatar">${authorImg ? `<img src="${Utils.escapeHtml(authorImg)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : Utils.escapeHtml(Utils.getInitials(authorName))}</div>
-          <div class="ann-meta">
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-              <span style="font-weight:600;font-size:13px;">${Utils.escapeHtml(authorName)}</span>
-              <span style="font-size:12px;color:var(--text-muted);">People &amp; Culture</span>
-              ${isDraft ? `<span class="ann-draft-badge">DRAFT</span>` : ''}
+      <div class="ann-post${isDraft ? ' ann-post--draft' : ''}" data-ann-id="${a.id}" style="animation-delay:${(idx || 0) * 0.06}s;">
+        <div class="ann-post-header">
+          <div class="ann-post-avatar">${avatarHtml}</div>
+          <div style="flex:1;min-width:0;">
+            <div class="ann-post-author">
+              ${Utils.escapeHtml(authorName)}
+              <span class="ann-dept-badge">People &amp; Culture</span>
+              ${isDraft ? `<span class="ann-draft-badge">Draft</span>` : ''}
             </div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${_relativeTime(a.created_at)}</div>
+            <div class="ann-post-time">${_relativeTime(a.created_at)}</div>
           </div>
           ${_isHR ? `
-          <div style="margin-left:auto;display:flex;gap:6px;flex-shrink:0;">
-            <button class="btn btn-secondary btn-sm ann-edit-btn" data-ann-id="${a.id}">Edit</button>
-            <button class="btn btn-sm ann-delete-btn" style="background:var(--danger,#E53E3E);color:#fff;border-color:var(--danger,#E53E3E);" data-ann-id="${a.id}">Delete</button>
-          </div>
+            <div style="display:flex;gap:2px;flex-shrink:0;">
+              <button class="ann-action-btn ann-edit-btn" data-ann-id="${a.id}" title="Edit">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+              <button class="ann-action-btn ann-action-btn--danger ann-delete-btn" data-ann-id="${a.id}" title="Delete">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+              </button>
+            </div>
           ` : ''}
         </div>
 
-        <div class="ann-title">${Utils.escapeHtml(a.title)}</div>
-
-        <div class="ann-content">${a.content || ''}</div>
-
-        ${a.file_url ? `
-        <div class="ann-attachment">
-          <a href="${Utils.escapeHtml(a.file_url)}" target="_blank" rel="noopener noreferrer" class="cd-doc-link">
-            📎 ${a.file_name ? Utils.escapeHtml(a.file_name) : 'View Attachment'}
-          </a>
+        <div class="ann-post-body">
+          <h3 class="ann-post-title">${Utils.escapeHtml(a.title)}</h3>
+          <div class="ann-post-content">${a.content || ''}</div>
+          ${a.image_urls?.length ? (() => {
+            const n = Math.min(a.image_urls.length, 4)
+            const imgs = a.image_urls.slice(0, n).map(url =>
+              `<img src="${Utils.escapeHtml(url)}" alt="" class="ann-image-thumb" loading="lazy">`
+            ).join('')
+            return `<div class="ann-image-grid ann-image-grid--${n}">${imgs}</div>`
+          })() : ''}
+          ${a.file_url ? `
+            <div class="ann-attachment">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              <a href="${Utils.escapeHtml(a.file_url)}" target="_blank" rel="noopener noreferrer">${a.file_name ? Utils.escapeHtml(a.file_name) : 'View Attachment'}</a>
+            </div>` : ''}
         </div>
-        ` : ''}
 
-        <div class="ann-reactions">
-          ${reactionBtns}
+        <div class="ann-post-footer">
+          ${summary}
+          ${pills}
         </div>
       </div>`
   }
@@ -182,9 +224,13 @@ const Announcements = (() => {
     const feed = document.getElementById('ann-feed')
     if (!feed) return
 
-    // Reaction buttons
-    feed.querySelectorAll('.ann-reaction-btn').forEach(btn => {
-      btn.addEventListener('click', () => _toggleReaction(btn.dataset.annId, btn.dataset.emoji))
+    // Reaction pills — bounce on click
+    feed.querySelectorAll('.ann-react-pill').forEach(btn => {
+      btn.addEventListener('click', () => {
+        btn.classList.add('ann-react-pill--bounce')
+        btn.addEventListener('animationend', () => btn.classList.remove('ann-react-pill--bounce'), { once: true })
+        _toggleReaction(btn.dataset.annId, btn.dataset.emoji)
+      })
     })
 
     if (_isHR) {
@@ -194,7 +240,6 @@ const Announcements = (() => {
           if (a) _openModal(a)
         })
       })
-
       feed.querySelectorAll('.ann-delete-btn').forEach(btn => {
         btn.addEventListener('click', () => _deleteAnnouncement(btn.dataset.annId))
       })
@@ -231,22 +276,36 @@ const Announcements = (() => {
   }
 
   function _updateReactionBar(announcementId) {
-    const card = document.querySelector(`.ann-card[data-ann-id="${announcementId}"]`)
-    if (!card) return
-    const bar    = card.querySelector('.ann-reactions')
-    if (!bar) return
-    const counts = _reactionCounts.get(announcementId) || {}
-    const mine   = _myReactions.get(announcementId) || new Set()
+    const post = document.querySelector(`.ann-post[data-ann-id="${announcementId}"]`)
+    if (!post) return
+    const footer = post.querySelector('.ann-post-footer')
+    if (!footer) return
 
-    bar.innerHTML = EMOJIS.map(emoji => {
+    const counts         = _reactionCounts.get(announcementId) || {}
+    const mine           = _myReactions.get(announcementId) || new Set()
+    const totalReactions = Object.values(counts).reduce((s, c) => s + c, 0)
+    const reactedEmojis  = EMOJIS.filter(e => counts[e] > 0).slice(0, 4).join(' ')
+
+    const summary = totalReactions > 0
+      ? `<div class="ann-react-summary">${reactedEmojis} &nbsp;${totalReactions} reaction${totalReactions !== 1 ? 's' : ''}</div>`
+      : ''
+
+    const pills = EMOJIS.map(emoji => {
       const count  = counts[emoji] || 0
-      const active = mine.has(emoji) ? ' ann-reaction-btn--active' : ''
-      const label  = count > 0 ? `${emoji} ${count}` : emoji
-      return `<button class="ann-reaction-btn${active}" data-ann-id="${announcementId}" data-emoji="${emoji}" title="${emoji}">${label}</button>`
+      const active = mine.has(emoji) ? ' ann-react-pill--active' : ''
+      return `<button class="ann-react-pill${active}" data-ann-id="${announcementId}" data-emoji="${emoji}" title="${emoji}">
+        <span>${emoji}</span>${count > 0 ? `<span class="ann-react-count">${count}</span>` : ''}
+      </button>`
     }).join('')
 
-    bar.querySelectorAll('.ann-reaction-btn').forEach(btn => {
-      btn.addEventListener('click', () => _toggleReaction(btn.dataset.annId, btn.dataset.emoji))
+    footer.innerHTML = summary + pills
+
+    footer.querySelectorAll('.ann-react-pill').forEach(btn => {
+      btn.addEventListener('click', () => {
+        btn.classList.add('ann-react-pill--bounce')
+        btn.addEventListener('animationend', () => btn.classList.remove('ann-react-pill--bounce'), { once: true })
+        _toggleReaction(btn.dataset.annId, btn.dataset.emoji)
+      })
     })
   }
 
@@ -265,8 +324,10 @@ const Announcements = (() => {
     _pendingFile      = null
     _existingFileUrl  = announcement?.file_url  || null
     _existingFileName = announcement?.file_name || null
+    // Initialise image slots from existing saved URLs
+    _images = (announcement?.image_urls || []).map(url => ({ type: 'existing', url }))
 
-    const isEdit     = !!announcement
+    const isEdit      = !!announcement
     const isPublished = isEdit ? !!announcement.published : true
 
     Utils.openModal(`
@@ -288,8 +349,12 @@ const Announcements = (() => {
 
         <div class="form-group">
           <label class="form-label">Content <span style="color:var(--danger)">*</span></label>
-          <textarea class="form-input" id="ann-f-content" rows="6" placeholder="Write the announcement content…" style="resize:vertical;">${Utils.escapeHtml(announcement?.content || '')}</textarea>
-          <span class="form-hint">Content will be displayed as plain text.</span>
+          <textarea class="form-input" id="ann-f-content" rows="5" placeholder="Write the announcement…" style="resize:vertical;">${Utils.escapeHtml(announcement?.content || '')}</textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Images <span style="color:var(--text-muted);font-weight:400;">(up to 4 · max 2 MB each)</span></label>
+          <div id="ann-img-picker"></div>
         </div>
 
         <div class="form-group">
@@ -313,9 +378,65 @@ const Announcements = (() => {
       </div>
     `, '')
 
+    _renderImagePicker()
     _renderFileField()
-
     document.getElementById('ann-f-save')?.addEventListener('click', _saveAnnouncement)
+  }
+
+  /* ── Image Picker ────────────────────────────────────────────── */
+  function _renderImagePicker() {
+    const container = document.getElementById('ann-img-picker')
+    if (!container) return
+
+    const slots = []
+
+    // Filled slots
+    _images.forEach((img, idx) => {
+      const src = img.type === 'existing' ? img.url : img.preview
+      slots.push(`
+        <div class="ann-img-slot ann-img-slot--filled">
+          <img src="${Utils.escapeHtml(src)}" alt="Image ${idx + 1}" class="ann-img-slot-thumb">
+          <button type="button" class="ann-img-slot-remove" data-idx="${idx}" title="Remove">×</button>
+        </div>`)
+    })
+
+    // Add slot (only if under limit)
+    if (_images.length < MAX_IMAGES) {
+      slots.push(`
+        <label class="ann-img-slot ann-img-slot--add" title="Add image">
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+          <input type="file" id="ann-img-input" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none;">
+        </label>`)
+    }
+
+    container.innerHTML = `<div class="ann-img-picker-grid">${slots.join('')}</div>`
+
+    // Remove buttons
+    container.querySelectorAll('.ann-img-slot-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx, 10)
+        if (_images[idx]?.type === 'pending') URL.revokeObjectURL(_images[idx].preview)
+        _images.splice(idx, 1)
+        _renderImagePicker()
+      })
+    })
+
+    // File input
+    const input = container.querySelector('#ann-img-input')
+    if (input) {
+      input.addEventListener('change', e => {
+        const file = e.target.files?.[0]
+        if (!file) return
+        if (file.size > MAX_IMG_BYTES) {
+          Utils.showToast('Image must be under 2 MB', 'error')
+          return
+        }
+        if (_images.length >= MAX_IMAGES) return
+        const preview = URL.createObjectURL(file)
+        _images.push({ type: 'pending', file, preview })
+        _renderImagePicker()
+      })
+    }
   }
 
   /* ── File Field ─────────────────────────────────────────────── */
@@ -414,12 +535,28 @@ const Announcements = (() => {
         fileName = _pendingFile.name
       }
 
+      // Upload pending images to Supabase Storage; collect all URLs
+      const existingUrls = _images.filter(i => i.type === 'existing').map(i => i.url)
+      const pendingImages = _images.filter(i => i.type === 'pending')
+
+      const newUrls = await Promise.all(
+        pendingImages.map(async img => {
+          const url = await API.uploadAnnouncementImage(img.file)
+          // Fire-and-forget Drive backup — doesn't block save
+          _uploadFile(img.file).catch(() => {})
+          return url
+        })
+      )
+
+      const imageUrls = [...existingUrls, ...newUrls]
+
       const record = {
         title,
         content,
         published,
-        file_url:  fileUrl,
-        file_name: fileName,
+        file_url:   fileUrl,
+        file_name:  fileName,
+        image_urls: imageUrls.length > 0 ? imageUrls : null,
       }
 
       if (_editingId) {

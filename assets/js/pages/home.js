@@ -310,11 +310,13 @@ const HomeModule = (() => {
     }
 
     const items = announcements.slice(0, 4).map(a => {
-      const author = a.employees?.name ? Utils.escapeHtml(a.employees.name) : ''
-      const body   = Utils.escapeHtml(a.body || '')
+      const author    = a.employees?.name ? Utils.escapeHtml(a.employees.name) : ''
+      const body      = Utils.escapeHtml(a.content || '')
+      const thumbUrl  = a.image_urls?.[0] ? Utils.escapeHtml(a.image_urls[0]) : null
       return `
         <div class="home-ann-item" role="button" tabindex="0" aria-expanded="false">
           <div class="home-ann-header">
+            ${thumbUrl ? `<img src="${thumbUrl}" alt="" class="home-ann-thumb">` : ''}
             <div style="font-weight:600;font-size:13px;flex:1;min-width:0;padding-right:12px;">${Utils.escapeHtml(a.title)}</div>
             <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
               <span style="font-size:11px;color:var(--text-muted);">${_relativeTime(a.created_at)}</span>
@@ -322,6 +324,7 @@ const HomeModule = (() => {
             </div>
           </div>
           <div class="home-ann-body">
+            ${thumbUrl ? `<img src="${thumbUrl}" alt="" class="home-ann-body-img">` : ''}
             <div style="font-size:13px;color:var(--text-secondary);line-height:1.6;">${body}</div>
             ${author ? `<div style="font-size:11px;color:var(--text-muted);margin-top:8px;font-weight:500;">— ${author}</div>` : ''}
             <a href="#announcements" style="display:inline-block;font-size:12px;color:var(--primary);margin-top:10px;font-weight:500;">View in Announcements →</a>

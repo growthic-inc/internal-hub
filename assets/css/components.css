@@ -3268,185 +3268,367 @@
   margin-left: 6px;
 }
 
-/* ── Announcements ─────────────────────────────────────────── */
+/* ── Announcements — Social Feed ───────────────────────────── */
 
+@keyframes annPostIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Feed wrapper — centered column */
+.ann-feed-wrap {
+  max-width: 680px;
+}
+
+/* HR compose bar */
+.ann-compose-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+
+.ann-compose-prompt {
+  flex: 1;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 10px 18px;
+  font-size: 14px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.ann-compose-prompt:hover {
+  background: var(--primary-light);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* Post cards */
 .announcements-feed {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 720px;
 }
 
-.ann-card {
-  background: var(--surface);
+.ann-post {
+  background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 20px 24px;
-  transition: box-shadow 0.15s;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: box-shadow 0.2s, transform 0.18s;
+  animation: annPostIn 0.32s ease both;
 }
-
-.ann-card:hover {
-  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+.ann-post:hover {
+  box-shadow: 0 6px 28px rgba(0,0,0,0.08);
+  transform: translateY(-2px);
 }
-
-.ann-card--draft {
+.ann-post--draft {
   border-style: dashed;
-  opacity: 0.85;
+  opacity: 0.82;
 }
 
-.ann-card-header {
+/* Post header */
+.ann-post-header {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 12px;
   gap: 12px;
+  padding: 18px 20px 10px;
 }
 
-.ann-card-author-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.ann-author-avatar {
-  width: 34px;
-  height: 34px;
+.ann-post-avatar {
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
-  background: var(--primary-light);
-  color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.ann-post-author {
+  font-size: 14px;
   font-weight: 700;
-  flex-shrink: 0;
-}
-
-.ann-author-name {
-  font-size: 13px;
-  font-weight: 600;
   color: var(--text);
-}
-
-.ann-meta-time {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 1px;
-}
-
-.ann-card-actions {
   display: flex;
-  gap: 6px;
-  flex-shrink: 0;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  line-height: 1.3;
+}
+
+.ann-dept-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary);
+  background: var(--primary-light);
+  padding: 2px 8px;
+  border-radius: 100px;
+  letter-spacing: 0.01em;
 }
 
 .ann-draft-badge {
   font-size: 10px;
   font-weight: 700;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  background: #fef3c7;
-  color: #92400e;
-  padding: 2px 8px;
-  border-radius: 4px;
-  align-self: flex-start;
-  flex-shrink: 0;
+  color: #92400E;
+  background: var(--warning-light);
+  padding: 2px 7px;
+  border-radius: 100px;
+  border: 1px solid var(--warning);
 }
 
-.ann-title {
-  font-size: 16px;
+.ann-post-time {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+
+/* Icon action buttons (edit/delete) */
+.ann-action-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.ann-action-btn:hover               { background: var(--surface); color: var(--text); }
+.ann-action-btn--danger:hover       { background: var(--danger-light); color: var(--danger); }
+
+/* Post body */
+.ann-post-body {
+  padding: 2px 20px 16px;
+}
+
+.ann-post-title {
+  font-size: 17px;
   font-weight: 700;
   color: var(--text);
   margin: 0 0 8px;
-  line-height: 1.3;
+  line-height: 1.35;
+  letter-spacing: -0.2px;
 }
 
-.ann-content {
+.ann-post-content {
   font-size: 14px;
   color: var(--text-secondary);
-  line-height: 1.6;
-  white-space: pre-wrap;
-  margin-bottom: 12px;
+  line-height: 1.7;
+  white-space: pre-line;
 }
 
 .ann-attachment {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 9px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   font-size: 13px;
-  color: var(--primary);
-  text-decoration: none;
-  padding: 6px 12px;
-  border: 1px solid var(--primary);
-  border-radius: 6px;
-  margin-bottom: 12px;
-  transition: background 0.15s;
+  transition: border-color 0.15s, background 0.15s;
 }
-
 .ann-attachment:hover {
+  border-color: var(--primary);
   background: var(--primary-light);
 }
-
-.ann-reactions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+.ann-attachment a {
+  color: var(--primary);
+  font-weight: 500;
+  text-decoration: none;
 }
 
-.ann-reaction-btn {
+/* Reactions footer */
+.ann-post-footer {
+  border-top: 1px solid var(--border-light);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ann-react-summary {
+  width: 100%;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+/* Emoji reaction pills */
+.ann-react-pill {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 13px;
-  padding: 4px 10px;
-  border-radius: 20px;
-  border: 1px solid var(--border);
+  padding: 5px 11px;
+  border-radius: 100px;
+  border: 1.5px solid var(--border);
   background: var(--bg);
+  font-size: 16px;
+  line-height: 1;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  transition: all 0.14s;
   user-select: none;
 }
-
-.ann-reaction-btn:hover {
-  background: var(--primary-light);
+.ann-react-pill:hover {
   border-color: var(--primary);
+  background: var(--primary-light);
+  transform: scale(1.1);
+}
+.ann-react-pill--active {
+  border-color: var(--primary);
+  background: var(--primary-light);
 }
 
-.ann-reaction-btn--active {
-  background: var(--primary-light);
-  border-color: var(--primary);
-  color: var(--primary);
-  font-weight: 600;
-}
-
-.ann-reaction-count {
+.ann-react-count {
   font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.ann-react-pill--active .ann-react-count { color: var(--primary); }
+
+@keyframes annPillBounce {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.35); }
+  65%  { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+.ann-react-pill--bounce { animation: annPillBounce 0.32s ease; }
+
+/* Empty state */
+.ann-empty-state {
+  text-align: center;
+  padding: 80px 24px;
   color: var(--text-muted);
 }
 
-.ann-reaction-btn--active .ann-reaction-count {
+/* Image picker grid (modal) */
+.ann-img-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.ann-img-slot {
+  width: 90px;
+  height: 90px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+}
+.ann-img-slot--filled {
+  border: 1px solid var(--border);
+}
+.ann-img-slot-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.ann-img-slot-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s;
+}
+.ann-img-slot-remove:hover { background: rgba(0,0,0,0.8); }
+.ann-img-slot--add {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: border-color 0.15s, color 0.15s;
+}
+.ann-img-slot--add:hover {
+  border-color: var(--primary);
   color: var(--primary);
 }
 
-.ann-empty {
-  text-align: center;
-  padding: 60px 24px;
-  color: var(--text-muted);
+/* Image grid in post body */
+.ann-image-grid {
+  display: grid;
+  gap: 4px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-top: 12px;
+}
+.ann-image-grid--1 { grid-template-columns: 1fr; }
+.ann-image-grid--2 { grid-template-columns: 1fr 1fr; }
+.ann-image-grid--3 { grid-template-columns: 1fr 1fr 1fr; }
+.ann-image-grid--4 { grid-template-columns: 1fr 1fr; }
+.ann-image-thumb {
+  width: 100%;
+  display: block;
+  object-fit: cover;
+  aspect-ratio: 16/10;
+  background: var(--bg-alt);
+  transition: opacity 0.2s;
+}
+.ann-image-grid--1 .ann-image-thumb { aspect-ratio: 16/9; }
+.ann-image-grid--3 .ann-image-thumb { aspect-ratio: 1; }
+.ann-image-thumb:hover { opacity: 0.92; cursor: zoom-in; }
+
+/* Home announcement thumbnail */
+.home-ann-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius);
+  object-fit: cover;
+  flex-shrink: 0;
+  margin-right: 4px;
+  border: 1px solid var(--border);
+}
+.home-ann-body-img {
+  width: 100%;
+  border-radius: var(--radius);
+  object-fit: cover;
+  max-height: 220px;
+  display: block;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
 }
 
-.ann-empty-icon {
-  font-size: 40px;
-  margin-bottom: 12px;
-}
-
-.ann-empty-text {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 6px;
-}
+/* Legacy aliases kept for any stray references */
+.ann-card         { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px 24px; }
+.ann-card--draft  { border-style: dashed; opacity: 0.85; }
+.ann-empty        { text-align: center; padding: 60px 24px; color: var(--text-muted); }
 
 /* ── Policies & Documents ──────────────────────────────────── */
 

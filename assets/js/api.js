@@ -719,8 +719,8 @@ const API = (() => {
   async function getRecentAnnouncements(limit = 2) {
     return supabase
       .from('announcements')
-      .select('id, title, body, created_at, employees!created_by(name)')
-      .eq('status', 'published')
+      .select('id, title, content, image_urls, created_at, employees!created_by(name)')
+      .eq('published', true)
       .order('created_at', { ascending: false })
       .limit(limit)
   }
@@ -982,6 +982,19 @@ const API = (() => {
       .order('created_at', { ascending: false })
   }
 
+  async function uploadAnnouncementImage(file) {
+    const ext  = (file.name.split('.').pop() || 'jpg').toLowerCase()
+    const path = `public/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+    const { error } = await Config.supabase.storage
+      .from('announcement-images')
+      .upload(path, file, { cacheControl: '31536000', upsert: false })
+    if (error) throw new Error(error.message)
+    const { data: { publicUrl } } = Config.supabase.storage
+      .from('announcement-images')
+      .getPublicUrl(path)
+    return publicUrl
+  }
+
   async function createAnnouncement(data) {
     return supabase.from('announcements').insert(data).select().single()
   }
@@ -1096,6 +1109,7 @@ const API = (() => {
     getCompanyHolidays, addCompanyHoliday, deleteCompanyHoliday,
     getCompanyEvents, createCompanyEvent, updateCompanyEvent, deleteCompanyEvent,
     getAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement,
+    uploadAnnouncementImage,
     getAnnouncementReactions, addReaction, removeReaction,
     getPolicyCategories, addPolicyCategory, deletePolicyCategory,
     getPolicies, createPolicy, updatePolicy, deletePolicy,
