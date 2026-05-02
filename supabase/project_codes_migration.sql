@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS internal_projects (
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Backfill: if table existed from a prior run without category column, add it
+ALTER TABLE internal_projects ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'internal';
+
 -- ── 3. internal_project_entities ───────────────────────────────
 CREATE TABLE IF NOT EXISTS internal_project_entities (
   id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
