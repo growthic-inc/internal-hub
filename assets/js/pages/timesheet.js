@@ -110,7 +110,6 @@ const Timesheet = (() => {
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
         </div>
-        ${_p.can_create ? `<button class="btn btn--primary btn--sm" id="ts-log-btn">+ Enter Log</button>` : ''}
       `
       document.getElementById('ts-prev').addEventListener('click', () => {
         _weekStart.setDate(_weekStart.getDate() - 7); _loadWeek()
@@ -118,7 +117,6 @@ const Timesheet = (() => {
       document.getElementById('ts-next').addEventListener('click', () => {
         _weekStart.setDate(_weekStart.getDate() + 7); _loadWeek()
       })
-      if (_p.can_create) document.getElementById('ts-log-btn')?.addEventListener('click', () => _openEntryModal())
     }
     _loadWeek()
   }
@@ -688,13 +686,40 @@ const Timesheet = (() => {
     content.querySelectorAll('.ts-reject-entry').forEach(btn =>
       btn.addEventListener('click', () => _openRejectModal(btn.dataset.id))
     )
+
+    // Bind accordion toggles
+    content.querySelectorAll('.ts-acc-header').forEach(header => {
+      header.addEventListener('click', () => {
+        const bodyId  = header.dataset.target
+        const body    = document.getElementById(bodyId)
+        const chevron = header.querySelector('.ts-acc-chevron')
+        if (!body) return
+        const isOpen = body.style.display !== 'none'
+        body.style.display    = isOpen ? 'none' : ''
+        header.dataset.open   = isOpen ? 'false' : 'true'
+        if (chevron) chevron.style.transform = isOpen ? 'rotate(-90deg)' : 'rotate(0deg)'
+      })
+    })
   }
 
   function _renderTeamEmployeeGroup({ emp, entries }) {
+    const empId  = emp?.id || Math.random().toString(36).slice(2)
     const name   = emp?.name || 'Unknown'
     const dept   = emp?.department ? emp.department.replace(/_/g, ' ') : ''
     const total  = entries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
-    const imgUrl   = emp?.profile_image_url || null
+    const imgUrl = emp?.profile_image_url || null
+
+    const pending   = entries.filter(e => e.status === 'submitted').length
+    const approved  = entries.filter(e => e.status === 'approved').length
+    const rejected  = entries.filter(e => e.status === 'rejected').length
+    const bodyId    = `ts-emp-body-${empId}`
+
+    const summaryBadges = [
+      `<span style="font-weight:700;font-size:13px;color:var(--primary);">${total.toFixed(1)}h</span>`,
+      pending  ? `<span class="badge badge--warning" style="font-size:11px;">${pending} pending</span>`   : '',
+      approved ? `<span class="badge badge--success" style="font-size:11px;">${approved} approved</span>` : '',
+      rejected ? `<span class="badge badge--danger"  style="font-size:11px;">${rejected} rejected</span>` : '',
+    ].filter(Boolean).join('')
 
     const rows = entries.map(e => {
       const desc = e.work_description || e.task_description || '—'
@@ -726,7 +751,10 @@ const Timesheet = (() => {
 
     return `
       <div class="section-card mb-3">
-        <div class="section-card-header" style="display:flex;align-items:center;justify-content:space-between;">
+        <div class="section-card-header ts-acc-header"
+             data-target="${bodyId}"
+             data-open="true"
+             style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;">
           <div style="display:flex;align-items:center;gap:10px;">
             <div style="width:34px;height:34px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;overflow:hidden;">${imgUrl ? `<img src="${Utils.escapeHtml(imgUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;">` : Utils.getInitials(name)}</div>
             <div>
@@ -734,9 +762,12 @@ const Timesheet = (() => {
               ${dept ? `<div style="font-size:11px;color:var(--text-muted);text-transform:capitalize;">${Utils.escapeHtml(dept)}</div>` : ''}
             </div>
           </div>
-          <span style="font-weight:700;font-size:14px;color:var(--primary);">${total.toFixed(1)}h</span>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="display:flex;align-items:center;gap:6px;">${summaryBadges}</div>
+            <svg class="ts-acc-chevron" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted);transition:transform 0.2s ease;flex-shrink:0;"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
         </div>
-        <div class="section-card-body" style="padding:0;">
+        <div class="section-card-body" id="${bodyId}" style="padding:0;">
           <table class="data-table">
             <thead>
               <tr>
