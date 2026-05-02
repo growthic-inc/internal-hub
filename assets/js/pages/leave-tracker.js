@@ -343,6 +343,27 @@ const LeaveTracker = (() => {
       _dateRange(ev.start_date, ev.end_date || ev.start_date).forEach(d => eventDates.add(d))
     })
 
+    // Birthdays and work anniversaries (match month/day for current calendar year)
+    const birthdayMap    = {}   // dateISO → [name, …]
+    const anniversaryMap = {}
+    _employees.filter(e => e.status === 'active').forEach(e => {
+      if (e.date_of_birth) {
+        const dob    = e.date_of_birth.slice(5)  // MM-DD
+        const key    = `${year}-${dob}`
+        if (!birthdayMap[key]) birthdayMap[key] = []
+        birthdayMap[key].push(e.name)
+      }
+      if (e.joining_date) {
+        const joined     = new Date(e.joining_date)
+        const yearsIn    = year - joined.getFullYear()
+        if (yearsIn > 0) {
+          const annvISO = `${year}-${e.joining_date.slice(5)}`
+          if (!anniversaryMap[annvISO]) anniversaryMap[annvISO] = []
+          anniversaryMap[annvISO].push({ name: e.name, years: yearsIn })
+        }
+      }
+    })
+
     const approvedLeaveMap  = {}   // date → { type, days }
     const pendingLeaveMap   = {}
     const approvedWfhMap    = {}
@@ -414,8 +435,23 @@ const LeaveTracker = (() => {
         dots += `<span class="lt-cal-dot lt-cal-dot--event" title="Event"></span>`
       }
 
+      if (birthdayMap[dateISO]) {
+        const names = birthdayMap[dateISO].join(', ')
+        dots += `<span class="lt-cal-dot lt-cal-dot--birthday" title="🎂 ${Utils.escapeHtml(names)}">🎂</span>`
+        title = title || names
+      }
+
+      if (anniversaryMap[dateISO]) {
+        const annvLabel = anniversaryMap[dateISO].map(a => `${a.name} (${a.years}yr)`).join(', ')
+        dots += `<span class="lt-cal-dot lt-cal-dot--anniversary" title="🎉 ${Utils.escapeHtml(annvLabel)}">🎉</span>`
+        title = title || annvLabel
+      }
+
+      const isHRClickable = _isHR
       cells += `
-        <div class="${classes}" data-date="${dateISO}" title="${Utils.escapeHtml(title)}" style="cursor:${title ? 'pointer' : 'default'};">
+        <div class="${classes}" data-date="${dateISO}" title="${Utils.escapeHtml(title)}"
+          style="cursor:${isHRClickable ? 'pointer' : (title ? 'pointer' : 'default')};"
+          ${isHRClickable ? `data-hr-add="${dateISO}"` : ''}>
           <span class="lt-cal-day-num">${day}</span>
           <div class="lt-cal-dots">${dots}</div>
         </div>
@@ -435,12 +471,15 @@ const LeaveTracker = (() => {
             ${cells}
           </div>
         </div>
-        <div style="padding:8px 16px 12px;display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--text-muted);">
+        <div style="padding:8px 16px 12px;display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--text-muted);align-items:center;">
           <span><span class="lt-cal-dot lt-cal-dot--leave" style="display:inline-block;margin-right:3px;"></span>Approved Leave</span>
           <span><span class="lt-cal-dot lt-cal-dot--pending" style="display:inline-block;margin-right:3px;"></span>Pending</span>
           <span><span class="lt-cal-dot lt-cal-dot--wfh" style="display:inline-block;margin-right:3px;"></span>WFH</span>
           <span><span class="lt-cal-dot lt-cal-dot--holiday" style="display:inline-block;margin-right:3px;"></span>Holiday</span>
           <span><span class="lt-cal-dot lt-cal-dot--event" style="display:inline-block;margin-right:3px;"></span>Event</span>
+          <span>🎂 Birthday</span>
+          <span>🎉 Work Anniversary</span>
+          ${_isHR ? `<span style="margin-left:auto;font-size:11px;color:var(--text-muted);">Click any date to add</span>` : ''}
         </div>
       </div>
     `
@@ -453,6 +492,115 @@ const LeaveTracker = (() => {
     })
     document.getElementById('lt-cal-next')?.addEventListener('click', () => {
       _calMonth.setMonth(_calMonth.getMonth() + 1)
+      _loadMyLeavesTab()
+    })
+
+    if (_isHR) {
+      document.querySelectorAll('[data-hr-add]').forEach(cell => {
+        cell.addEventListener('click', () => _openCalendarAddModal(cell.dataset.hrAdd))
+      })
+    }
+  }
+
+  function _openCalendarAddModal(dateISO) {
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">Add to ${Utils.formatDate(dateISO)}</h3>
+        <button class="modal-close" onclick="Utils.closeModal()">${CLOSE_SVG}</button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">
+          <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
+            <input type="radio" name="cal-add-type" value="holiday" checked style="accent-color:var(--accent);" />
+            <div>
+              <div style="font-size:13px;font-weight:600;">National Holiday / Company Holiday</div>
+              <div style="font-size:12px;color:var(--text-muted);">Marks the day as a holiday for everyone</div>
+            </div>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
+            <input type="radio" name="cal-add-type" value="event" style="accent-color:var(--accent);" />
+            <div>
+              <div style="font-size:13px;font-weight:600;">Company Event</div>
+              <div style="font-size:12px;color:var(--text-muted);">Team celebration, offsite, or any other event</div>
+            </div>
+          </label>
+        </div>
+
+        <div id="cal-add-err" class="alert alert--danger" style="display:none;"></div>
+
+        <div id="cal-holiday-fields">
+          <div class="form-group">
+            <label class="form-label">Holiday Name <span class="required">*</span></label>
+            <input class="form-input" type="text" id="cal-hol-name" placeholder="e.g. Diwali, Republic Day…" />
+          </div>
+        </div>
+
+        <div id="cal-event-fields" style="display:none;">
+          <div class="form-group">
+            <label class="form-label">Event Title <span class="required">*</span></label>
+            <input class="form-input" type="text" id="cal-evt-title" placeholder="e.g. Team Offsite, Diwali Party…" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">End Date</label>
+            <input class="form-input" type="date" id="cal-evt-end" value="${dateISO}" min="${dateISO}" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Description</label>
+            <textarea class="form-input" id="cal-evt-desc" rows="2" style="resize:vertical;" placeholder="Optional details…"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
+        <button class="btn btn--primary" id="cal-add-save-btn">Add</button>
+      </div>
+    `)
+
+    // Toggle field sections based on radio
+    document.querySelectorAll('[name="cal-add-type"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        const isHoliday = radio.value === 'holiday'
+        document.getElementById('cal-holiday-fields').style.display = isHoliday ? 'block' : 'none'
+        document.getElementById('cal-event-fields').style.display   = isHoliday ? 'none' : 'block'
+      })
+    })
+
+    document.getElementById('cal-add-save-btn').addEventListener('click', async () => {
+      const errEl    = document.getElementById('cal-add-err')
+      const btn      = document.getElementById('cal-add-save-btn')
+      const addType  = document.querySelector('[name="cal-add-type"]:checked')?.value
+
+      errEl.style.display = 'none'
+      btn.disabled    = true
+      btn.textContent = 'Saving…'
+
+      let error
+      if (addType === 'holiday') {
+        const name = document.getElementById('cal-hol-name').value.trim()
+        if (!name) { errEl.textContent = 'Please enter a holiday name.'; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Add'; return }
+        ;({ error } = await API.addCompanyHoliday({ date: dateISO, name }))
+      } else {
+        const title = document.getElementById('cal-evt-title').value.trim()
+        const end   = document.getElementById('cal-evt-end').value || dateISO
+        const desc  = document.getElementById('cal-evt-desc').value.trim()
+        if (!title) { errEl.textContent = 'Please enter an event title.'; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Add'; return }
+        ;({ error } = await API.createCompanyEvent({ title, start_date: dateISO, end_date: end, description: desc || null, created_by: _user.id }))
+      }
+
+      btn.disabled    = false
+      btn.textContent = 'Add'
+
+      if (error) { errEl.textContent = error.message; errEl.style.display = 'block'; return }
+
+      Utils.closeModal()
+      Utils.showToast(`${addType === 'holiday' ? 'Holiday' : 'Event'} added.`, 'success')
+      // Refresh data and re-render
+      const [holRes, evtRes] = await Promise.all([
+        API.getCompanyHolidays(_calMonth.getFullYear()),
+        API.getCompanyEvents(_calMonth.getFullYear()),
+      ])
+      _holidays = holRes.data || []
+      _events   = evtRes.data || []
       _loadMyLeavesTab()
     })
   }

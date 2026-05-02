@@ -377,7 +377,7 @@ const API = (() => {
   async function getAllEmployees() {
     return supabase
       .from('employees')
-      .select('id, name, email, role, department, status, joining_date, manager_id, employees!manager_id(name)')
+      .select('id, name, email, role, department, status, joining_date, date_of_birth, manager_id, employees!manager_id(name)')
       .order('name')
   }
 

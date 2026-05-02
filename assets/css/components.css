@@ -3122,11 +3122,16 @@
   text-overflow: ellipsis;
 }
 
-.lt-cal-dot--leave    { background: #fee2e2; color: var(--danger); }
-.lt-cal-dot--pending  { background: #fef3c7; color: #92400e; }
-.lt-cal-dot--wfh      { background: var(--primary-light); color: var(--primary); }
-.lt-cal-dot--holiday  { background: #d1fae5; color: #065f46; }
-.lt-cal-dot--event    { background: #ede9fe; color: #5b21b6; }
+.lt-cal-dot--leave       { background: #fee2e2; color: var(--danger); }
+.lt-cal-dot--pending     { background: #fef3c7; color: #92400e; }
+.lt-cal-dot--wfh         { background: var(--primary-light); color: var(--primary); }
+.lt-cal-dot--holiday     { background: #d1fae5; color: #065f46; }
+.lt-cal-dot--event       { background: #ede9fe; color: #5b21b6; }
+.lt-cal-dot--birthday    { background: transparent; font-size: 11px; padding: 0 1px; }
+.lt-cal-dot--anniversary { background: transparent; font-size: 11px; padding: 0 1px; }
+
+/* HR clickable calendar day hover */
+[data-hr-add]:hover { background: var(--hover, rgba(99,102,241,0.06)); border-radius: 6px; }
 
 /* Upcoming panel */
 .lt-upcoming {
