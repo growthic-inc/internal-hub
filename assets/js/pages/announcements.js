@@ -148,6 +148,7 @@ const Announcements = (() => {
   function _postHTML(a, idx) {
     const authorName = a.author?.name || 'People & Culture'
     const authorImg  = a.author?.profile_image_url || null
+    const authorDept = a.author?.department ? Utils.getDeptLabel(a.author.department) : 'People & Culture'
     const isDraft    = !a.published
     const counts     = _reactionCounts.get(a.id) || {}
     const mine       = _myReactions.get(a.id) || new Set()
@@ -158,16 +159,16 @@ const Announcements = (() => {
 
     // Reaction summary line
     const totalReactions = Object.values(counts).reduce((s, c) => s + c, 0)
-    const reactedEmojis  = EMOJIS.filter(e => counts[e] > 0).slice(0, 4).join(' ')
+    const reactedEmojis  = EMOJIS.filter(e => counts[e] > 0).slice(0, 3).join('')
     const summary = totalReactions > 0
-      ? `<div class="ann-react-summary">${reactedEmojis} &nbsp;${totalReactions} reaction${totalReactions !== 1 ? 's' : ''}</div>`
+      ? `<div class="ann-react-summary">${reactedEmojis} <span>${totalReactions} reaction${totalReactions !== 1 ? 's' : ''}</span></div>`
       : ''
 
     const pills = EMOJIS.map(emoji => {
       const count  = counts[emoji] || 0
       const active = mine.has(emoji) ? ' ann-react-pill--active' : ''
       return `<button class="ann-react-pill${active}" data-ann-id="${a.id}" data-emoji="${emoji}" title="${emoji}">
-        <span>${emoji}</span>${count > 0 ? `<span class="ann-react-count">${count}</span>` : ''}
+        <span class="ann-react-emoji">${emoji}</span>${count > 0 ? `<span class="ann-react-count">${count}</span>` : ''}
       </button>`
     }).join('')
 
@@ -178,7 +179,7 @@ const Announcements = (() => {
           <div style="flex:1;min-width:0;">
             <div class="ann-post-author">
               ${Utils.escapeHtml(authorName)}
-              <span class="ann-dept-badge">People &amp; Culture</span>
+              <span class="ann-dept-badge">${Utils.escapeHtml(authorDept)}</span>
               ${isDraft ? `<span class="ann-draft-badge">Draft</span>` : ''}
             </div>
             <div class="ann-post-time">${_relativeTime(a.created_at)}</div>

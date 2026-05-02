@@ -978,7 +978,7 @@ const API = (() => {
   async function getAnnouncements() {
     return supabase
       .from('announcements')
-      .select('*, author:employees!created_by(name, profile_image_url)')
+      .select('*, author:employees!created_by(name, profile_image_url, department)')
       .order('created_at', { ascending: false })
   }
 
