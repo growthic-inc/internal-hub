@@ -201,6 +201,18 @@ const API = (() => {
     return supabase.from('asset_types').delete().eq('id', id)
   }
 
+  async function updateAssetType(id, name) {
+    return supabase.from('asset_types').update({ name }).eq('id', id)
+  }
+
+  async function getMyAssetRepairs(employeeId) {
+    return supabase
+      .from('asset_repairs')
+      .select('*, reported_by_emp:employees!reported_by(name)')
+      .eq('reported_by', employeeId)
+      .order('created_at', { ascending: false })
+  }
+
   async function uploadAssetPhoto(file, assetId, context) {
     const { data: { session } } = await supabase.auth.getSession()
     const form = new FormData()
@@ -1074,7 +1086,7 @@ const API = (() => {
     getAssets, createAsset, updateAsset,
     getAssetHistory, addAssetHistory,
     getAllAssetRepairs, getAssetRepairsForAsset, createAssetRepair, updateAssetRepair,
-    getAssetTypes, createAssetType, deleteAssetType,
+    getAssetTypes, createAssetType, updateAssetType, deleteAssetType, getMyAssetRepairs,
     uploadAssetPhoto,
     getMyAssetRequests,
     getPendingApprovals, updateApproval,

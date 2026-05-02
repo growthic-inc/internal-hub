@@ -134,7 +134,7 @@ const Assets = (() => {
     const tabs = []
     if (canManage) tabs.push({ id: 'all',      label: 'All Assets'       })
     tabs.push(              { id: 'mine',     label: 'My Assets'        })
-    if (canManage || _p.can_resolve) tabs.push({ id: 'repairs',  label: 'Repairs & Issues' })
+    if (canManage || _p.can_resolve || _p.can_report) tabs.push({ id: 'repairs',  label: 'Repairs & Issues' })
     if (canManage || _p.can_manage_types) tabs.push({ id: 'settings', label: 'Settings' })
 
     const tabsEl = document.getElementById('ast-tabs')
@@ -145,16 +145,19 @@ const Assets = (() => {
     }
 
     const promises = [API.getAssets(), API.getAssetTypes()]
-    if (canManage) {
+    if (canManage || _p.can_resolve) {
       promises.push(API.getEmployees(true))
       promises.push(API.getAllAssetRepairs())
+    } else if (_p.can_report) {
+      promises.push(Promise.resolve({ data: [] }))          // employees not needed
+      promises.push(API.getMyAssetRepairs(user.id))
     }
 
-    const results = await Promise.all(promises)
+    const results  = await Promise.all(promises)
     _assets    = results[0].data || []
     _types     = results[1].data || []
-    _employees = canManage ? (results[2]?.data || []) : []
-    _repairs   = canManage ? (results[3]?.data || []) : []
+    _employees = (canManage || _p.can_resolve) ? (results[2]?.data || []) : []
+    _repairs   = (canManage || _p.can_resolve || _p.can_report) ? (results[3]?.data || []) : []
 
     _activeTab = canManage ? 'all' : 'mine'
     _bindTabs()
@@ -327,11 +330,18 @@ const Assets = (() => {
     if (!content) return
     const mine = _assets.filter(a => a.assigned_to === _user.id)
 
+    // Toolbar: Request Asset button
+    const toolbar = document.getElementById('ast-toolbar-actions')
+    if (toolbar && _p.can_request) {
+      toolbar.innerHTML = `<button class="btn btn--primary btn--sm" id="ast-request-btn">+ Request Asset</button>`
+      document.getElementById('ast-request-btn').addEventListener('click', _openRequestModal)
+    }
+
     if (!mine.length) {
       content.innerHTML = `
         <div class="section-card">
           <div class="section-card-body">
-            <p class="empty-state-text">No company assets are currently assigned to you.</p>
+            <p class="empty-state-text">No company assets are currently assigned to you.${_p.can_request ? ' Use "Request Asset" to request one.' : ''}</p>
           </div>
         </div>`
       return
@@ -447,11 +457,17 @@ const Assets = (() => {
           </div>
           <div id="ast-type-list">
             ${_types.map(t => `
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
-                <span style="font-size:14px;">${Utils.escapeHtml(t.name)}</span>
-                ${!t.is_default
-                  ? `<button class="btn btn--xs btn--ghost ast-type-del" data-id="${t.id}" style="color:var(--danger);">Remove</button>`
-                  : '<span class="text-muted" style="font-size:12px;">Default</span>'}
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);" data-type-id="${t.id}">
+                <span class="ast-type-name" style="font-size:14px;flex:1;">${Utils.escapeHtml(t.name)}</span>
+                ${!t.is_default ? `
+                  <div style="display:flex;gap:4px;flex-shrink:0;">
+                    <button class="btn btn--xs btn--ghost ast-type-edit" data-id="${t.id}" data-name="${Utils.escapeHtml(t.name)}" title="Rename">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    </button>
+                    <button class="btn btn--xs btn--ghost ast-type-del" data-id="${t.id}" style="color:var(--danger);" title="Remove">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                    </button>
+                  </div>` : '<span class="text-muted" style="font-size:12px;">Default</span>'}
               </div>`).join('')}
           </div>
         </div>
@@ -470,8 +486,40 @@ const Assets = (() => {
       Utils.showToast('Asset type added.', 'success')
     })
 
+    document.querySelectorAll('.ast-type-edit').forEach(btn =>
+      btn.addEventListener('click', () => {
+        const row      = btn.closest('[data-type-id]')
+        const nameSpan = row.querySelector('.ast-type-name')
+        const actions  = btn.parentElement
+        const original = btn.dataset.name
+
+        // Replace name span with inline input
+        nameSpan.innerHTML = `<input class="form-input ast-type-rename-input" value="${Utils.escapeHtml(original)}"
+          style="padding:4px 8px;font-size:13px;height:30px;" maxlength="60">`
+        actions.innerHTML = `
+          <button class="btn btn--xs btn--primary ast-type-save" data-id="${btn.dataset.id}">Save</button>
+          <button class="btn btn--xs btn--ghost ast-type-cancel">Cancel</button>`
+
+        const input = nameSpan.querySelector('input')
+        input.focus(); input.select()
+
+        row.querySelector('.ast-type-cancel').addEventListener('click', _renderSettingsTab)
+        row.querySelector('.ast-type-save').addEventListener('click', async () => {
+          const newName = input.value.trim()
+          if (!newName) return
+          const { error } = await API.updateAssetType(btn.dataset.id, newName)
+          if (error) { Utils.showToast(error.message, 'error'); return }
+          const { data } = await API.getAssetTypes()
+          _types = data || []
+          _renderSettingsTab()
+          Utils.showToast('Asset type renamed.', 'success')
+        })
+      })
+    )
+
     document.querySelectorAll('.ast-type-del').forEach(btn =>
       btn.addEventListener('click', async () => {
+        if (!confirm(`Remove asset type "${btn.closest('[data-type-id]').querySelector('.ast-type-name').textContent.trim()}"?`)) return
         const { error } = await API.deleteAssetType(btn.dataset.id)
         if (error) { Utils.showToast(error.message, 'error'); return }
         const { data } = await API.getAssetTypes()
@@ -1122,6 +1170,70 @@ const Assets = (() => {
       Utils.closeModal()
       Utils.showToast('Issue updated.', 'success')
       await _refresh()
+    })
+  }
+
+  /* ── Request Asset Modal ────────────────────────────────────── */
+
+  function _openRequestModal() {
+    const available = _assets.filter(a => a.status === 'available')
+
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">Request an Asset</h3>
+        <button class="modal-close" onclick="Utils.closeModal()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:14px;color:var(--text-muted);margin:0 0 16px;">
+          Select an available asset to request. HR will be notified and will assign it to you.
+        </p>
+        ${!available.length
+          ? '<p class="empty-state-text">No assets are currently available.</p>'
+          : `<div style="display:flex;flex-direction:column;gap:8px;" id="ast-req-list">
+              ${available.map(a => `
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);gap:12px;">
+                  <div>
+                    <div style="font-weight:600;font-size:14px;">${Utils.escapeHtml(a.name)}</div>
+                    <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${Utils.escapeHtml(a.type || '')}${a.serial_number ? ' · ' + Utils.escapeHtml(a.serial_number) : ''}</div>
+                  </div>
+                  <button class="btn btn--sm btn--primary ast-req-btn" data-id="${a.id}" data-name="${Utils.escapeHtml(a.name)}">Request</button>
+                </div>`).join('')}
+            </div>`}
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+      </div>
+    `, '')
+
+    document.querySelectorAll('.ast-req-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true; btn.textContent = 'Sending…'
+        try {
+          // Notify all admins / HR managers
+          const { data: admins } = await Config.supabase
+            .from('employees')
+            .select('id')
+            .in('role', ['super_admin', 'hr'])
+          if (admins?.length) {
+            await Config.supabase.from('notifications').insert(
+              admins.map(e => ({
+                recipient_employee_id: e.id,
+                type:      'info',
+                message:   `${_user.name} has requested asset: "${btn.dataset.name}"`,
+                module:    'assets',
+                record_id: btn.dataset.id,
+              }))
+            )
+          }
+          Utils.closeModal()
+          Utils.showToast('Request sent — HR has been notified.', 'success')
+        } catch {
+          btn.disabled = false; btn.textContent = 'Request'
+          Utils.showToast('Failed to send request.', 'error')
+        }
+      })
     })
   }
 
