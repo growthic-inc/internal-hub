@@ -61,6 +61,26 @@ const Assets = (() => {
              : `<span class="badge badge--muted">${status}</span>`
   }
 
+  function _typeIcon(type, size = 16) {
+    const t = (type || '').toLowerCase()
+    const icons = {
+      laptop:   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M2 20h20"/></svg>`,
+      phone:    `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><circle cx="12" cy="17" r="1"/></svg>`,
+      monitor:  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>`,
+      keyboard: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>`,
+      mouse:    `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="6"/><path d="M12 2v8M6 10h12"/></svg>`,
+      headset:  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z"/><path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>`,
+      camera:   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`,
+      tablet:   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><circle cx="12" cy="18" r="1"/></svg>`,
+      printer:  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>`,
+      chair:    `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20v-8a6 6 0 0 1 12 0v8"/><path d="M4 20h16"/><path d="M6 14h12"/></svg>`,
+      other:    `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3h-8l-2 4h12z"/></svg>`,
+    }
+    // fuzzy match: if any key is contained in the type name
+    const match = Object.keys(icons).find(k => t.includes(k))
+    return `<span class="ast-type-icon" style="color:var(--primary);opacity:0.8;display:inline-flex;align-items:center;flex-shrink:0;">${icons[match] || icons.other}</span>`
+  }
+
   function _conditionBadge(condition) {
     const map = { New: 'badge--success', Good: 'badge--primary', Fair: 'badge--warning', Poor: 'badge--danger' }
     return condition
@@ -307,7 +327,7 @@ const Assets = (() => {
             ${rows.map(a => `
               <tr>
                 <td><strong>${Utils.escapeHtml(a.name)}</strong></td>
-                <td class="text-muted">${Utils.escapeHtml(a.type || '—')}</td>
+                <td><span style="display:inline-flex;align-items:center;gap:6px;">${_typeIcon(a.type, 14)}<span class="text-muted">${Utils.escapeHtml(a.type || '—')}</span></span></td>
                 <td class="text-sm text-muted">${Utils.escapeHtml(a.serial_number || a.asset_tag || '—')}</td>
                 <td>${_conditionBadge(a.condition)}</td>
                 <td>${a.employees ? Utils.escapeHtml(a.employees.name) : '<span class="text-muted">—</span>'}</td>
@@ -378,7 +398,7 @@ const Assets = (() => {
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:12px;">
           <div>
             <div style="font-weight:700;font-size:15px;">${Utils.escapeHtml(a.name)}</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${Utils.escapeHtml(a.type || '')}</div>
+            <div style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);margin-top:4px;">${_typeIcon(a.type, 13)}${Utils.escapeHtml(a.type || '')}</div>
           </div>
           ${_statusBadge(a.status)}
         </div>
@@ -707,11 +727,12 @@ const Assets = (() => {
       if (a.location) locCount[a.location]  = (locCount[a.location]  || 0) + 1
     })
 
-    function _managedList(items, idAttr, countMap, isDefault) {
+    function _managedList(items, idAttr, countMap, isType = false) {
       if (!items.length) return '<p class="empty-state-text" style="padding:12px 0;">None added yet.</p>'
       return items.map(item => `
         <div class="ast-setting-row" data-row-id="${item.id}">
-          <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
+            ${isType ? _typeIcon(item.name, 15) : ''}
             <span class="ast-setting-name">${Utils.escapeHtml(item.name)}</span>
             <span class="ast-setting-count">${countMap[item.name] || 0} asset${(countMap[item.name] || 0) !== 1 ? 's' : ''}</span>
           </div>
@@ -759,7 +780,7 @@ const Assets = (() => {
                 <input class="form-input" id="ast-type-input" placeholder="New type name…" style="flex:1;">
                 <button class="btn btn--primary btn--sm" id="ast-type-add">Add</button>
               </div>
-              <div id="ast-type-list">${_managedList(_types, 'type', typeCount)}</div>
+              <div id="ast-type-list">${_managedList(_types, 'type', typeCount, true)}</div>
             </div>
           </div>
 
