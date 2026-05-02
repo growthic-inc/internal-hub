@@ -154,6 +154,7 @@ const App = (() => {
     _setupLogout()
     _loadNotificationCount()
     _initNotificationPanel()
+    _initMobileNav()
 
     router()
     window.addEventListener('hashchange', router)
@@ -324,6 +325,48 @@ const App = (() => {
         _updateNotifBadge(remaining)
         if (remaining === 0) document.getElementById('notif-mark-all')?.remove()
       })
+    })
+  }
+
+  /* ── Mobile nav: hamburger + sidebar overlay ────────────────── */
+  function _initMobileNav() {
+    const hamburger = document.getElementById('hamburger-btn')
+    const sidebar   = document.getElementById('sidebar')
+    const overlay   = document.getElementById('sidebar-overlay')
+    if (!hamburger || !sidebar) return
+
+    function openSidebar() {
+      sidebar.classList.add('sidebar--open')
+      if (overlay) overlay.classList.add('sidebar-overlay--visible')
+      document.body.classList.add('sidebar-is-open')
+    }
+
+    function closeSidebar() {
+      sidebar.classList.remove('sidebar--open')
+      if (overlay) overlay.classList.remove('sidebar-overlay--visible')
+      document.body.classList.remove('sidebar-is-open')
+    }
+
+    hamburger.addEventListener('click', () => {
+      sidebar.classList.contains('sidebar--open') ? closeSidebar() : openSidebar()
+    })
+
+    // Tap overlay to close
+    if (overlay) overlay.addEventListener('click', closeSidebar)
+
+    // Close when a nav link is tapped (route changes on mobile)
+    document.getElementById('sidebar-nav')?.addEventListener('click', e => {
+      if (e.target.closest('.nav-item') && window.innerWidth <= 768) closeSidebar()
+    })
+
+    // Close on browser back/forward (hash changes)
+    window.addEventListener('hashchange', () => {
+      if (window.innerWidth <= 768) closeSidebar()
+    })
+
+    // ESC key closes sidebar
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeSidebar()
     })
   }
 

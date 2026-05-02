@@ -1,0 +1,319 @@
+/* ============================================================
+   GROWTHIC ONE — Mobile & Responsive Styles
+   Breakpoints:
+     Tablet  : ≤ 1024px
+     Mobile  : ≤ 768px
+     S-Mobile: ≤ 480px
+   ============================================================ */
+
+/* ── Hamburger button — hidden on desktop ───────────────────── */
+.hamburger-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.hamburger-btn:hover { background: var(--surface); color: var(--text); }
+.hamburger-btn svg { display: block; }
+
+/* ── Sidebar overlay — shown when sidebar is open on mobile ─── */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 899;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+.sidebar-overlay--visible { display: block; }
+
+/* ══════════════════════════════════════════════════════════════
+   TABLET  (≤ 1024px)
+══════════════════════════════════════════════════════════════ */
+@media (max-width: 1024px) {
+
+  /* Tighten up the large stat/kpi grids */
+  .grid-4       { grid-template-columns: repeat(2, 1fr); }
+  .kpi-grid     { grid-template-columns: repeat(3, 1fr); }
+  .info-grid-4  { grid-template-columns: repeat(2, 1fr); }
+
+  /* Reduce page padding a bit */
+  .page-content { padding: 20px; }
+
+  /* Access-control two-col layout collapses */
+  .access-layout {
+    grid-template-columns: 200px 1fr;
+  }
+
+  /* Permissions panel */
+  .perms-right-body { padding: 24px; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   MOBILE  (≤ 768px)
+══════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* ── Sidebar → slide-in drawer ─────────────────────────────── */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    z-index: 900;
+    transform: translateX(-100%);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: none;
+  }
+  .sidebar--open {
+    transform: translateX(0);
+    box-shadow: 6px 0 32px rgba(0, 0, 0, 0.2);
+  }
+
+  /* Prevent body scroll while sidebar is open */
+  body.sidebar-is-open { overflow: hidden; }
+
+  /* ── Header ─────────────────────────────────────────────────── */
+  .hamburger-btn { display: flex; }
+
+  .app-header {
+    padding: 0 14px;
+    gap: 10px;
+  }
+
+  .page-title {
+    font-size: 15px;
+    /* allow title to shrink so actions always fit */
+    min-width: 0;
+    flex: 1;
+  }
+
+  /* ── Page content ───────────────────────────────────────────── */
+  .page-content { padding: 14px; }
+  .page-inner   { max-width: 100%; }
+
+  /* ── Grid collapse ──────────────────────────────────────────── */
+  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+  .kpi-grid    { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .info-grid   { grid-template-columns: 1fr; }
+  .info-grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .form-row    { grid-template-columns: 1fr; }
+  .charts-row  { grid-template-columns: 1fr; }
+  .folder-cards-grid { grid-template-columns: 1fr; }
+
+  /* ── Tables → horizontal scroll ────────────────────────────── */
+  .table-wrap  { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Give section-card bodies with a table room to scroll */
+  .section-card { overflow: visible; }
+  .section-card-body:has(.data-table),
+  .section-card > .section-card-body { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  .data-table  { min-width: 560px; }
+  .table       { min-width: 560px; }
+
+  /* Permissions table specifically needs more room */
+  .perms-table { min-width: 540px; }
+
+  /* ── Page toolbar ───────────────────────────────────────────── */
+  .page-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .page-toolbar .tabs { margin-bottom: 0; }
+
+  /* ── Filter / search bars ───────────────────────────────────── */
+  .filter-bar { flex-wrap: wrap; gap: 8px; }
+  .filter-bar .form-select,
+  .filter-bar .form-input { flex: 1; min-width: 120px; }
+
+  .search-wrap             { width: 100%; }
+  .search-wrap .form-input { width: 100%; }
+
+  .db-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .db-filter-group  { min-width: unset; }
+  .db-filter-sep    { display: none; }
+  .db-filter-actions { margin-left: 0; flex-wrap: wrap; }
+
+  .repo-toolbar    { flex-direction: column; align-items: stretch; }
+  .repo-filters    { flex-wrap: wrap; }
+  .repo-filters .form-select,
+  .repo-filters .form-input { flex: 1; min-width: 120px; }
+
+  /* ── Section card header ────────────────────────────────────── */
+  .section-card-header { flex-wrap: wrap; gap: 8px; }
+
+  /* ── Stat/KPI values ────────────────────────────────────────── */
+  .stat-value { font-size: 22px; }
+  .kpi-value  { font-size: 22px; }
+
+  /* ── Modals → bottom sheet ──────────────────────────────────── */
+  .modal-overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+  .modal, .modal--lg {
+    max-width: 100%;
+    width: 100%;
+    max-height: 92vh;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  }
+
+  /* ── Right drawer → full width ──────────────────────────────── */
+  .drawer { width: 100%; max-width: 100%; }
+
+  /* ── Toast → top of screen on mobile ───────────────────────── */
+  .toast-container {
+    bottom: auto;
+    top: 14px;
+    right: 14px;
+    left: 14px;
+  }
+  .toast { max-width: 100%; }
+
+  /* ── Settings ───────────────────────────────────────────────── */
+  .settings-inner     { max-width: 100%; }
+  .settings-pw-row    { flex-direction: column; gap: 10px; align-items: flex-start; }
+  .settings-profile-row { flex-wrap: wrap; }
+
+  /* ── Timesheet — let the 6-column week grid scroll ─────────── */
+  .ts-layout {
+    grid-template-columns: 1fr !important;  /* override the 1100px rule */
+    gap: 16px;
+  }
+  .ts-day-grid {
+    grid-template-columns: none !important; /* kill all column rules */
+    display: flex;
+    overflow-x: auto;
+    gap: 10px;
+    padding-bottom: 8px;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+    scroll-padding-left: 14px;
+  }
+  .ts-col {
+    min-width: 175px;
+    flex-shrink: 0;
+    scroll-snap-align: start;
+  }
+  .ts-sidebar {
+    position: static;
+    width: 100%;
+  }
+
+  /* ── Permissions panel ──────────────────────────────────────── */
+  .perms-layout {
+    grid-template-columns: 1fr;
+  }
+  .perms-sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    max-height: 240px;
+  }
+  .perms-right-body { padding: 16px; }
+  .perms-right-footer { padding: 12px 16px; flex-direction: column; gap: 10px; }
+
+  /* Permissions table needs to scroll */
+  .perms-right-body { overflow-x: auto; }
+
+  /* ── Access Control panel ───────────────────────────────────── */
+  .access-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+    margin: -14px;
+    overflow: visible;
+  }
+  .access-sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    max-height: 220px;
+    overflow-y: auto;
+  }
+
+  /* ── Context bar ────────────────────────────────────────────── */
+  .db-context-bar { flex-direction: column; gap: 8px; align-items: flex-start; }
+  .db-context-right { margin-left: 0; }
+
+  /* ── Org chart ──────────────────────────────────────────────── */
+  .org-chart { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* ── People directory cards ─────────────────────────────────── */
+  .people-card-grid { grid-template-columns: 1fr 1fr !important; }
+
+  /* ── Analytics tab strip ────────────────────────────────────── */
+  .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    border-bottom: 1px solid var(--border);
+    gap: 0;
+  }
+  .tab-btn { flex-shrink: 0; }
+
+  /* ── Announcement / policy cards ────────────────────────────── */
+  .announcement-card-grid,
+  .policy-card-grid { grid-template-columns: 1fr !important; }
+
+  /* ── Home dashboard quick stats row ─────────────────────────── */
+  .home-stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* ── Page header (h2 + action button rows) ───────────────────── */
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .page-header .btn { width: 100%; justify-content: center; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SMALL MOBILE  (≤ 480px)
+══════════════════════════════════════════════════════════════ */
+@media (max-width: 480px) {
+
+  /* Single column for everything */
+  .grid-2, .kpi-grid, .info-grid-4 { grid-template-columns: 1fr; }
+
+  /* Even tighter padding */
+  .app-header   { padding: 0 12px; }
+  .page-content { padding: 12px; }
+
+  /* Tabs font size */
+  .tab-btn { padding: 8px 10px; font-size: 12px; }
+
+  /* Stat values */
+  .stat-value { font-size: 20px; }
+  .kpi-value  { font-size: 20px; }
+
+  /* People cards single column on tiny screens */
+  .people-card-grid { grid-template-columns: 1fr !important; }
+
+  /* Form groups full-width in filter bars */
+  .filter-bar .form-select,
+  .filter-bar .form-input { width: 100%; }
+
+  /* Modal body padding tighter */
+  .modal-body    { padding: 0 16px; }
+  .modal-header  { padding: 16px 16px 0; margin-bottom: 16px; }
+  .modal-footer  { padding: 14px 16px; }
+
+  /* Timesheet columns a bit wider so text fits */
+  .ts-col { min-width: 160px; }
+
+  /* Home stats single col */
+  .home-stats-grid { grid-template-columns: 1fr !important; }
+}
