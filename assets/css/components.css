@@ -3275,9 +3275,30 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Feed wrapper — centered column */
+/* Feed page header */
+.ann-feed-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid transparent;
+  border-image: linear-gradient(90deg, var(--primary), #0e8a8a, transparent) 1;
+}
+.ann-feed-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--primary) 0%, #0e8a8a 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.4px;
+}
+
+/* Feed wrapper — full width */
 .ann-feed-wrap {
-  max-width: 680px;
+  width: 100%;
 }
 
 /* HR compose bar */
@@ -3288,18 +3309,28 @@
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 12px 16px;
-  margin-bottom: 16px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  position: relative;
+  overflow: hidden;
+}
+.ann-compose-bar::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, var(--primary), #0e8a8a);
+  border-radius: 4px 0 0 4px;
 }
 
 .ann-compose-prompt {
   flex: 1;
   text-align: left;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border);
   border-radius: 100px;
-  padding: 10px 18px;
+  padding: 10px 20px;
   font-size: 14px;
   color: var(--text-muted);
   cursor: pointer;
@@ -3311,6 +3342,25 @@
   border-color: var(--primary);
   color: var(--primary);
 }
+
+.ann-compose-post-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 18px;
+  border-radius: 100px;
+  border: none;
+  background: linear-gradient(135deg, var(--primary), #0e8a8a);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: opacity 0.15s, transform 0.15s;
+  flex-shrink: 0;
+}
+.ann-compose-post-btn:hover { opacity: 0.88; transform: translateY(-1px); }
 
 /* Post cards */
 .announcements-feed {
@@ -3324,13 +3374,14 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  transition: box-shadow 0.22s, transform 0.18s;
+  transition: box-shadow 0.22s, transform 0.18s, border-color 0.2s;
   animation: annPostIn 0.32s ease both;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
 }
 .ann-post:hover {
-  box-shadow: 0 4px 20px rgba(0,0,0,0.09);
-  transform: translateY(-1px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+  transform: translateY(-2px);
+  border-color: var(--primary);
 }
 .ann-post--draft {
   border-style: dashed;
@@ -3463,12 +3514,12 @@
 /* Reactions footer */
 .ann-post-footer {
   border-top: 1px solid var(--border-light);
-  padding: 8px 16px;
+  padding: 10px 20px;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   flex-wrap: wrap;
-  background: var(--surface);
+  background: linear-gradient(to right, var(--surface), var(--bg));
 }
 
 .ann-react-summary {
@@ -3597,10 +3648,7 @@
 }
 .ann-image-grid--1 { grid-template-columns: 1fr; }
 .ann-image-grid--2 { grid-template-columns: 1fr 1fr; }
-/* 3 images: 2 equal on top, 1 wide on bottom */
-.ann-image-grid--3 { grid-template-columns: 1fr 1fr; }
-.ann-image-grid--3 .ann-image-thumb:nth-child(3) { grid-column: 1 / -1; aspect-ratio: 16/7; }
-/* 4 images: 2×2 square grid */
+.ann-image-grid--3 { grid-template-columns: 1fr 1fr 1fr; }
 .ann-image-grid--4 { grid-template-columns: 1fr 1fr; }
 .ann-image-grid--4 .ann-image-thumb { aspect-ratio: 1; }
 .ann-image-thumb {

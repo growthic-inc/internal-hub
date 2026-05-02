@@ -62,18 +62,21 @@ const Announcements = (() => {
 
     return `
       <div class="page-inner">
-        <div class="page-header">
+        <div class="ann-feed-header">
           <div>
-            <h2 style="margin:0;font-size:18px;font-weight:700;color:var(--text);">Feed</h2>
-            <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">What's happening at Growthic</div>
+            <h2 class="ann-feed-title">What's Happening at Growthic!</h2>
           </div>
-          ${_isHR ? `<button class="btn btn-primary btn-sm" id="ann-new-btn" style="display:none;">+ New</button>` : ''}
+          ${_isHR ? `<button class="btn btn-primary btn-sm" id="ann-new-btn" style="display:none;">+ New Post</button>` : ''}
         </div>
         <div class="ann-feed-wrap">
           ${_isHR ? `
             <div class="ann-compose-bar">
-              <div class="ann-post-avatar" style="width:38px;height:38px;font-size:12px;">${avatarHtml}</div>
-              <button class="ann-compose-prompt" id="ann-compose-btn">📢 Share an update with the team…</button>
+              <div class="ann-post-avatar" style="width:40px;height:40px;font-size:13px;">${avatarHtml}</div>
+              <button class="ann-compose-prompt" id="ann-compose-btn">Share an update with the team…</button>
+              <button class="ann-compose-post-btn" id="ann-compose-post-btn" onclick="">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                Post
+              </button>
             </div>
           ` : ''}
           <div id="ann-feed" class="page-loading">Loading…</div>
@@ -88,6 +91,7 @@ const Announcements = (() => {
 
     if (_isHR) {
       document.getElementById('ann-compose-btn')?.addEventListener('click', () => _openModal(null))
+      document.getElementById('ann-compose-post-btn')?.addEventListener('click', () => _openModal(null))
       document.getElementById('ann-new-btn')?.addEventListener('click', () => _openModal(null))
     }
 
@@ -179,7 +183,6 @@ const Announcements = (() => {
           <div style="flex:1;min-width:0;">
             <div class="ann-post-author">
               ${Utils.escapeHtml(authorName)}
-              <span class="ann-dept-badge">${Utils.escapeHtml(authorDept)}</span>
               ${isDraft ? `<span class="ann-draft-badge">Draft</span>` : ''}
             </div>
             <div class="ann-post-time">${_relativeTime(a.created_at)}</div>
