@@ -12,6 +12,11 @@ const ClientDirectory = (() => {
   let _filter    = { category: 'all', status: 'active', search: '' }
   let _p         = null
 
+  // Project Codes tab state
+  let _pcView           = false
+  let _internalProjects = []
+  let _pcPerms          = null
+
   // Form state
   let _editingClientId  = null
   let _formEntities     = []   // [{ id, name, platforms[], services[] }]
@@ -109,27 +114,38 @@ const ClientDirectory = (() => {
     return `
       <div class="page-inner">
         <div class="page-header">
-          <div class="tabs" style="border:none;margin:0;gap:0;">
-            <button class="tab-btn tab-btn--active" data-cat="all">All</button>
-            <button class="tab-btn" data-cat="Shark">Shark</button>
-            <button class="tab-btn" data-cat="Dolphin">Dolphin</button>
-            <button class="tab-btn" data-cat="Turtle">Turtle</button>
-            <button class="tab-btn" data-cat="Snail">Snail</button>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <div class="tabs" style="border:none;margin:0;gap:0;">
+              <button class="tab-btn tab-btn--active" data-cat="all">All</button>
+              <button class="tab-btn" data-cat="Shark">Shark</button>
+              <button class="tab-btn" data-cat="Dolphin">Dolphin</button>
+              <button class="tab-btn" data-cat="Turtle">Turtle</button>
+              <button class="tab-btn" data-cat="Snail">Snail</button>
+            </div>
+            <span style="width:1px;height:20px;background:var(--border);flex-shrink:0;margin:0 4px;display:inline-block;"></span>
+            <button class="tab-btn tab-btn--pc" id="cd-pc-tab">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="11" x2="15" y2="11"/><line x1="9" y1="15" x2="13" y2="15"/></svg>
+              Project Codes
+            </button>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <div class="search-wrap">
-              <span class="search-icon">${ICONS.search}</span>
-              <input class="form-input" id="cd-search" type="search"
-                     placeholder="Search clients, codes or managers…">
+            <div id="cd-dir-controls" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <div class="search-wrap">
+                <span class="search-icon">${ICONS.search}</span>
+                <input class="form-input" id="cd-search" type="search"
+                       placeholder="Search clients, codes or managers…">
+              </div>
+              <select class="form-select" id="cd-status" style="width:auto;height:38px;">
+                <option value="active">Active</option>
+                <option value="paused">Paused</option>
+                <option value="inactive">Inactive</option>
+                <option value="all">All statuses</option>
+              </select>
+              <button class="btn btn--primary btn--sm" id="cd-add-btn" style="display:none;">+ Add Client</button>
             </div>
-            <select class="form-select" id="cd-status" style="width:auto;height:38px;">
-              <option value="active">Active</option>
-              <option value="paused">Paused</option>
-              <option value="inactive">Inactive</option>
-              <option value="all">All statuses</option>
-            </select>
-            <!-- Always rendered; init() reveals it once permissions are loaded -->
-            <button class="btn btn-primary btn-sm" id="cd-add-btn" style="display:none;">+ Add Client</button>
+            <div id="cd-pc-controls" style="display:none;align-items:center;gap:8px;">
+              <button class="btn btn--primary btn--sm" id="cd-pc-add-btn" style="display:none;">+ Add Internal Project</button>
+            </div>
           </div>
         </div>
         <div id="cd-content" class="page-loading">Loading clients…</div>
@@ -138,23 +154,22 @@ const ClientDirectory = (() => {
 
   /* ── init ───────────────────────────────────────────────────── */
   async function init(user) {
-    _user   = user
-    _p      = {
+    _user = user
+    _p = {
       can_create: App.hasAccess('client_directory', 'create_client', 'can_upload'),
       can_edit:   App.hasAccess('client_directory', 'edit_client',   'can_edit'),
     }
+    _pcPerms = {
+      can_edit:   App.hasAccess('client_directory', 'edit_project_codes',   'can_edit'),
+      can_manage: App.hasAccess('client_directory', 'manage_project_codes', 'can_manage'),
+    }
     _filter = { category: 'all', status: 'active', search: '' }
 
-    /* Reveal Add Client button now that _p is set */
     if (_canWrite()) {
       const btn = document.getElementById('cd-add-btn')
-      if (btn) {
-        btn.style.display = ''
-        btn.addEventListener('click', () => _openForm(null))
-      }
+      if (btn) { btn.style.display = ''; btn.addEventListener('click', () => _openForm(null)) }
     }
 
-    // getEmployees(false) = all employees, no status filter, no self-join
     const { data: emps } = await API.getEmployees(false)
     _employees = emps || []
 
@@ -247,16 +262,44 @@ const ClientDirectory = (() => {
   function _bindFilters() {
     document.querySelectorAll('[data-cat]').forEach(btn =>
       btn.addEventListener('click', () => {
+        if (_pcView) _switchToDirectory()
         document.querySelectorAll('[data-cat]').forEach(b => b.classList.remove('tab-btn--active'))
         btn.classList.add('tab-btn--active')
         _filter.category = btn.dataset.cat
         _renderCards()
       })
     )
-    const s = document.getElementById('cd-search')
-    if (s) s.addEventListener('input', Utils.debounce(e => { _filter.search = e.target.value; _renderCards() }, 200))
+    const s  = document.getElementById('cd-search')
     const st = document.getElementById('cd-status')
+    if (s)  s.addEventListener('input', Utils.debounce(e => { _filter.search = e.target.value; _renderCards() }, 200))
     if (st) st.addEventListener('change', e => { _filter.status = e.target.value; _renderCards() })
+    document.getElementById('cd-pc-tab')?.addEventListener('click', _switchToProjectCodes)
+  }
+
+  function _switchToDirectory() {
+    _pcView = false
+    document.getElementById('cd-pc-tab')?.classList.remove('tab-btn--active')
+    const dirCtrl = document.getElementById('cd-dir-controls')
+    const pcCtrl  = document.getElementById('cd-pc-controls')
+    if (dirCtrl) dirCtrl.style.display = 'flex'
+    if (pcCtrl)  pcCtrl.style.display  = 'none'
+  }
+
+  function _switchToProjectCodes() {
+    _pcView = true
+    document.querySelectorAll('[data-cat]').forEach(b => b.classList.remove('tab-btn--active'))
+    document.getElementById('cd-pc-tab')?.classList.add('tab-btn--active')
+    const dirCtrl = document.getElementById('cd-dir-controls')
+    const pcCtrl  = document.getElementById('cd-pc-controls')
+    if (dirCtrl) dirCtrl.style.display = 'none'
+    if (pcCtrl) {
+      pcCtrl.style.display = 'flex'
+      if (_pcPerms?.can_manage) {
+        const addBtn = document.getElementById('cd-pc-add-btn')
+        if (addBtn) { addBtn.style.display = ''; addBtn.onclick = () => _openInternalProjectModal(null) }
+      }
+    }
+    _loadProjectCodes()
   }
 
   /* ── Drawer ─────────────────────────────────────────────────── */
@@ -958,6 +1001,365 @@ const ClientDirectory = (() => {
     }
   }
 
+  /* ══════════════════════════════════════════════════════════
+     PROJECT CODES TAB
+  ══════════════════════════════════════════════════════════ */
+
+  async function _loadProjectCodes() {
+    const el = document.getElementById('cd-content')
+    if (el) { el.className = ''; el.innerHTML = '<p class="loading-text">Loading project codes…</p>' }
+    const { data, error } = await API.getInternalProjects()
+    if (error) { Utils.showToast('Failed to load internal projects', 'error'); return }
+    _internalProjects = data || []
+    _renderProjectCodesTable()
+  }
+
+  const SVG_EDIT  = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`
+  const SVG_CHECK = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
+  const SVG_CROSS = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
+
+  function _renderProjectCodesTable() {
+    const el = document.getElementById('cd-content')
+    if (!el) return
+
+    const sortedClients = [..._clients].sort((a, b) => {
+      if (a.status === 'active' && b.status !== 'active') return -1
+      if (b.status === 'active' && a.status !== 'active') return 1
+      return a.client_name.localeCompare(b.client_name)
+    })
+    const activeInt   = _internalProjects.filter(p => p.status === 'active')
+    const inactiveInt = _internalProjects.filter(p => p.status !== 'active')
+
+    el.className = ''
+    el.innerHTML = `
+      <!-- ── Client Projects ────────────────────────────────── -->
+      <div class="pc-section" style="margin-bottom:28px;">
+        <div class="pc-section-header">
+          <div>
+            <h3 class="pc-section-title">Client Projects</h3>
+            <p class="pc-section-sub">${sortedClients.length} client${sortedClients.length !== 1 ? 's' : ''} · tiers and codes are managed in the Client Directory</p>
+          </div>
+        </div>
+        <div class="section-card" style="overflow-x:auto;">
+          <table class="data-table pc-table">
+            <thead>
+              <tr>
+                <th style="min-width:200px;">Client Name</th>
+                <th style="min-width:100px;">Project Code</th>
+                <th style="min-width:90px;">Category</th>
+                <th style="min-width:200px;">Entities / Contacts</th>
+                <th>Description</th>
+                <th style="width:52px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${sortedClients.length
+                ? sortedClients.map(_clientProjectRow).join('')
+                : '<tr><td colspan="6" class="pc-empty">No clients found.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── Internal Projects ──────────────────────────────── -->
+      <div class="pc-section">
+        <div class="pc-section-header">
+          <div>
+            <h3 class="pc-section-title">Internal Projects</h3>
+            <p class="pc-section-sub">Growthic brands, sister companies, and departmental initiatives</p>
+          </div>
+        </div>
+        <div class="section-card" style="overflow-x:auto;">
+          <table class="data-table pc-table">
+            <thead>
+              <tr>
+                <th style="min-width:200px;">Project Name</th>
+                <th style="min-width:100px;">Project Code</th>
+                <th style="min-width:90px;">Category</th>
+                <th style="min-width:200px;">Work Areas</th>
+                <th>Description</th>
+                <th style="width:80px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${activeInt.length
+                ? activeInt.map(p => _internalProjectRow(p, false)).join('')
+                : '<tr><td colspan="6" class="pc-empty">No internal projects yet.</td></tr>'}
+              ${inactiveInt.length ? `
+                <tr class="pc-inactive-divider"><td colspan="6">Inactive</td></tr>
+                ${inactiveInt.map(p => _internalProjectRow(p, true)).join('')}
+              ` : ''}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `
+
+    // Bind edit buttons
+    el.querySelectorAll('.pc-edit-client').forEach(btn =>
+      btn.addEventListener('click', () => {
+        const c = _clients.find(x => x.id === btn.dataset.id)
+        if (c) _openClientEditModal(c)
+      })
+    )
+    el.querySelectorAll('.pc-edit-internal').forEach(btn =>
+      btn.addEventListener('click', () => {
+        const p = _internalProjects.find(x => x.id === btn.dataset.id)
+        if (p) _openInternalProjectModal(p)
+      })
+    )
+    el.querySelectorAll('.pc-toggle-status').forEach(btn =>
+      btn.addEventListener('click', async () => {
+        const p = _internalProjects.find(x => x.id === btn.dataset.id)
+        if (!p) return
+        const next = p.status === 'active' ? 'inactive' : 'active'
+        const { error } = await API.setInternalProjectStatus(p.id, next)
+        if (error) { Utils.showToast('Failed to update status', 'error'); return }
+        Utils.showToast(`Project ${next === 'active' ? 'activated' : 'deactivated'}`, 'success')
+        await _loadProjectCodes()
+      })
+    )
+  }
+
+  function _clientProjectRow(c) {
+    const cat      = _cap(c.category || '')
+    const entities = c.client_entities || []
+    const inactive = c.status !== 'active'
+
+    return `
+      <tr class="${inactive ? 'pc-row--inactive' : ''}">
+        <td>
+          <div class="pc-row-name">${Utils.escapeHtml(c.client_name)}</div>
+          ${inactive ? `<span class="badge badge--muted" style="font-size:10px;margin-top:3px;">${c.status}</span>` : ''}
+        </td>
+        <td><code class="pc-code">${Utils.escapeHtml(c.project_code)}</code></td>
+        <td>
+          ${cat ? `<span class="badge ${CAT_BADGE[cat] || 'badge--muted'}">${cat}</span>` : '<span style="color:var(--text-muted);">—</span>'}
+        </td>
+        <td>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;">
+            ${entities.length
+              ? entities.map(e => `<span class="badge badge--outline" style="font-size:11px;">${Utils.escapeHtml(e.entity_name)}</span>`).join('')
+              : '<span style="color:var(--text-muted);font-size:12px;">—</span>'}
+          </div>
+        </td>
+        <td class="pc-desc-cell">
+          ${c.project_description ? Utils.escapeHtml(c.project_description) : '<span class="pc-desc-empty">No description set</span>'}
+        </td>
+        <td>
+          ${_pcPerms?.can_edit ? `<button class="btn-icon-sm pc-edit-client" data-id="${c.id}" title="Edit">${SVG_EDIT}</button>` : ''}
+        </td>
+      </tr>`
+  }
+
+  function _internalProjectRow(p, isInactive) {
+    const entities = [...(p.internal_project_entities || [])].sort((a, b) => a.sort_order - b.sort_order)
+    const cat      = _cap(p.category || 'internal')
+
+    return `
+      <tr class="${isInactive ? 'pc-row--inactive' : ''}">
+        <td><div class="pc-row-name">${Utils.escapeHtml(p.name)}</div></td>
+        <td><code class="pc-code">${Utils.escapeHtml(p.project_code)}</code></td>
+        <td><span class="badge badge--internal">${Utils.escapeHtml(cat)}</span></td>
+        <td>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;">
+            ${entities.length
+              ? entities.map(e => `<span class="badge badge--outline" style="font-size:11px;">${Utils.escapeHtml(e.entity_name)}</span>`).join('')
+              : '<span style="color:var(--text-muted);font-size:12px;">—</span>'}
+          </div>
+        </td>
+        <td class="pc-desc-cell">
+          ${p.description ? Utils.escapeHtml(p.description) : '<span class="pc-desc-empty">No description set</span>'}
+        </td>
+        <td>
+          <div style="display:flex;gap:4px;justify-content:flex-end;align-items:center;">
+            ${_pcPerms?.can_edit ? `<button class="btn-icon-sm pc-edit-internal" data-id="${p.id}" title="Edit">${SVG_EDIT}</button>` : ''}
+            ${_pcPerms?.can_manage ? `
+              <button class="btn-icon-sm pc-toggle-status" data-id="${p.id}"
+                      title="${isInactive ? 'Activate' : 'Deactivate'}"
+                      style="color:${isInactive ? 'var(--success)' : 'var(--danger)'};">
+                ${isInactive ? SVG_CHECK : SVG_CROSS}
+              </button>` : ''}
+          </div>
+        </td>
+      </tr>`
+  }
+
+  /* ── Edit client project details (category + description) ── */
+  function _openClientEditModal(client) {
+    const cats = ['Shark', 'Dolphin', 'Turtle', 'Snail']
+    const curCat = _cap(client.category || '')
+
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">Edit Project Details</h3>
+        <button class="modal-close" onclick="Utils.closeModal()">${ICONS.close}</button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 0 16px;border-bottom:1px solid var(--border-light);margin-bottom:16px;">
+          <code class="pc-code">${Utils.escapeHtml(client.project_code)}</code>
+          <span style="font-size:14px;font-weight:600;color:var(--text);">${Utils.escapeHtml(client.client_name)}</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Category</label>
+          <select class="form-select" id="pc-client-cat" style="height:38px;">
+            <option value="">— None —</option>
+            ${cats.map(c => `<option value="${c.toLowerCase()}" ${curCat === c ? 'selected' : ''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Description</label>
+          <span class="form-hint" style="display:block;margin-bottom:6px;">Guidance for employees logging time to this project</span>
+          <textarea class="form-input" id="pc-client-desc" rows="4"
+            placeholder="e.g. Log hours here for any work related to this client…"
+            style="resize:vertical;">${Utils.escapeHtml(client.project_description || '')}</textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
+        <button class="btn btn--primary" id="pc-client-save">Save Changes</button>
+      </div>
+    `)
+
+    document.getElementById('pc-client-save')?.addEventListener('click', async () => {
+      const btn  = document.getElementById('pc-client-save')
+      const cat  = document.getElementById('pc-client-cat').value
+      const desc = document.getElementById('pc-client-desc').value.trim()
+
+      btn.disabled = true; btn.textContent = 'Saving…'
+      const { error } = await API.updateClientProjectDetails(client.id, { project_description: desc, category: cat || null })
+      btn.disabled = false; btn.textContent = 'Save Changes'
+
+      if (error) { Utils.showToast('Failed to save changes', 'error'); return }
+
+      // Update local cache
+      const c = _clients.find(x => x.id === client.id)
+      if (c) { c.project_description = desc || null; c.category = cat || null }
+      Utils.closeModal()
+      Utils.showToast('Project details updated', 'success')
+      _renderProjectCodesTable()
+    })
+  }
+
+  /* ── Add / Edit internal project ──────────────────────────── */
+  function _openInternalProjectModal(project) {
+    const isEdit = !!project
+    let _ents = project
+      ? [...(project.internal_project_entities || [])].sort((a, b) => a.sort_order - b.sort_order).map(e => e.entity_name)
+      : []
+
+    const renderEntList = () => {
+      const wrap = document.getElementById('pc-ent-list')
+      if (!wrap) return
+      wrap.innerHTML = _ents.map((e, i) => `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <input class="form-input pc-ent-inp" data-idx="${i}"
+            value="${Utils.escapeHtml(e)}" placeholder="Work area name" style="flex:1;">
+          <button class="btn-icon-sm pc-ent-del" data-idx="${i}" type="button" title="Remove" style="flex-shrink:0;">
+            ${SVG_CROSS}
+          </button>
+        </div>`).join('') +
+        `<button class="btn btn--ghost btn--sm" id="pc-ent-add" type="button">+ Add Work Area</button>`
+
+      wrap.querySelectorAll('.pc-ent-inp').forEach(inp =>
+        inp.addEventListener('input', e => { _ents[parseInt(e.target.dataset.idx)] = e.target.value })
+      )
+      wrap.querySelectorAll('.pc-ent-del').forEach(btn =>
+        btn.addEventListener('click', () => { _ents.splice(parseInt(btn.dataset.idx), 1); renderEntList() })
+      )
+      document.getElementById('pc-ent-add')?.addEventListener('click', () => { _ents.push(''); renderEntList() })
+    }
+
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">${isEdit ? 'Edit Internal Project' : 'Add Internal Project'}</h3>
+        <button class="modal-close" onclick="Utils.closeModal()">${ICONS.close}</button>
+      </div>
+      <div class="modal-body">
+        <div id="pc-ip-err" class="alert--danger" style="display:none;margin-bottom:12px;padding:10px 14px;border-radius:var(--radius);font-size:13px;"></div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Project Name <span class="required">*</span></label>
+            <input class="form-input" id="pc-ip-name"
+              value="${Utils.escapeHtml(project?.name || '')}"
+              placeholder="e.g. Growthic People & Culture">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Project Code <span class="required">*</span></label>
+            <input class="form-input" id="pc-ip-code"
+              value="${Utils.escapeHtml(project?.project_code || '')}"
+              placeholder="e.g. GRW-HR" maxlength="12"
+              style="text-transform:uppercase;font-family:monospace;">
+            <span class="form-hint">All caps · hyphens allowed · max 12 chars</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Category</label>
+          <input class="form-input" id="pc-ip-cat"
+            value="${Utils.escapeHtml(project?.category || 'internal')}"
+            placeholder="e.g. Internal">
+          <span class="form-hint">Displayed as a badge in the Project Codes table</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <textarea class="form-input" id="pc-ip-desc" rows="2"
+            placeholder="Guidance for employees logging time here…"
+            style="resize:vertical;">${Utils.escapeHtml(project?.description || '')}</textarea>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Work Areas</label>
+          <span class="form-hint" style="display:block;margin-bottom:8px;">Sub-tasks or activity types within this project</span>
+          <div id="pc-ent-list"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
+        <button class="btn btn--primary" id="pc-ip-save">${isEdit ? 'Save Changes' : 'Create Project'}</button>
+      </div>
+    `)
+
+    document.getElementById('pc-ip-code')?.addEventListener('input', e => {
+      e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9\-]/g, '')
+    })
+    renderEntList()
+
+    document.getElementById('pc-ip-save')?.addEventListener('click', async () => {
+      const errEl = document.getElementById('pc-ip-err')
+      const btn   = document.getElementById('pc-ip-save')
+      const name  = document.getElementById('pc-ip-name').value.trim()
+      const code  = document.getElementById('pc-ip-code').value.trim()
+      const cat   = document.getElementById('pc-ip-cat').value.trim() || 'internal'
+      const desc  = document.getElementById('pc-ip-desc').value.trim()
+      const ents  = Array.from(document.querySelectorAll('.pc-ent-inp'))
+                         .map(i => i.value.trim()).filter(Boolean)
+
+      errEl.style.display = 'none'
+      if (!name) { errEl.textContent = 'Project name is required.'; errEl.style.display = 'block'; return }
+      if (!code) { errEl.textContent = 'Project code is required.'; errEl.style.display = 'block'; return }
+
+      btn.disabled = true; btn.textContent = isEdit ? 'Saving…' : 'Creating…'
+
+      const { error } = isEdit
+        ? await API.updateInternalProject(project.id, { name, project_code: code, category: cat, description: desc, entities: ents })
+        : await API.createInternalProject({ name, project_code: code, category: cat, description: desc, entities: ents })
+
+      btn.disabled = false; btn.textContent = isEdit ? 'Save Changes' : 'Create Project'
+
+      if (error) {
+        const msg = error.message || ''
+        errEl.textContent = (msg.includes('unique') || msg.includes('duplicate'))
+          ? `Project code "${code}" is already in use.`
+          : (msg || 'Something went wrong. Please try again.')
+        errEl.style.display = 'block'
+        return
+      }
+
+      Utils.closeModal()
+      Utils.showToast(`Project ${isEdit ? 'updated' : 'created'} successfully`, 'success')
+      await _loadProjectCodes()
+    })
+  }
+
   return { render, init }
 })()
 
@@ -969,8 +1371,10 @@ ModuleRegistry.register({
   icon:      `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>`,
   getModule: () => ClientDirectory,
   features:  {
-    view_clients:  'View Clients',
-    create_client: 'Create Client',
-    edit_client:   'Edit Client',
+    view_clients:         'View Clients',
+    create_client:        'Create Client',
+    edit_client:          'Edit Client',
+    edit_project_codes:   'Edit Project Codes',
+    manage_project_codes: 'Manage Internal Projects',
   },
 })
