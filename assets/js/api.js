@@ -231,12 +231,65 @@ const API = (() => {
     return res.json()
   }
 
+  /* ── Asset Requests (two-stage approval) ─────────────────── */
+
+  const ASSET_REQUEST_SELECT = `
+    *,
+    asset:assets(id, name, type, serial_number),
+    requester:employees!requested_by(id, name, department),
+    manager:employees!manager_id(id, name),
+    hr_actor:employees!hr_acted_by(id, name)
+  `
+
+  async function createAssetRequest(data) {
+    return supabase.from('asset_requests').insert(data).select().single()
+  }
+
+  // Requests submitted by this employee
+  async function getMySubmittedAssetRequests(employeeId) {
+    return supabase
+      .from('asset_requests')
+      .select(ASSET_REQUEST_SELECT)
+      .eq('requested_by', employeeId)
+      .order('created_at', { ascending: false })
+  }
+
+  // Requests waiting for this manager's approval
+  async function getPendingManagerAssetRequests(managerId) {
+    return supabase
+      .from('asset_requests')
+      .select(ASSET_REQUEST_SELECT)
+      .eq('manager_id', managerId)
+      .eq('status', 'pending_manager')
+      .order('created_at', { ascending: false })
+  }
+
+  // Requests pending HR approval (stage 2) — for HR view
+  async function getPendingHRAssetRequests() {
+    return supabase
+      .from('asset_requests')
+      .select(ASSET_REQUEST_SELECT)
+      .eq('status', 'pending_hr')
+      .order('created_at', { ascending: false })
+  }
+
+  // Full log — all requests for HR/admin
+  async function getAllAssetRequests() {
+    return supabase
+      .from('asset_requests')
+      .select(ASSET_REQUEST_SELECT)
+      .order('created_at', { ascending: false })
+  }
+
+  async function updateAssetRequest(id, data) {
+    return supabase.from('asset_requests').update(data).eq('id', id).select().single()
+  }
+
   async function getMyAssetRequests(employeeId) {
     return supabase
-      .from('approvals')
-      .select('*, assets(name, type)')
-      .eq('entity_type', 'asset')
-      .eq('approver_id', employeeId)
+      .from('asset_requests')
+      .select(ASSET_REQUEST_SELECT)
+      .eq('requested_by', employeeId)
       .order('created_at', { ascending: false })
   }
 
@@ -1088,7 +1141,9 @@ const API = (() => {
     getAllAssetRepairs, getAssetRepairsForAsset, createAssetRepair, updateAssetRepair,
     getAssetTypes, createAssetType, updateAssetType, deleteAssetType, getMyAssetRepairs,
     uploadAssetPhoto,
-    getMyAssetRequests,
+    getMyAssetRequests, createAssetRequest, getMySubmittedAssetRequests,
+    getPendingManagerAssetRequests, getPendingHRAssetRequests, getAllAssetRequests,
+    updateAssetRequest,
     getPendingApprovals, updateApproval,
     getTools, getToolAccess, getMyToolAccess, getToolRequests, getMyToolRequests,
     getUnreadNotifications, markNotificationRead, markAllNotificationsRead,

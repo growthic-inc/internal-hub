@@ -3758,6 +3758,27 @@
   border: 1px solid var(--border);
 }
 
+/* ── Asset Request Stage Indicator ────────────────────────── */
+.ast-req-stage {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.ast-req-stage--rejected { color: var(--danger); }
+.ast-req-stage-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+}
+.ast-req-stage-dot--active { background: var(--warning); box-shadow: 0 0 0 2px var(--warning-light); }
+.ast-req-stage-dot--done   { background: var(--success); }
+.ast-req-stage-dot--danger { background: var(--danger);  }
+
 /* Legacy aliases kept for any stray references */
 .ann-card         { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px 24px; }
 .ann-card--draft  { border-style: dashed; opacity: 0.85; }

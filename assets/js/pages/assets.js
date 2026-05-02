@@ -10,6 +10,8 @@ const Assets = (() => {
   let _employees    = []
   let _types        = []
   let _repairs      = []
+  let _requests     = []   // asset requests visible to this user
+  let _isManager    = false
   let _activeTab    = 'all'
   let _p            = null
   let _filterType   = ''
@@ -130,10 +132,46 @@ const Assets = (() => {
     }
     const canManage = _p.can_manage
 
-    // Build tabs now that permissions are known
+    // Parallel data loads
+    const [assetsRes, typesRes, managerCheckRes] = await Promise.all([
+      API.getAssets(),
+      API.getAssetTypes(),
+      // Check if this user is a reporting manager for anyone
+      Config.supabase.from('employees').select('id', { count: 'exact', head: true }).eq('manager_id', user.id).eq('status', 'active'),
+    ])
+    _assets    = assetsRes.data  || []
+    _types     = typesRes.data   || []
+    _isManager = (managerCheckRes.count || 0) > 0
+
+    // Load repairs
+    if (canManage || _p.can_resolve) {
+      const [empRes, repairRes] = await Promise.all([API.getEmployees(true), API.getAllAssetRepairs()])
+      _employees = empRes.data   || []
+      _repairs   = repairRes.data || []
+    } else if (_p.can_report) {
+      const { data } = await API.getMyAssetRepairs(user.id)
+      _repairs = data || []
+    }
+
+    // Load asset requests
+    if (canManage) {
+      const { data } = await API.getAllAssetRequests()
+      _requests = data || []
+    } else {
+      // Own submitted + pending manager approval if manager
+      const fetches = [API.getMySubmittedAssetRequests(user.id)]
+      if (_isManager) fetches.push(API.getPendingManagerAssetRequests(user.id))
+      const results = await Promise.all(fetches)
+      const seen = new Set()
+      _requests = [...(results[0].data || []), ...(results[1]?.data || [])]
+        .filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true })
+    }
+
+    // Build tabs now that we know manager status
     const tabs = []
     if (canManage) tabs.push({ id: 'all',      label: 'All Assets'       })
     tabs.push(              { id: 'mine',     label: 'My Assets'        })
+    if (canManage || _p.can_request || _isManager) tabs.push({ id: 'requests', label: `Requests${_requests.filter(r => (r.status === 'pending_manager' && r.manager_id === user.id) || (r.status === 'pending_hr' && canManage)).length ? ` (${_requests.filter(r => (r.status === 'pending_manager' && r.manager_id === user.id) || (r.status === 'pending_hr' && canManage)).length})` : ''}` })
     if (canManage || _p.can_resolve || _p.can_report) tabs.push({ id: 'repairs',  label: 'Repairs & Issues' })
     if (canManage || _p.can_manage_types) tabs.push({ id: 'settings', label: 'Settings' })
 
@@ -143,21 +181,6 @@ const Assets = (() => {
         <button class="tab-btn${i === 0 ? ' tab-btn--active' : ''}" data-tab="${t.id}">${t.label}</button>
       `).join('')
     }
-
-    const promises = [API.getAssets(), API.getAssetTypes()]
-    if (canManage || _p.can_resolve) {
-      promises.push(API.getEmployees(true))
-      promises.push(API.getAllAssetRepairs())
-    } else if (_p.can_report) {
-      promises.push(Promise.resolve({ data: [] }))          // employees not needed
-      promises.push(API.getMyAssetRepairs(user.id))
-    }
-
-    const results  = await Promise.all(promises)
-    _assets    = results[0].data || []
-    _types     = results[1].data || []
-    _employees = (canManage || _p.can_resolve) ? (results[2]?.data || []) : []
-    _repairs   = (canManage || _p.can_resolve || _p.can_report) ? (results[3]?.data || []) : []
 
     _activeTab = canManage ? 'all' : 'mine'
     _bindTabs()
@@ -194,6 +217,7 @@ const Assets = (() => {
     switch (tab) {
       case 'all':      return _renderAllTab()
       case 'mine':     return _renderMineTab()
+      case 'requests': return _renderRequestsTab()
       case 'repairs':  return _renderRepairsTab()
       case 'settings': return _renderSettingsTab()
     }
@@ -376,6 +400,232 @@ const Assets = (() => {
         if (a) _openReportModal(a)
       })
     )
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     REQUESTS TAB
+  ══════════════════════════════════════════════════════════ */
+
+  const REQ_STATUS = {
+    pending_manager: { label: 'Awaiting Manager',  cls: 'badge--warning'  },
+    pending_hr:      { label: 'Awaiting HR',        cls: 'badge--primary'  },
+    approved:        { label: 'Approved',            cls: 'badge--success'  },
+    rejected:        { label: 'Rejected',            cls: 'badge--danger'   },
+  }
+
+  function _renderRequestsTab() {
+    const content = document.getElementById('ast-content')
+    if (!content) return
+
+    // Split into sections
+    const pendingMyApproval = _requests.filter(r =>
+      r.status === 'pending_manager' && r.manager_id === _user.id
+    )
+    const pendingHRApproval = _p.can_manage ? _requests.filter(r => r.status === 'pending_hr') : []
+    const mySubmitted       = _requests.filter(r => r.requested_by === _user.id)
+    const allLog            = _p.can_manage ? _requests : []
+
+    function _reqRow(r, showActions) {
+      const asset    = r.asset || {}
+      const reqBy    = r.requester?.name || '—'
+      const statusCfg = REQ_STATUS[r.status] || { label: r.status, cls: 'badge--muted' }
+      const stage = r.status === 'pending_manager'
+        ? `<div class="ast-req-stage"><span class="ast-req-stage-dot ast-req-stage-dot--active"></span>Manager<span class="ast-req-stage-dot"></span>HR</div>`
+        : r.status === 'pending_hr'
+        ? `<div class="ast-req-stage"><span class="ast-req-stage-dot ast-req-stage-dot--done"></span>Manager<span class="ast-req-stage-dot ast-req-stage-dot--active"></span>HR</div>`
+        : r.status === 'approved'
+        ? `<div class="ast-req-stage"><span class="ast-req-stage-dot ast-req-stage-dot--done"></span>Manager<span class="ast-req-stage-dot ast-req-stage-dot--done"></span>HR</div>`
+        : `<div class="ast-req-stage ast-req-stage--rejected"><span class="ast-req-stage-dot ast-req-stage-dot--danger"></span>Rejected</div>`
+
+      return `
+        <tr>
+          <td><strong>${Utils.escapeHtml(asset.name || '—')}</strong><br><span class="text-muted" style="font-size:11px;">${Utils.escapeHtml(asset.type || '')}</span></td>
+          <td>${Utils.escapeHtml(reqBy)}</td>
+          <td>${Utils.escapeHtml(r.reason || '—')}</td>
+          <td>${stage}</td>
+          <td><span class="badge ${statusCfg.cls}">${statusCfg.label}</span></td>
+          <td class="text-sm text-muted">${Utils.formatDate(r.created_at)}</td>
+          <td style="white-space:nowrap;">
+            ${showActions && r.status === 'pending_manager' && r.manager_id === _user.id ? `
+              <button class="btn btn--xs btn--primary ast-req-approve" data-id="${r.id}" data-stage="manager">Approve</button>
+              <button class="btn btn--xs btn--ghost ast-req-reject" data-id="${r.id}" data-stage="manager" style="color:var(--danger);">Reject</button>
+            ` : ''}
+            ${showActions && r.status === 'pending_hr' && _p.can_manage ? `
+              <button class="btn btn--xs btn--primary ast-req-approve" data-id="${r.id}" data-stage="hr">Approve</button>
+              <button class="btn btn--xs btn--ghost ast-req-reject" data-id="${r.id}" data-stage="hr" style="color:var(--danger);">Reject</button>
+            ` : ''}
+          </td>
+        </tr>`
+    }
+
+    function _reqTable(rows, showActions = false) {
+      if (!rows.length) return '<p class="empty-state-text" style="padding:16px;">No requests.</p>'
+      return `<div style="overflow-x:auto;"><table class="data-table">
+        <thead><tr><th>Asset</th><th>Requested By</th><th>Reason</th><th>Stage</th><th>Status</th><th>Date</th><th></th></tr></thead>
+        <tbody>${rows.map(r => _reqRow(r, showActions)).join('')}</tbody>
+      </table></div>`
+    }
+
+    const sections = []
+
+    if (pendingMyApproval.length) {
+      sections.push(`
+        <div class="section-card" style="border-left:3px solid var(--warning);">
+          <div class="section-card-header"><h3>Pending Your Approval <span class="badge badge--warning" style="margin-left:8px;">${pendingMyApproval.length}</span></h3></div>
+          <div class="section-card-body" style="padding:0;">${_reqTable(pendingMyApproval, true)}</div>
+        </div>`)
+    }
+
+    if (pendingHRApproval.length) {
+      sections.push(`
+        <div class="section-card" style="border-left:3px solid var(--primary);">
+          <div class="section-card-header"><h3>Pending HR Approval <span class="badge badge--primary" style="margin-left:8px;">${pendingHRApproval.length}</span></h3></div>
+          <div class="section-card-body" style="padding:0;">${_reqTable(pendingHRApproval, true)}</div>
+        </div>`)
+    }
+
+    if (_p.can_manage) {
+      sections.push(`
+        <div class="section-card">
+          <div class="section-card-header"><h3>All Requests</h3></div>
+          <div class="section-card-body" style="padding:0;">${_reqTable(allLog, true)}</div>
+        </div>`)
+    } else if (mySubmitted.length || _p.can_request) {
+      sections.push(`
+        <div class="section-card">
+          <div class="section-card-header"><h3>My Requests</h3></div>
+          <div class="section-card-body" style="padding:0;">${_reqTable(mySubmitted)}</div>
+        </div>`)
+    }
+
+    content.innerHTML = sections.length
+      ? `<div style="display:flex;flex-direction:column;gap:16px;">${sections.join('')}</div>`
+      : '<p class="empty-state-text">No asset requests to show.</p>'
+
+    // Approve
+    content.querySelectorAll('.ast-req-approve').forEach(btn => {
+      btn.addEventListener('click', () => _openRequestActionModal(btn.dataset.id, btn.dataset.stage, 'approve'))
+    })
+    // Reject
+    content.querySelectorAll('.ast-req-reject').forEach(btn => {
+      btn.addEventListener('click', () => _openRequestActionModal(btn.dataset.id, btn.dataset.stage, 'reject'))
+    })
+  }
+
+  async function _openRequestActionModal(reqId, stage, action) {
+    const req    = _requests.find(r => r.id === reqId)
+    if (!req) return
+    const isApprove = action === 'approve'
+    const label     = isApprove ? 'Approve' : 'Reject'
+    const assetName = req.asset?.name || 'this asset'
+    const reqBy     = req.requester?.name || 'employee'
+
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">${label} Request</h3>
+        <button class="modal-close" onclick="Utils.closeModal()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:14px;margin:0 0 16px;">
+          ${isApprove ? `Approve <strong>${reqBy}</strong>'s request for <strong>${Utils.escapeHtml(assetName)}</strong>?` : `Reject <strong>${reqBy}</strong>'s request for <strong>${Utils.escapeHtml(assetName)}</strong>?`}
+        </p>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Note <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+          <textarea class="form-input" id="ast-req-action-note" rows="2" placeholder="${isApprove ? 'Any notes for HR…' : 'Reason for rejection…'}" style="resize:vertical;"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+        <button class="btn ${isApprove ? 'btn-primary' : 'btn-danger'}" id="ast-req-action-save">${label}</button>
+      </div>
+    `, '')
+
+    document.getElementById('ast-req-action-save').addEventListener('click', async () => {
+      const saveBtn = document.getElementById('ast-req-action-save')
+      const note    = document.getElementById('ast-req-action-note')?.value.trim() || null
+      saveBtn.disabled = true; saveBtn.textContent = 'Saving…'
+
+      try {
+        const now = new Date().toISOString()
+        let update = {}
+
+        if (stage === 'manager') {
+          update = {
+            manager_status:   action === 'approve' ? 'approved' : 'rejected',
+            manager_note:     note,
+            manager_acted_at: now,
+            status:           action === 'approve' ? 'pending_hr' : 'rejected',
+          }
+        } else {
+          update = {
+            hr_status:   action === 'approve' ? 'approved' : 'rejected',
+            hr_note:     note,
+            hr_acted_at: now,
+            hr_acted_by: _user.id,
+            status:      action === 'approve' ? 'approved' : 'rejected',
+          }
+        }
+
+        const { error } = await API.updateAssetRequest(reqId, update)
+        if (error) throw error
+
+        // Notify employee
+        const recipientMsg = action === 'approve' && stage === 'manager'
+          ? `Your asset request for "${assetName}" has been approved by your manager and is now with HR.`
+          : action === 'approve' && stage === 'hr'
+          ? `Your asset request for "${assetName}" has been fully approved! HR will assign it to you shortly.`
+          : `Your asset request for "${assetName}" has been rejected.${note ? ' Note: ' + note : ''}`
+
+        await Config.supabase.from('notifications').insert({
+          recipient_employee_id: req.requested_by,
+          type:      action === 'approve' ? 'success' : 'warning',
+          message:   recipientMsg,
+          module:    'assets',
+          record_id: reqId,
+        })
+
+        // If manager approved → notify HR
+        if (action === 'approve' && stage === 'manager') {
+          const { data: hrs } = await Config.supabase
+            .from('employees').select('id').in('role', ['super_admin', 'hr'])
+          if (hrs?.length) {
+            await Config.supabase.from('notifications').insert(
+              hrs.map(e => ({
+                recipient_employee_id: e.id,
+                type:      'info',
+                message:   `${reqBy}'s request for "${assetName}" has been approved by their manager. Awaiting your final approval.`,
+                module:    'assets',
+                record_id: reqId,
+              }))
+            )
+          }
+        }
+
+        // Refresh requests
+        if (_p.can_manage) {
+          const { data } = await API.getAllAssetRequests()
+          _requests = data || []
+        } else {
+          const [myRes, mgrRes] = await Promise.all([
+            API.getMySubmittedAssetRequests(_user.id),
+            _isManager ? API.getPendingManagerAssetRequests(_user.id) : Promise.resolve({ data: [] }),
+          ])
+          const seen = new Set()
+          _requests = [...(myRes.data || []), ...(mgrRes.data || [])]
+            .filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true })
+        }
+
+        Utils.closeModal()
+        Utils.showToast(`Request ${action === 'approve' ? 'approved' : 'rejected'}.`, 'success')
+        _renderRequestsTab()
+
+      } catch (err) {
+        saveBtn.disabled = false; saveBtn.textContent = label
+        Utils.showToast(err.message || 'Failed to update request.', 'error')
+      }
+    })
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -1185,12 +1435,12 @@ const Assets = (() => {
         </button>
       </div>
       <div class="modal-body">
-        <p style="font-size:14px;color:var(--text-muted);margin:0 0 16px;">
-          Select an available asset to request. HR will be notified and will assign it to you.
-        </p>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--text-muted);">
+          Your request goes to your reporting manager first, then to HR for final approval.
+        </div>
         ${!available.length
           ? '<p class="empty-state-text">No assets are currently available.</p>'
-          : `<div style="display:flex;flex-direction:column;gap:8px;" id="ast-req-list">
+          : `<div style="display:flex;flex-direction:column;gap:8px;">
               ${available.map(a => `
                 <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);gap:12px;">
                   <div>
@@ -1200,6 +1450,10 @@ const Assets = (() => {
                   <button class="btn btn--sm btn--primary ast-req-btn" data-id="${a.id}" data-name="${Utils.escapeHtml(a.name)}">Request</button>
                 </div>`).join('')}
             </div>`}
+        <div class="form-group" style="margin-top:16px;margin-bottom:0;">
+          <label class="form-label">Reason <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+          <textarea class="form-input" id="ast-req-reason" rows="2" placeholder="Why do you need this asset?" style="resize:vertical;"></textarea>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
@@ -1208,29 +1462,67 @@ const Assets = (() => {
 
     document.querySelectorAll('.ast-req-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
-        btn.disabled = true; btn.textContent = 'Sending…'
+        btn.disabled = true; btn.textContent = 'Submitting…'
+        const reason = document.getElementById('ast-req-reason')?.value.trim() || null
         try {
-          // Notify all admins / HR managers
-          const { data: admins } = await Config.supabase
-            .from('employees')
-            .select('id')
-            .in('role', ['super_admin', 'hr'])
-          if (admins?.length) {
-            await Config.supabase.from('notifications').insert(
-              admins.map(e => ({
-                recipient_employee_id: e.id,
-                type:      'info',
-                message:   `${_user.name} has requested asset: "${btn.dataset.name}"`,
-                module:    'assets',
-                record_id: btn.dataset.id,
-              }))
-            )
+          // Look up reporting manager
+          const { data: emp } = await Config.supabase
+            .from('employees').select('manager_id').eq('id', _user.id).single()
+          const managerId = emp?.manager_id || null
+
+          // Create request record
+          const { data: req, error } = await API.createAssetRequest({
+            asset_id:     btn.dataset.id,
+            requested_by: _user.id,
+            manager_id:   managerId,
+            reason,
+            status:       managerId ? 'pending_manager' : 'pending_hr',
+          })
+          if (error) throw error
+
+          // Notify manager (or HR directly if no manager)
+          if (managerId) {
+            await Config.supabase.from('notifications').insert({
+              recipient_employee_id: managerId,
+              type:      'info',
+              message:   `${_user.name} has requested an asset: "${btn.dataset.name}". Awaiting your approval.`,
+              module:    'assets',
+              record_id: req?.id || null,
+            })
+          } else {
+            const { data: admins } = await Config.supabase
+              .from('employees').select('id').in('role', ['super_admin', 'hr'])
+            if (admins?.length) {
+              await Config.supabase.from('notifications').insert(
+                admins.map(e => ({
+                  recipient_employee_id: e.id,
+                  type: 'info',
+                  message: `${_user.name} has requested asset: "${btn.dataset.name}" (no manager set — direct HR approval needed).`,
+                  module: 'assets', record_id: req?.id || null,
+                }))
+              )
+            }
           }
+
+          // Refresh request list
+          if (_p.can_manage) {
+            const { data } = await API.getAllAssetRequests()
+            _requests = data || []
+          } else {
+            const [myRes, mgrRes] = await Promise.all([
+              API.getMySubmittedAssetRequests(_user.id),
+              _isManager ? API.getPendingManagerAssetRequests(_user.id) : Promise.resolve({ data: [] }),
+            ])
+            const seen = new Set()
+            _requests = [...(myRes.data || []), ...(mgrRes.data || [])]
+              .filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true })
+          }
+
           Utils.closeModal()
-          Utils.showToast('Request sent — HR has been notified.', 'success')
-        } catch {
+          Utils.showToast(managerId ? 'Request submitted — your manager has been notified.' : 'Request submitted — HR has been notified.', 'success')
+        } catch (err) {
           btn.disabled = false; btn.textContent = 'Request'
-          Utils.showToast('Failed to send request.', 'error')
+          Utils.showToast(err.message || 'Failed to submit request.', 'error')
         }
       })
     })
