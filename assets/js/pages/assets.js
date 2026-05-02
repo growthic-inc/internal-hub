@@ -16,7 +16,6 @@ const Assets = (() => {
   let _filterStatus = ''
   let _filterSearch = ''
 
-  const CAN_MANAGE = ['super_admin', 'hr']
   const CONDITIONS = ['New', 'Good', 'Fair', 'Poor']
 
   const STATUSES = {
@@ -83,6 +82,7 @@ const Assets = (() => {
 
   function _filteredAssets() {
     return _assets.filter(a => {
+      if (!_p.can_view_available && a.status === 'available') return false
       if (_filterType   && a.type   !== _filterType)   return false
       if (_filterStatus && a.status !== _filterStatus) return false
       if (_filterSearch) {
@@ -107,22 +107,10 @@ const Assets = (() => {
   /* ── render / init ─────────────────────────────────────────── */
 
   function render(user) {
-    const canManage = CAN_MANAGE.includes(user.role)
-    const tabs = []
-    if (canManage) tabs.push({ id: 'all',      label: 'All Assets'       })
-    tabs.push(            { id: 'mine',     label: 'My Assets'        })
-    if (canManage) tabs.push({ id: 'repairs',  label: 'Repairs & Issues' })
-    if (canManage) tabs.push({ id: 'settings', label: 'Settings'         })
-
     return `
       <div class="page-inner">
         <div class="page-toolbar">
-          <div class="tabs" id="ast-tabs">
-            ${tabs.map((t, i) => `
-              <button class="tab-btn${i === 0 ? ' tab-btn--active' : ''}" data-tab="${t.id}">
-                ${t.label}
-              </button>`).join('')}
-          </div>
+          <div class="tabs" id="ast-tabs"></div>
           <div id="ast-toolbar-actions"></div>
         </div>
         <div id="ast-content" class="mt-4"></div>
@@ -132,10 +120,29 @@ const Assets = (() => {
   async function init(user) {
     _user = user
     _p    = {
-      can_view:   App.hasAccess('asset_management', 'view_assets',   'view_only'),
-      can_manage: App.hasAccess('asset_management', 'manage_assets', 'can_manage'),
+      can_view:            App.hasAccess('asset_management', 'view_assets',           'view_only'),
+      can_view_available:  App.hasAccess('asset_management', 'view_available_assets', 'view_only'),
+      can_request:         App.hasAccess('asset_management', 'request_asset',         'view_only'),
+      can_manage:          App.hasAccess('asset_management', 'manage_assets',         'can_manage'),
+      can_report:          App.hasAccess('asset_management', 'report_issue',          'view_only'),
+      can_resolve:         App.hasAccess('asset_management', 'resolve_repair',        'can_manage'),
+      can_manage_types:    App.hasAccess('asset_management', 'manage_asset_types',    'can_manage'),
     }
-    const canManage = CAN_MANAGE.includes(user.role) && _p.can_manage
+    const canManage = _p.can_manage
+
+    // Build tabs now that permissions are known
+    const tabs = []
+    if (canManage) tabs.push({ id: 'all',      label: 'All Assets'       })
+    tabs.push(              { id: 'mine',     label: 'My Assets'        })
+    if (canManage || _p.can_resolve) tabs.push({ id: 'repairs',  label: 'Repairs & Issues' })
+    if (canManage || _p.can_manage_types) tabs.push({ id: 'settings', label: 'Settings' })
+
+    const tabsEl = document.getElementById('ast-tabs')
+    if (tabsEl) {
+      tabsEl.innerHTML = tabs.map((t, i) => `
+        <button class="tab-btn${i === 0 ? ' tab-btn--active' : ''}" data-tab="${t.id}">${t.label}</button>
+      `).join('')
+    }
 
     const promises = [API.getAssets(), API.getAssetTypes()]
     if (canManage) {
@@ -167,7 +174,7 @@ const Assets = (() => {
 
   function _loadTab(tab) {
     const toolbar   = document.getElementById('ast-toolbar-actions')
-    const canManage = CAN_MANAGE.includes(_user.role) && _p.can_manage
+    const canManage = _p.can_manage
     if (toolbar) {
       toolbar.innerHTML = ''
       if (tab === 'all' && canManage) {
@@ -203,7 +210,7 @@ const Assets = (() => {
       <div class="ast-stats-row">
         <div class="ast-stat"><div class="ast-stat-val">${total}</div><div class="ast-stat-lbl">Total</div></div>
         <div class="ast-stat"><div class="ast-stat-val" style="color:var(--primary)">${inUse}</div><div class="ast-stat-lbl">In Use</div></div>
-        <div class="ast-stat"><div class="ast-stat-val" style="color:var(--success)">${available}</div><div class="ast-stat-lbl">Available</div></div>
+        ${_p.can_view_available ? `<div class="ast-stat"><div class="ast-stat-val" style="color:var(--success)">${available}</div><div class="ast-stat-lbl">Available</div></div>` : ''}
         <div class="ast-stat"><div class="ast-stat-val" style="color:var(--warning)">${underRepair}</div><div class="ast-stat-lbl">Under Repair</div></div>
         <div class="ast-stat"><div class="ast-stat-val" style="color:var(--danger)">${lost}</div><div class="ast-stat-lbl">Lost</div></div>
         ${openIssues ? `<div class="ast-stat ast-stat--alert"><div class="ast-stat-val" style="color:var(--danger)">${openIssues}</div><div class="ast-stat-lbl">Open Issues</div></div>` : ''}
@@ -218,7 +225,9 @@ const Assets = (() => {
         </select>
         <select class="form-select" id="ast-filter-status" style="flex:1;min-width:130px;">
           <option value="">All Statuses</option>
-          ${Object.entries(STATUSES).map(([v, s]) => `<option value="${v}"${_filterStatus === v ? ' selected' : ''}>${s.label}</option>`).join('')}
+          ${Object.entries(STATUSES)
+            .filter(([v]) => v !== 'available' || _p.can_view_available)
+            .map(([v, s]) => `<option value="${v}"${_filterStatus === v ? ' selected' : ''}>${s.label}</option>`).join('')}
         </select>
       </div>
 
@@ -368,7 +377,7 @@ const Assets = (() => {
     const content = document.getElementById('ast-content')
     if (!content) return
 
-    const repairs    = CAN_MANAGE.includes(_user.role) ? _repairs : _repairs.filter(r => r.reported_by === _user.id)
+    const repairs    = _p.can_manage ? _repairs : _repairs.filter(r => r.reported_by === _user.id)
     const open       = repairs.filter(r => r.status === 'open').length
     const inProgress = repairs.filter(r => r.status === 'in_progress').length
     const resolved   = repairs.filter(r => r.status === 'resolved').length
@@ -401,7 +410,7 @@ const Assets = (() => {
                       <td class="text-sm text-muted">${Utils.formatDate(r.created_at)}</td>
                       <td style="white-space:nowrap;">
                         ${r.photo_url ? `<a href="${Utils.escapeHtml(r.photo_url)}" target="_blank" rel="noopener" class="btn btn--xs btn--ghost">📷</a>` : ''}
-                        ${CAN_MANAGE.includes(_user.role) && r.status !== 'resolved'
+                        ${(_p.can_manage || _p.can_resolve) && r.status !== 'resolved'
                           ? `<button class="btn btn--xs btn--secondary ast-resolve" data-id="${r.id}">${r.status === 'open' ? 'Update' : 'Resolve'}</button>`
                           : ''}
                       </td>
@@ -486,7 +495,7 @@ const Assets = (() => {
       API.getAssetRepairsForAsset(assetId),
     ])
 
-    const canManage     = CAN_MANAGE.includes(_user.role)
+    const canManage     = _p.can_manage
     const openRepairs   = (repairs || []).filter(r => r.status !== 'resolved').length
     const latestPhoto   = (history || []).find(h => h.photo_url)
 
@@ -1016,7 +1025,7 @@ const Assets = (() => {
       Utils.closeModal()
       Utils.showToast('Issue reported.', 'success')
 
-      if (CAN_MANAGE.includes(_user.role)) {
+      if (_p.can_manage) {
         const { data } = await API.getAllAssetRepairs()
         _repairs = data || []
       }
@@ -1119,10 +1128,9 @@ const Assets = (() => {
   /* ── Refresh ───────────────────────────────────────────────── */
 
   async function _refresh() {
-    const canManage = CAN_MANAGE.includes(_user.role)
     const [assetsRes, repairsRes] = await Promise.all([
       API.getAssets(),
-      canManage ? API.getAllAssetRepairs() : Promise.resolve({ data: [] }),
+      _p.can_manage ? API.getAllAssetRepairs() : Promise.resolve({ data: [] }),
     ])
     _assets  = assetsRes.data  || []
     _repairs = repairsRes.data || []
@@ -1141,11 +1149,12 @@ ModuleRegistry.register({
   icon:      `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>`,
   getModule: () => Assets,
   features:  {
-    view_assets:        'View Assets',
-    request_asset:      'Request Asset',
-    manage_assets:      'Manage Assets (assign/return)',
-    report_issue:       'Report Repair / Issue',
-    resolve_repair:     'Resolve / Close Repairs',
-    manage_asset_types: 'Manage Asset Types',
+    view_assets:           'View Assets',
+    view_available_assets: 'View Available Assets',
+    request_asset:         'Request Asset',
+    manage_assets:         'Manage Assets (assign/return)',
+    report_issue:          'Report Repair / Issue',
+    resolve_repair:        'Resolve / Close Repairs',
+    manage_asset_types:    'Manage Asset Types',
   },
 })
