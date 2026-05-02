@@ -223,10 +223,36 @@ const Announcements = (() => {
       </div>`
   }
 
+  /* ── Lightbox ───────────────────────────────────────────────── */
+  function _openLightbox(src) {
+    const overlay = document.createElement('div')
+    overlay.className = 'ann-lightbox'
+    overlay.innerHTML = `
+      <div class="ann-lightbox-backdrop"></div>
+      <img src="${Utils.escapeHtml(src)}" class="ann-lightbox-img" alt="">
+      <button class="ann-lightbox-close" aria-label="Close">
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>`
+    document.body.appendChild(overlay)
+
+    const close = () => { overlay.classList.add('ann-lightbox--out'); setTimeout(() => overlay.remove(), 200) }
+    overlay.querySelector('.ann-lightbox-backdrop').addEventListener('click', close)
+    overlay.querySelector('.ann-lightbox-close').addEventListener('click', close)
+    const onKey = e => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey) } }
+    document.addEventListener('keydown', onKey)
+
+    requestAnimationFrame(() => overlay.classList.add('ann-lightbox--in'))
+  }
+
   /* ── Feed Event Binding ─────────────────────────────────────── */
   function _bindFeedEvents() {
     const feed = document.getElementById('ann-feed')
     if (!feed) return
+
+    // Image lightbox
+    feed.querySelectorAll('.ann-image-thumb').forEach(img => {
+      img.addEventListener('click', () => _openLightbox(img.src))
+    })
 
     // Reaction pills — bounce on click
     feed.querySelectorAll('.ann-react-pill').forEach(btn => {
