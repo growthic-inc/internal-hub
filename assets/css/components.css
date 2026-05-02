@@ -3641,7 +3641,8 @@
   border-radius: var(--radius);
   overflow: hidden;
   margin-top: 12px;
-  max-height: 300px;
+  max-width: 40%;
+  max-height: 200px;
 }
 .ann-image-grid--1 { grid-template-columns: 1fr; }
 .ann-image-grid--2 { grid-template-columns: 1fr 1fr; }
@@ -3658,7 +3659,7 @@
   cursor: zoom-in;
   min-height: 0;
 }
-.ann-image-grid--1 { max-height: 340px; }
+.ann-image-grid--1 { max-height: 200px; max-width: 40%; }
 .ann-image-thumb:hover { opacity: 0.9; transform: scale(1.01); }
 
 /* Lightbox */
