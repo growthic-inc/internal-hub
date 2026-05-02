@@ -180,10 +180,16 @@ const Assets = (() => {
     const canManage = _p.can_manage
     if (toolbar) {
       toolbar.innerHTML = ''
-      if (tab === 'all' && canManage) {
-        toolbar.innerHTML = `<button class="btn btn--primary btn--sm" id="ast-add-btn">+ Add Asset</button>`
-        document.getElementById('ast-add-btn').addEventListener('click', _openAddModal)
+      const btns = []
+      if (_p.can_request && (tab === 'all' || tab === 'mine')) {
+        btns.push(`<button class="btn btn--secondary btn--sm" id="ast-request-btn">Request Asset</button>`)
       }
+      if (tab === 'all' && canManage) {
+        btns.push(`<button class="btn btn--primary btn--sm" id="ast-add-btn">+ Add Asset</button>`)
+      }
+      toolbar.innerHTML = btns.join('')
+      document.getElementById('ast-request-btn')?.addEventListener('click', _openRequestModal)
+      document.getElementById('ast-add-btn')?.addEventListener('click', _openAddModal)
     }
     switch (tab) {
       case 'all':      return _renderAllTab()
@@ -329,13 +335,6 @@ const Assets = (() => {
     const content = document.getElementById('ast-content')
     if (!content) return
     const mine = _assets.filter(a => a.assigned_to === _user.id)
-
-    // Toolbar: Request Asset button
-    const toolbar = document.getElementById('ast-toolbar-actions')
-    if (toolbar && _p.can_request) {
-      toolbar.innerHTML = `<button class="btn btn--primary btn--sm" id="ast-request-btn">+ Request Asset</button>`
-      document.getElementById('ast-request-btn').addEventListener('click', _openRequestModal)
-    }
 
     if (!mine.length) {
       content.innerHTML = `
