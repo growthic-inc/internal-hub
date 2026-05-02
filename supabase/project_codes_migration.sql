@@ -12,22 +12,21 @@ ALTER TABLE clients ADD COLUMN IF NOT EXISTS project_description TEXT;
 -- Drop the existing check constraint (whatever it's named) and recreate it
 DO $$
 DECLARE
-  v_con TEXT;
+  r RECORD;
 BEGIN
-  SELECT conname INTO v_con
-  FROM pg_constraint
-  WHERE conrelid = 'clients'::regclass
-    AND contype   = 'c'
-    AND pg_get_constraintdef(oid) ILIKE '%category%'
-  LIMIT 1;
-
-  IF v_con IS NOT NULL THEN
-    EXECUTE format('ALTER TABLE clients DROP CONSTRAINT %I', v_con);
-  END IF;
+  FOR r IN
+    SELECT conname FROM pg_constraint
+    WHERE conrelid = 'clients'::regclass
+      AND contype  = 'c'
+      AND pg_get_constraintdef(oid) ILIKE '%category%'
+  LOOP
+    EXECUTE format('ALTER TABLE clients DROP CONSTRAINT %I', r.conname);
+  END LOOP;
 END $$;
 
+-- Use lower() so both 'Shark' and 'shark' pass (handles existing data regardless of casing)
 ALTER TABLE clients ADD CONSTRAINT clients_category_check
-  CHECK (category IN ('shark', 'dolphin', 'turtle', 'snail', 'internal') OR category IS NULL);
+  CHECK (lower(category) IN ('shark', 'dolphin', 'turtle', 'snail', 'internal') OR category IS NULL);
 
 -- ── Seed internal projects as clients ────────────────────────
 INSERT INTO clients (client_name, project_code, category, status, project_description) VALUES
