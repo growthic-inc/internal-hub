@@ -672,7 +672,8 @@ ModuleRegistry.register({
   key:       'announcements',
   routeId:   'announcements',
   label:     'Announcements',
-  order:     10,
+  order:     0,
+  universal: true,
   icon:      `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"></path></svg>`,
   getModule: () => Announcements,
   features:  {

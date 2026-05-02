@@ -29,11 +29,12 @@ const App = (() => {
     { id: 'home', label: 'Home', icon: ICONS_EXTRA.home, module: () => HomeModule, roles: ALL_ROLES },
     // Registered modules — order controlled by the `order` field in each registration
     ...ModuleRegistry.getAll().map(m => ({
-      id:     m.routeId,
-      label:  m.label,
-      icon:   m.icon,
-      module: m.getModule,
-      roles:  ALL_ROLES,
+      id:        m.routeId,
+      label:     m.label,
+      icon:      m.icon,
+      module:    m.getModule,
+      roles:     ALL_ROLES,
+      universal: m.universal || false,
     })),
     // Access Control: super_admin only
     { id: 'access-control', label: 'Access Control', icon: ICONS.sliders, module: () => Access, roles: ALL_ROLES, superAdminOnly: true },
@@ -96,6 +97,7 @@ const App = (() => {
   // ANY feature in the route's module has access > no_access.
   function _canViewModule(navItem) {
     if (navItem.superAdminOnly) return _matrix === null  // strictly super_admin
+    if (navItem.universal)      return true              // visible to everyone
     if (_matrix === null) return true  // super_admin sees everything
 
     // Route-specific feature override
