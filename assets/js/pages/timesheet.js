@@ -449,8 +449,7 @@ const Timesheet = (() => {
           <div class="form-group">
             <label class="form-label">Date <span class="required">*</span></label>
             <input class="form-input" type="date" id="ts-f-date"
-              value="${existingEntry?.date || defaultDate}"
-              min="${weekStartISO}" max="${weekEndISO}" />
+              value="${existingEntry?.date || defaultDate}" />
           </div>
           <div class="form-group">
             <label class="form-label">Hours Spent <span class="required">*</span></label>
@@ -883,7 +882,12 @@ const Timesheet = (() => {
     d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day))
     d.setHours(0, 0, 0, 0); return d
   }
-  function _toISO(date)   { return date.toISOString().split('T')[0] }
+  function _toISO(date)   {
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
   function _weekEnd(ws)   { const e = new Date(ws); e.setDate(e.getDate() + 5); return e }
   function _weekLabel(ws) {
     const opts = { month:'short', day:'numeric' }
