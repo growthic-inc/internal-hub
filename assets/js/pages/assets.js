@@ -715,15 +715,14 @@ const Assets = (() => {
             <span class="ast-setting-name">${Utils.escapeHtml(item.name)}</span>
             <span class="ast-setting-count">${countMap[item.name] || 0} asset${(countMap[item.name] || 0) !== 1 ? 's' : ''}</span>
           </div>
-          ${item.is_default ? '<span style="font-size:11px;color:var(--text-muted);">Default</span>' : `
-            <div class="ast-setting-actions">
+          <div class="ast-setting-actions">
               <button class="ast-setting-btn ast-setting-edit" data-id="${item.id}" data-name="${Utils.escapeHtml(item.name)}" title="Rename">
                 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </button>
               <button class="ast-setting-btn ast-setting-del" data-id="${item.id}" data-name="${Utils.escapeHtml(item.name)}" title="Remove" style="color:var(--danger);">
                 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
               </button>
-            </div>`}
+            </div>
         </div>`).join('')
     }
 
