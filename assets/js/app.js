@@ -35,9 +35,8 @@ const App = (() => {
       module: m.getModule,
       roles:  ALL_ROLES,
     })),
-    // Access Control: special visibility gate (manage_access >= can_manage)
-    { id: 'access-control', label: 'Access Control', icon: ICONS.sliders, module: () => Access, roles: ALL_ROLES,
-      visibilityFeature: { module: 'people_hrms', feature: 'manage_access', minLevel: 'can_manage' } },
+    // Access Control: super_admin only
+    { id: 'access-control', label: 'Access Control', icon: ICONS.sliders, module: () => Access, roles: ALL_ROLES, superAdminOnly: true },
     { id: 'settings', label: 'Settings', icon: ICONS.settings, module: () => Settings, roles: ALL_ROLES },
   ]
 
@@ -96,9 +95,10 @@ const App = (() => {
   // Uses visibilityFeature override when present; otherwise checks if
   // ANY feature in the route's module has access > no_access.
   function _canViewModule(navItem) {
+    if (navItem.superAdminOnly) return _matrix === null  // strictly super_admin
     if (_matrix === null) return true  // super_admin sees everything
 
-    // Route-specific feature override (e.g. access-control panel)
+    // Route-specific feature override
     if (navItem.visibilityFeature) {
       const { module, feature, minLevel } = navItem.visibilityFeature
       return hasAccess(module, feature, minLevel)
