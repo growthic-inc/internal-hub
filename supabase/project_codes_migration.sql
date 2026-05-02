@@ -1,103 +1,138 @@
 /* ============================================================
-   PROJECT CODES MIGRATION
-   - Adds project_description to clients
-   - Adds 'internal' as a valid client category
-   - Seeds 7 internal projects as clients with category='internal'
+   PROJECT CODES MIGRATION — v2
+   Run this in Supabase SQL Editor once the UI rebuild is complete.
    ============================================================ */
 
--- ── Add project description to clients ───────────────────────
+-- 1. Add project_description column to clients (safe to re-run)
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS project_description TEXT;
 
--- ── Extend category constraint to include 'internal' ─────────
--- Drop the existing check constraint (whatever it's named) and recreate it
-DO $$
-DECLARE
-  r RECORD;
-BEGIN
-  FOR r IN
-    SELECT conname FROM pg_constraint
-    WHERE conrelid = 'clients'::regclass
-      AND contype  = 'c'
-      AND pg_get_constraintdef(oid) ILIKE '%category%'
-  LOOP
-    EXECUTE format('ALTER TABLE clients DROP CONSTRAINT %I', r.conname);
-  END LOOP;
-END $$;
+-- ── 2. internal_projects ────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS internal_projects (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name         TEXT        NOT NULL,
+  project_code TEXT        NOT NULL UNIQUE,
+  category     TEXT        NOT NULL DEFAULT 'internal',
+  description  TEXT,
+  status       TEXT        NOT NULL DEFAULT 'active'
+                           CHECK (status IN ('active', 'inactive')),
+  sort_order   INTEGER     NOT NULL DEFAULT 0,
+  created_by   UUID        REFERENCES employees(id),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
--- Use lower() so both 'Shark' and 'shark' pass (handles existing data regardless of casing)
-ALTER TABLE clients ADD CONSTRAINT clients_category_check
-  CHECK (lower(category) IN ('shark', 'dolphin', 'turtle', 'snail', 'internal') OR category IS NULL);
+-- ── 3. internal_project_entities ───────────────────────────────
+CREATE TABLE IF NOT EXISTS internal_project_entities (
+  id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  internal_project_id UUID        NOT NULL REFERENCES internal_projects(id) ON DELETE CASCADE,
+  entity_name         TEXT        NOT NULL,
+  sort_order          INTEGER     NOT NULL DEFAULT 0,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
--- ── Seed internal projects as clients ────────────────────────
-INSERT INTO clients (client_name, project_code, category, status, project_description) VALUES
-  ('Growthic People & Culture',     'GRW-HR',   'internal', 'active', 'Log hours for any HR-related work: hiring, onboarding, policy, and people operations.'),
-  ('Growthic Business Development', 'GRW-BDE',  'internal', 'active', 'Log hours for BDE activities: outreach, proposals, discovery calls, and events.'),
-  ('Growthic Internal Meetings',    'GRW-MEET', 'internal', 'active', 'Log hours for all-hands, standups, and internal sync meetings.'),
-  ('Growthic General',              'GRW',      'internal', 'active', 'Log hours for general Growthic internal work not covered by other categories.'),
-  ('Relatable Office',              'INT-RO',   'internal', 'active', 'Log hours for work related to the Relatable Office brand.'),
-  ('Furreal',                       'INT-FURR', 'internal', 'active', 'Log hours for work related to the Furreal brand.'),
-  ('Naravio',                       'NARAV',    'internal', 'active', 'Log hours for work related to Naravio.')
+-- ── 4. RLS ──────────────────────────────────────────────────────
+ALTER TABLE internal_projects         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE internal_project_entities ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "internal_projects_select"  ON internal_projects;
+DROP POLICY IF EXISTS "internal_projects_all"     ON internal_projects;
+DROP POLICY IF EXISTS "ip_entities_select"        ON internal_project_entities;
+DROP POLICY IF EXISTS "ip_entities_all"           ON internal_project_entities;
+
+CREATE POLICY "internal_projects_select"
+  ON internal_projects FOR SELECT
+  TO authenticated USING (true);
+
+CREATE POLICY "internal_projects_all"
+  ON internal_projects FOR ALL
+  TO authenticated USING (true) WITH CHECK (true);
+
+CREATE POLICY "ip_entities_select"
+  ON internal_project_entities FOR SELECT
+  TO authenticated USING (true);
+
+CREATE POLICY "ip_entities_all"
+  ON internal_project_entities FOR ALL
+  TO authenticated USING (true) WITH CHECK (true);
+
+-- ── 5. Indexes ──────────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS idx_internal_projects_status
+  ON internal_projects (status);
+
+CREATE INDEX IF NOT EXISTS idx_ip_entities_project_sort
+  ON internal_project_entities (internal_project_id, sort_order);
+
+-- ── 6. Seed internal_projects ───────────────────────────────────
+INSERT INTO internal_projects (name, project_code, category, description, sort_order)
+VALUES
+  ('Growthic People & Culture',   'GRW-HR',   'internal', 'Log hours for any HR-related work: hiring, onboarding, policy, and people operations.', 1),
+  ('Growthic Business Development','GRW-BDE',  'internal', 'Log hours for BDE activities: outreach, proposals, discovery calls, and events.',        2),
+  ('Growthic Internal Meetings',  'GRW-MEET', 'internal', 'Log hours for all-hands, standups, and internal sync meetings.',                          3),
+  ('Growthic General',            'GRW',      'internal', 'Log hours for general Growthic internal work not covered by other categories.',            4),
+  ('Relatable Office',            'INT-RO',   'internal', 'Log hours for work related to the Relatable Office brand.',                               5),
+  ('Furreal',                     'INT-FURR', 'internal', 'Log hours for work related to the Furreal brand.',                                        6),
+  ('Naravio',                     'NARAV',    'internal', 'Log hours for work related to Naravio.',                                                  7)
 ON CONFLICT (project_code) DO NOTHING;
 
--- ── Seed work-area entities for internal clients ─────────────
+-- ── 7. Seed entities via PL/pgSQL ───────────────────────────────
 DO $$
 DECLARE
-  v_hr_id    UUID;
-  v_bde_id   UUID;
-  v_ro_id    UUID;
-  v_furr_id  UUID;
+  v_hr_id   UUID;
+  v_bde_id  UUID;
+  v_ro_id   UUID;
+  v_furr_id UUID;
   v_narav_id UUID;
 BEGIN
-  SELECT id INTO v_hr_id    FROM clients WHERE project_code = 'GRW-HR';
-  SELECT id INTO v_bde_id   FROM clients WHERE project_code = 'GRW-BDE';
-  SELECT id INTO v_ro_id    FROM clients WHERE project_code = 'INT-RO';
-  SELECT id INTO v_furr_id  FROM clients WHERE project_code = 'INT-FURR';
-  SELECT id INTO v_narav_id FROM clients WHERE project_code = 'NARAV';
+  SELECT id INTO v_hr_id    FROM internal_projects WHERE project_code = 'GRW-HR';
+  SELECT id INTO v_bde_id   FROM internal_projects WHERE project_code = 'GRW-BDE';
+  SELECT id INTO v_ro_id    FROM internal_projects WHERE project_code = 'INT-RO';
+  SELECT id INTO v_furr_id  FROM internal_projects WHERE project_code = 'INT-FURR';
+  SELECT id INTO v_narav_id FROM internal_projects WHERE project_code = 'NARAV';
 
-  IF v_hr_id IS NOT NULL THEN
-    INSERT INTO client_entities (client_id, entity_name) VALUES
-      (v_hr_id, 'Hiring'),
-      (v_hr_id, 'Interviews'),
-      (v_hr_id, 'Onboarding'),
-      (v_hr_id, 'Policy / Documentation'),
-      (v_hr_id, 'Culture / Engagement'),
-      (v_hr_id, 'Admin'),
-      (v_hr_id, 'Internal Meeting'),
-      (v_hr_id, 'Exit & Offboarding'),
-      (v_hr_id, 'Performance Reviews / Appraisals'),
-      (v_hr_id, 'Payroll & Attendance Coordination')
-    ON CONFLICT DO NOTHING;
-  END IF;
+  -- GRW-HR entities
+  INSERT INTO internal_project_entities (internal_project_id, entity_name, sort_order)
+  VALUES
+    (v_hr_id, 'Hiring',                              1),
+    (v_hr_id, 'Interviews',                          2),
+    (v_hr_id, 'Onboarding',                          3),
+    (v_hr_id, 'Policy / Documentation',              4),
+    (v_hr_id, 'Culture / Engagement',                5),
+    (v_hr_id, 'Admin',                               6),
+    (v_hr_id, 'Internal Meeting',                    7),
+    (v_hr_id, 'Exit & Offboarding',                  8),
+    (v_hr_id, 'Performance Reviews / Appraisals',    9),
+    (v_hr_id, 'Payroll & Attendance Coordination',  10)
+  ON CONFLICT DO NOTHING;
 
-  IF v_bde_id IS NOT NULL THEN
-    INSERT INTO client_entities (client_id, entity_name) VALUES
-      (v_bde_id, 'Outreach / Events / Followups'),
-      (v_bde_id, 'Proposals / Deck / Presentation Prep'),
-      (v_bde_id, 'Discovery Calls / Client Calls')
-    ON CONFLICT DO NOTHING;
-  END IF;
+  -- GRW-BDE entities
+  INSERT INTO internal_project_entities (internal_project_id, entity_name, sort_order)
+  VALUES
+    (v_bde_id, 'Outreach / Events / Followups',          1),
+    (v_bde_id, 'Proposals / Deck / Presentation Prep',   2),
+    (v_bde_id, 'Discovery Calls / Client Calls',         3)
+  ON CONFLICT DO NOTHING;
 
-  IF v_ro_id IS NOT NULL THEN
-    INSERT INTO client_entities (client_id, entity_name) VALUES
-      (v_ro_id, 'Outreach / Followups'),
-      (v_ro_id, 'Content Strategy & Planning'),
-      (v_ro_id, 'Content Creation & Review')
-    ON CONFLICT DO NOTHING;
-  END IF;
+  -- INT-RO entities
+  INSERT INTO internal_project_entities (internal_project_id, entity_name, sort_order)
+  VALUES
+    (v_ro_id, 'Outreach / Followups',           1),
+    (v_ro_id, 'Content Strategy & Planning',    2),
+    (v_ro_id, 'Content Creation & Review',      3)
+  ON CONFLICT DO NOTHING;
 
-  IF v_furr_id IS NOT NULL THEN
-    INSERT INTO client_entities (client_id, entity_name) VALUES
-      (v_furr_id, 'Outreach / Followups'),
-      (v_furr_id, 'Content Strategy & Planning'),
-      (v_furr_id, 'Content Creation & Review')
-    ON CONFLICT DO NOTHING;
-  END IF;
+  -- INT-FURR entities (same as INT-RO)
+  INSERT INTO internal_project_entities (internal_project_id, entity_name, sort_order)
+  VALUES
+    (v_furr_id, 'Outreach / Followups',           1),
+    (v_furr_id, 'Content Strategy & Planning',    2),
+    (v_furr_id, 'Content Creation & Review',      3)
+  ON CONFLICT DO NOTHING;
 
-  IF v_narav_id IS NOT NULL THEN
-    INSERT INTO client_entities (client_id, entity_name) VALUES
-      (v_narav_id, 'Outreach / Events / Followups'),
-      (v_narav_id, 'Proposals / Deck / Presentation Prep'),
-      (v_narav_id, 'Discovery Calls / Client Calls')
-    ON CONFLICT DO NOTHING;
-  END IF;
+  -- NARAV entities
+  INSERT INTO internal_project_entities (internal_project_id, entity_name, sort_order)
+  VALUES
+    (v_narav_id, 'Outreach / Events / Followups',          1),
+    (v_narav_id, 'Proposals / Deck / Presentation Prep',   2),
+    (v_narav_id, 'Discovery Calls / Client Calls',         3)
+  ON CONFLICT DO NOTHING;
 END $$;
