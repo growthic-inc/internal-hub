@@ -1123,14 +1123,6 @@ const API = (() => {
     return supabase.from('policy_categories').delete().eq('id', id)
   }
 
-  async function updateClientProjectDescription(clientId, description) {
-    const { error } = await Config.supabase
-      .from('clients')
-      .update({ project_description: description || null })
-      .eq('id', clientId)
-    return { error }
-  }
-
   /* ── Policies (Phase 7) ───────────────────────────────────── */
   async function getPolicies(categoryId = null) {
     let q = supabase
@@ -1205,6 +1197,5 @@ const API = (() => {
     getAnnouncementReactions, addReaction, removeReaction,
     getPolicyCategories, addPolicyCategory, deletePolicyCategory,
     getPolicies, createPolicy, updatePolicy, deletePolicy,
-    updateClientProjectDescription,
   }
 })()

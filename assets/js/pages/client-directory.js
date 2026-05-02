@@ -11,7 +11,6 @@ const ClientDirectory = (() => {
   let _employees = []
   let _filter    = { category: 'all', status: 'active', search: '' }
   let _p         = null
-  let _pcView    = false
 
   // Form state
   let _editingClientId  = null
@@ -38,7 +37,7 @@ const ClientDirectory = (() => {
 
   const CAT_BADGE = {
     Shark: 'badge--primary', Dolphin: 'badge--success',
-    Turtle: 'badge--warning', Snail: 'badge--muted', Internal: 'badge--internal',
+    Turtle: 'badge--warning', Snail: 'badge--muted',
   }
 
   const STATUS_BADGE = {
@@ -110,37 +109,27 @@ const ClientDirectory = (() => {
     return `
       <div class="page-inner">
         <div class="page-header">
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-            <div class="tabs" style="border:none;margin:0;gap:0;">
-              <button class="tab-btn tab-btn--active" data-cat="all">All</button>
-              <button class="tab-btn" data-cat="Shark">Shark</button>
-              <button class="tab-btn" data-cat="Dolphin">Dolphin</button>
-              <button class="tab-btn" data-cat="Turtle">Turtle</button>
-              <button class="tab-btn" data-cat="Snail">Snail</button>
-              <button class="tab-btn" data-cat="Internal">Internal</button>
-            </div>
-            <span style="width:1px;height:20px;background:var(--border);flex-shrink:0;margin:0 4px;display:inline-block;"></span>
-            <button class="tab-btn tab-btn--pc" id="cd-pc-tab">
-              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="11" x2="15" y2="11"/><line x1="9" y1="15" x2="13" y2="15"/></svg>
-              Project Codes
-            </button>
+          <div class="tabs" style="border:none;margin:0;gap:0;">
+            <button class="tab-btn tab-btn--active" data-cat="all">All</button>
+            <button class="tab-btn" data-cat="Shark">Shark</button>
+            <button class="tab-btn" data-cat="Dolphin">Dolphin</button>
+            <button class="tab-btn" data-cat="Turtle">Turtle</button>
+            <button class="tab-btn" data-cat="Snail">Snail</button>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <div id="cd-dir-controls" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-              <div class="search-wrap">
-                <span class="search-icon">${ICONS.search}</span>
-                <input class="form-input" id="cd-search" type="search"
-                       placeholder="Search clients, codes or managers…">
-              </div>
-              <select class="form-select" id="cd-status" style="width:auto;height:38px;">
-                <option value="active">Active</option>
-                <option value="paused">Paused</option>
-                <option value="inactive">Inactive</option>
-                <option value="all">All statuses</option>
-              </select>
-              <button class="btn btn--primary btn--sm" id="cd-add-btn" style="display:none;">+ Add Client</button>
+            <div class="search-wrap">
+              <span class="search-icon">${ICONS.search}</span>
+              <input class="form-input" id="cd-search" type="search"
+                     placeholder="Search clients, codes or managers…">
             </div>
-            <div id="cd-pc-controls" style="display:none;"></div>
+            <select class="form-select" id="cd-status" style="width:auto;height:38px;">
+              <option value="active">Active</option>
+              <option value="paused">Paused</option>
+              <option value="inactive">Inactive</option>
+              <option value="all">All statuses</option>
+            </select>
+            <!-- Always rendered; init() reveals it once permissions are loaded -->
+            <button class="btn btn-primary btn-sm" id="cd-add-btn" style="display:none;">+ Add Client</button>
           </div>
         </div>
         <div id="cd-content" class="page-loading">Loading clients…</div>
@@ -258,7 +247,6 @@ const ClientDirectory = (() => {
   function _bindFilters() {
     document.querySelectorAll('[data-cat]').forEach(btn =>
       btn.addEventListener('click', () => {
-        if (_pcView) _switchToDirectory()
         document.querySelectorAll('[data-cat]').forEach(b => b.classList.remove('tab-btn--active'))
         btn.classList.add('tab-btn--active')
         _filter.category = btn.dataset.cat
@@ -269,28 +257,6 @@ const ClientDirectory = (() => {
     if (s) s.addEventListener('input', Utils.debounce(e => { _filter.search = e.target.value; _renderCards() }, 200))
     const st = document.getElementById('cd-status')
     if (st) st.addEventListener('change', e => { _filter.status = e.target.value; _renderCards() })
-
-    document.getElementById('cd-pc-tab')?.addEventListener('click', _switchToProjectCodes)
-  }
-
-  function _switchToDirectory() {
-    _pcView = false
-    document.getElementById('cd-pc-tab')?.classList.remove('tab-btn--active')
-    const dirCtrl = document.getElementById('cd-dir-controls')
-    const pcCtrl  = document.getElementById('cd-pc-controls')
-    if (dirCtrl) dirCtrl.style.display = 'flex'
-    if (pcCtrl)  pcCtrl.style.display  = 'none'
-  }
-
-  function _switchToProjectCodes() {
-    _pcView = true
-    document.querySelectorAll('[data-cat]').forEach(b => b.classList.remove('tab-btn--active'))
-    document.getElementById('cd-pc-tab')?.classList.add('tab-btn--active')
-    const dirCtrl = document.getElementById('cd-dir-controls')
-    const pcCtrl  = document.getElementById('cd-pc-controls')
-    if (dirCtrl) dirCtrl.style.display = 'none'
-    if (pcCtrl)  pcCtrl.style.display  = 'none'
-    _renderProjectCodesTable()
   }
 
   /* ── Drawer ─────────────────────────────────────────────────── */
@@ -992,131 +958,6 @@ const ClientDirectory = (() => {
     }
   }
 
-  /* ══════════════════════════════════════════════════════════
-     PROJECT CODES TAB
-  ══════════════════════════════════════════════════════════ */
-
-  function _renderProjectCodesTable() {
-    const el = document.getElementById('cd-content')
-    if (!el) return
-
-    // External clients (non-internal) first, sorted by name; then Internal by name
-    const sortFn = (a, b) => {
-      const aInt = a.category === 'internal'
-      const bInt = b.category === 'internal'
-      if (aInt !== bInt) return aInt ? 1 : -1
-      return a.client_name.localeCompare(b.client_name)
-    }
-    const active   = [..._clients].filter(c => c.status === 'active' || c.status === 'paused').sort(sortFn)
-    const inactive = [..._clients].filter(c => c.status !== 'active' && c.status !== 'paused').sort(sortFn)
-
-    el.className = ''
-    el.innerHTML = `
-      <div class="section-card" style="overflow-x:auto;">
-        <table class="data-table pc-table">
-          <thead>
-            <tr>
-              <th style="min-width:200px;">Client Name / Project Name</th>
-              <th style="min-width:100px;">Project Code</th>
-              <th style="min-width:220px;">Entity Name</th>
-              <th>Description</th>
-              <th style="min-width:90px;">Category</th>
-              <th style="width:52px;"></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${active.length ? active.map(c => _pcRow(c, false)).join('') : '<tr><td colspan="6" class="pc-empty">No project codes yet.</td></tr>'}
-            ${inactive.length ? `
-              <tr class="pc-inactive-divider"><td colspan="6">Inactive</td></tr>
-              ${inactive.map(c => _pcRow(c, true)).join('')}
-            ` : ''}
-          </tbody>
-        </table>
-      </div>
-    `
-
-    el.querySelectorAll('.pc-edit-desc').forEach(btn =>
-      btn.addEventListener('click', () => {
-        const c = _clients.find(x => x.id === btn.dataset.id)
-        if (c) _openClientDescModal(c)
-      })
-    )
-  }
-
-  function _pcRow(c, isInactive) {
-    const SVG_EDIT = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`
-    const entities = c.client_entities || []
-    const cat      = _cap(c.category || '')
-
-    return `
-      <tr class="${isInactive ? 'pc-row--inactive' : ''}">
-        <td>
-          <div class="pc-row-name">${Utils.escapeHtml(c.client_name)}</div>
-          ${isInactive ? `<span class="badge badge--muted" style="font-size:10px;margin-top:3px;">${c.status}</span>` : ''}
-        </td>
-        <td><code class="pc-code">${Utils.escapeHtml(c.project_code)}</code></td>
-        <td>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;">
-            ${entities.length
-              ? entities.map(e => `<span class="badge badge--outline" style="font-size:11px;">${Utils.escapeHtml(e.entity_name)}</span>`).join('')
-              : '<span style="color:var(--text-muted);font-size:12px;">—</span>'}
-          </div>
-        </td>
-        <td class="pc-desc-cell">
-          ${c.project_description ? Utils.escapeHtml(c.project_description) : '<span class="pc-desc-empty">No description set</span>'}
-        </td>
-        <td>
-          ${cat ? `<span class="badge ${CAT_BADGE[cat] || 'badge--muted'}">${cat}</span>` : '<span style="color:var(--text-muted);">—</span>'}
-        </td>
-        <td>
-          ${_canEdit() ? `<button class="btn-icon-sm pc-edit-desc" data-id="${c.id}" title="Edit description">${SVG_EDIT}</button>` : ''}
-        </td>
-      </tr>`
-  }
-
-  /* ── Edit client project description ─────────────────────── */
-  function _openClientDescModal(client) {
-    Utils.openModal(`
-      <div class="modal-header">
-        <h3 class="modal-title">Edit Project Description</h3>
-        <button class="modal-close" onclick="Utils.closeModal()">${ICONS.close}</button>
-      </div>
-      <div class="modal-body">
-        <div style="display:flex;align-items:center;gap:10px;padding:10px 0 16px;border-bottom:1px solid var(--border-light);margin-bottom:16px;">
-          <code class="pc-code">${Utils.escapeHtml(client.project_code)}</code>
-          <span style="font-size:14px;font-weight:600;color:var(--text);">${Utils.escapeHtml(client.client_name)}</span>
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">Description</label>
-          <textarea class="form-input" id="pc-client-desc" rows="3"
-            placeholder="e.g. Log hours for any task related to this client…"
-            style="resize:vertical;">${Utils.escapeHtml(client.project_description || '')}</textarea>
-          <span class="form-hint">Shown in the Project Codes table as guidance for employees logging time</span>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
-        <button class="btn btn--primary" id="pc-client-desc-save">Save</button>
-      </div>
-    `)
-
-    document.getElementById('pc-client-desc-save')?.addEventListener('click', async () => {
-      const btn  = document.getElementById('pc-client-desc-save')
-      const desc = document.getElementById('pc-client-desc').value.trim()
-      btn.disabled = true; btn.textContent = 'Saving…'
-      const { error } = await API.updateClientProjectDescription(client.id, desc)
-      btn.disabled = false; btn.textContent = 'Save'
-      if (error) { Utils.showToast('Failed to save description', 'error'); return }
-      // Update local cache so table re-renders without a refetch
-      const c = _clients.find(x => x.id === client.id)
-      if (c) c.project_description = desc
-      Utils.closeModal()
-      Utils.showToast('Description updated', 'success')
-      _renderProjectCodesTable()
-    })
-  }
-
-
   return { render, init }
 })()
 
@@ -1128,9 +969,8 @@ ModuleRegistry.register({
   icon:      `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>`,
   getModule: () => ClientDirectory,
   features:  {
-    view_clients:       'View Clients',
-    create_client:      'Create Client',
-    edit_client:        'Edit Client',
-    edit_project_codes: 'Edit Project Codes',
+    view_clients:  'View Clients',
+    create_client: 'Create Client',
+    edit_client:   'Edit Client',
   },
 })
