@@ -76,6 +76,42 @@ const HomeModule = (() => {
     return result.sort((a, b) => a.birthdayDate - b.birthdayDate)
   }
 
+  /* ── Section: Hero ───────────────────────────────────────── */
+
+  function _renderHero(user, todayEntries, whoIsOut, pendingLeaveCount, pendingTsCount) {
+    const firstName   = Utils.escapeHtml((user.name || '').split(' ')[0])
+    const totalHours  = (todayEntries || []).reduce((s, e) => s + Number(e.hours || 0), 0)
+    const draftCount  = (todayEntries || []).filter(e => e.status === 'draft').length
+    const outCount    = (whoIsOut || []).filter(r => r.employees && r.employees.id !== user.id).length
+    const pendingTotal = (pendingLeaveCount || 0) + (pendingTsCount || 0)
+
+    const hoursLabel = totalHours
+      ? `⏱ ${totalHours.toFixed(1)}h logged${draftCount ? ` (${draftCount} draft)` : ''}`
+      : `⏱ No hours logged yet`
+
+    const stats = [
+      { label: hoursLabel,                        href: '#timesheet'     },
+      pendingTotal > 0 ? { label: `📋 ${pendingTotal} pending review`, href: '#leave-tracker' } : null,
+      outCount > 0    ? { label: `👤 ${outCount} out today`,           href: '#leave-tracker' } : null,
+    ].filter(Boolean)
+
+    return `
+      <div class="home-hero home-fade-in">
+        <div style="position:absolute;right:-24px;top:-24px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,0.05);pointer-events:none;"></div>
+        <div style="position:absolute;right:80px;bottom:-50px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,0.04);pointer-events:none;"></div>
+        <div style="position:relative;z-index:1;">
+          <div style="font-size:11px;font-weight:600;letter-spacing:0.07em;text-transform:uppercase;color:rgba(255,255,255,0.5);margin-bottom:10px;">${_formattedToday()}</div>
+          <div style="font-size:28px;font-weight:700;color:#fff;line-height:1.2;margin-bottom:6px;">${_greeting()}, ${firstName} 👋</div>
+          <div style="font-size:13px;color:rgba(255,255,255,0.6);font-style:italic;">${_motivationalLine()}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:18px;">
+            ${stats.map(s => `
+              <a href="${s.href}" class="home-stat-pill">${s.label}</a>
+            `).join('')}
+          </div>
+        </div>
+      </div>`
+  }
+
   /* ── Section: Timesheet nudge ─────────────────────────────── */
 
   function _renderTimesheetNudge(entries) {
@@ -83,36 +119,41 @@ const HomeModule = (() => {
     const totalHours = all.reduce((s, e) => s + Number(e.hours || 0), 0)
     const draftCount = all.filter(e => e.status === 'draft').length
 
-    let icon, message, sub, actionHtml, color
+    let icon, message, sub, actionHtml, color, colorLight
 
     if (!totalHours) {
       icon       = '🕐'
       color      = 'var(--warning)'
+      colorLight = 'var(--warning-light)'
       message    = "You haven't logged any hours today."
       sub        = 'Add your first entry to get started.'
       actionHtml = `<a href="#timesheet" class="btn btn--primary btn--sm">Log Time</a>`
     } else if (draftCount > 0) {
       icon       = '📋'
       color      = 'var(--primary)'
-      message    = `${totalHours.toFixed(1)}h logged today — ${draftCount} draft${draftCount > 1 ? 's' : ''} pending submission.`
+      colorLight = 'var(--primary-light)'
+      message    = `${totalHours.toFixed(1)}h logged — ${draftCount} draft${draftCount > 1 ? 's' : ''} pending submission.`
       sub        = 'Submit your drafts for manager review.'
-      actionHtml = `<a href="#timesheet" class="btn btn--primary btn--sm">Go to Timesheet</a>`
+      actionHtml = `<a href="#timesheet" class="btn btn--primary btn--sm">Submit Drafts</a>`
     } else {
       icon       = '✅'
       color      = 'var(--success)'
+      colorLight = 'var(--success-light)'
       message    = `${totalHours.toFixed(1)}h logged and submitted today.`
-      sub        = "You're all set!"
-      actionHtml = `<a href="#timesheet" class="btn btn--ghost btn--sm">View Timesheet</a>`
+      sub        = "You're all set for today!"
+      actionHtml = `<a href="#timesheet" class="btn btn--ghost btn--sm">View</a>`
     }
 
     return `
-      <div class="section-card" style="display:flex;align-items:center;gap:16px;margin-bottom:16px;">
-        <div style="font-size:28px;line-height:1;">${icon}</div>
-        <div style="flex:1;min-width:0;">
-          <div style="font-weight:600;font-size:14px;color:${color};">${message}</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${sub}</div>
+      <div class="section-card home-ts-nudge home-fade-in" style="border-left:3px solid ${color};">
+        <div class="section-card-body" style="display:flex;align-items:center;gap:14px;padding:14px 20px;">
+          <div style="width:38px;height:38px;border-radius:50%;background:${colorLight};display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">${icon}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:13px;color:${color};">${message}</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${sub}</div>
+          </div>
+          ${actionHtml}
         </div>
-        ${actionHtml}
       </div>`
   }
 
@@ -125,14 +166,17 @@ const HomeModule = (() => {
     if (!items.length) return ''
 
     const rows = items.map(item => `
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;">
-        <span style="font-size:14px;">⏳ <strong>${item.label}</strong> awaiting your review</span>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--warning-light);">
+        <span style="font-size:13px;font-weight:500;">⏳ <strong>${item.label}</strong> awaiting your review</span>
         <a href="#${item.hash}" class="btn btn--primary btn--sm">Review</a>
       </div>`).join('')
 
     return `
-      <div class="section-card" style="margin-bottom:16px;">
-        <div class="section-card-header"><h3>Pending Approvals</h3></div>
+      <div class="section-card home-fade-in" style="border-left:3px solid var(--warning);margin-top:12px;">
+        <div class="section-card-header" style="background:var(--warning-light);">
+          <h3 style="color:#92400E;">Action Required</h3>
+          <span class="badge" style="background:var(--warning);color:#fff;">${items.length}</span>
+        </div>
         <div class="section-card-body">${rows}</div>
       </div>`
   }
@@ -144,22 +188,27 @@ const HomeModule = (() => {
       .map(r => r.employees)
       .filter(emp => emp && emp.id !== currentUserId)
 
-    const cards = people.length
-      ? people.map(emp => `
-          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
-            ${_avatarHtml(emp)}
-            <div style="flex:1;min-width:0;">
-              <div style="font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${Utils.escapeHtml(emp.name)}</div>
-              <div style="font-size:12px;color:var(--text-muted);">${Utils.escapeHtml(emp.designation || emp.department || '')}</div>
-            </div>
-            <span class="badge badge--warning">OOO</span>
-          </div>`).join('')
-      : `<p class="empty-state-text">Everyone's in today.</p>`
+    const body = people.length
+      ? `<div class="home-chip-row">
+          ${people.map(emp => `
+            <div class="home-person-chip" title="${Utils.escapeHtml(emp.name)} — Out today">
+              ${_avatarHtml(emp)}
+              <div style="min-width:0;">
+                <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;">${Utils.escapeHtml(emp.name)}</div>
+                ${emp.designation ? `<div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(emp.designation)}</div>` : ''}
+              </div>
+              <span class="badge badge--warning" style="font-size:10px;margin-left:2px;">OOO</span>
+            </div>`).join('')}
+        </div>`
+      : `<p class="empty-state-text" style="margin:0;padding:4px 0;">👍 Everyone's in today.</p>`
 
     return `
-      <div class="section-card" style="margin-bottom:16px;">
-        <div class="section-card-header"><h3>Who's Out Today</h3></div>
-        <div class="section-card-body">${cards}</div>
+      <div class="section-card home-hover-card" style="margin-bottom:14px;">
+        <div class="section-card-header">
+          <h3>Who's Out Today</h3>
+          ${people.length ? `<span class="badge badge--muted">${people.length}</span>` : ''}
+        </div>
+        <div class="section-card-body">${body}</div>
       </div>`
   }
 
@@ -169,24 +218,24 @@ const HomeModule = (() => {
     const celebrants = _birthdaysInRange(employees, 7)
     if (!celebrants.length) return ''
 
-    const cards = celebrants.map(emp => {
-      const label    = emp.isToday ? 'Today' : emp.birthdayDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+    const rows = celebrants.map(emp => {
+      const label    = emp.isToday ? '🎂 Today!' : emp.birthdayDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
       const badgeCls = emp.isToday ? 'badge--danger' : 'badge--muted'
       return `
-        <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);">
+        <div class="home-person-row">
           ${_avatarHtml(emp)}
           <div style="flex:1;min-width:0;">
-            <div style="font-weight:600;font-size:14px;">${Utils.escapeHtml(emp.name)}</div>
-            <div style="font-size:12px;color:var(--text-muted);">${Utils.escapeHtml(emp.designation || '')}</div>
+            <div style="font-weight:600;font-size:13px;">${Utils.escapeHtml(emp.name)}</div>
+            ${emp.designation ? `<div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(emp.designation)}</div>` : ''}
           </div>
           <span class="badge ${badgeCls}">${label}</span>
         </div>`
     }).join('')
 
     return `
-      <div class="section-card" style="margin-bottom:16px;">
+      <div class="section-card home-hover-card" style="margin-bottom:14px;">
         <div class="section-card-header"><h3>🎂 Birthdays This Week</h3></div>
-        <div class="section-card-body">${cards}</div>
+        <div class="section-card-body">${rows}</div>
       </div>`
   }
 
@@ -206,23 +255,23 @@ const HomeModule = (() => {
 
     if (!celebrants.length) return ''
 
-    const cards = celebrants.map(emp => {
+    const rows = celebrants.map(emp => {
       const years = currentYear - new Date(emp.joining_date).getFullYear()
       return `
-        <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);">
+        <div class="home-person-row">
           ${_avatarHtml(emp)}
-          <div style="flex:1;">
-            <div style="font-weight:600;font-size:14px;">${Utils.escapeHtml(emp.name)}</div>
-            <div style="font-size:12px;color:var(--text-muted);">${Utils.escapeHtml(emp.designation || '')}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:13px;">${Utils.escapeHtml(emp.name)}</div>
+            ${emp.designation ? `<div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(emp.designation)}</div>` : ''}
           </div>
           <span class="badge badge--primary">${years} yr${years !== 1 ? 's' : ''} 🎉</span>
         </div>`
     }).join('')
 
     return `
-      <div class="section-card" style="margin-bottom:16px;">
-        <div class="section-card-header"><h3>🎉 Work Anniversaries Today</h3></div>
-        <div class="section-card-body">${cards}</div>
+      <div class="section-card home-hover-card" style="margin-bottom:14px;">
+        <div class="section-card-header"><h3>🎉 Work Anniversaries</h3></div>
+        <div class="section-card-body">${rows}</div>
       </div>`
   }
 
@@ -230,38 +279,86 @@ const HomeModule = (() => {
 
   function _renderHolidays(holidays) {
     const rows = (holidays || []).length
-      ? holidays.slice(0, 5).map(h => `
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
-            <span style="font-size:14px;">${Utils.escapeHtml(h.name)}</span>
-            <span style="font-size:12px;color:var(--text-muted);">${Utils.formatDate(h.date)}</span>
+      ? holidays.slice(0, 5).map((h, i) => `
+          <div class="home-holiday-row" ${i === 0 ? 'style="border-top:none;"' : ''}>
+            <div>
+              <div style="font-size:13px;font-weight:500;">${Utils.escapeHtml(h.name)}</div>
+            </div>
+            <span style="font-size:12px;color:var(--text-muted);white-space:nowrap;">${Utils.formatDate(h.date)}</span>
           </div>`).join('')
-      : `<p class="empty-state-text">No upcoming holidays.</p>`
+      : `<p class="empty-state-text" style="margin:0;">No upcoming holidays.</p>`
+
     return `
-      <div class="section-card" style="margin-bottom:16px;">
+      <div class="section-card home-hover-card" style="margin-bottom:14px;">
         <div class="section-card-header"><h3>Upcoming Holidays</h3></div>
-        <div class="section-card-body">${rows}</div>
+        <div class="section-card-body" style="padding:0;">${rows}</div>
       </div>`
   }
 
   /* ── Section: Recent Announcements ──────────────────────── */
 
   function _renderAnnouncements(announcements) {
-    const rows = (announcements || []).length
-      ? announcements.slice(0, 3).map(a => {
-          const author = a.employees?.name ? ` · ${Utils.escapeHtml(a.employees.name)}` : ''
-          return `
-            <div style="padding:10px 0;border-bottom:1px solid var(--border);">
-              <div style="font-weight:600;font-size:14px;margin-bottom:4px;">${Utils.escapeHtml(a.title)}</div>
-              <div style="font-size:13px;color:var(--text-secondary);margin-bottom:6px;">${Utils.escapeHtml(Utils.truncate(a.body, 120))}</div>
-              <div style="font-size:11px;color:var(--text-muted);">${_relativeTime(a.created_at)}${author}</div>
-            </div>`
-        }).join('')
-      : `<p class="empty-state-text">No announcements yet.</p>`
+    if (!(announcements || []).length) {
+      return `
+        <div class="section-card home-hover-card">
+          <div class="section-card-header">
+            <h3>Recent Announcements</h3>
+            <a href="#announcements" style="font-size:12px;color:var(--primary);font-weight:500;">View all →</a>
+          </div>
+          <div class="section-card-body"><p class="empty-state-text" style="margin:0;">No announcements yet.</p></div>
+        </div>`
+    }
+
+    const items = announcements.slice(0, 4).map(a => {
+      const author = a.employees?.name ? Utils.escapeHtml(a.employees.name) : ''
+      const body   = Utils.escapeHtml(a.body || '')
+      return `
+        <div class="home-ann-item" role="button" tabindex="0" aria-expanded="false">
+          <div class="home-ann-header">
+            <div style="font-weight:600;font-size:13px;flex:1;min-width:0;padding-right:12px;">${Utils.escapeHtml(a.title)}</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+              <span style="font-size:11px;color:var(--text-muted);">${_relativeTime(a.created_at)}</span>
+              <span class="home-ann-chevron">›</span>
+            </div>
+          </div>
+          <div class="home-ann-body">
+            <div style="font-size:13px;color:var(--text-secondary);line-height:1.6;">${body}</div>
+            ${author ? `<div style="font-size:11px;color:var(--text-muted);margin-top:8px;font-weight:500;">— ${author}</div>` : ''}
+            <a href="#announcements" style="display:inline-block;font-size:12px;color:var(--primary);margin-top:10px;font-weight:500;">View in Announcements →</a>
+          </div>
+        </div>`
+    }).join('')
+
     return `
-      <div class="section-card">
-        <div class="section-card-header"><h3>Recent Announcements</h3></div>
-        <div class="section-card-body">${rows}</div>
+      <div class="section-card home-hover-card">
+        <div class="section-card-header">
+          <h3>Recent Announcements</h3>
+          <a href="#announcements" style="font-size:12px;color:var(--primary);font-weight:500;">View all →</a>
+        </div>
+        <div class="section-card-body" style="padding:0;">
+          ${items}
+        </div>
       </div>`
+  }
+
+  /* ── Bind interactions ───────────────────────────────────── */
+
+  function _bindInteractions() {
+    document.querySelectorAll('.home-ann-item').forEach(item => {
+      const toggle = (e) => {
+        // Don't expand if clicking the "View all →" link
+        if (e.target.tagName === 'A') return
+        const body    = item.querySelector('.home-ann-body')
+        const chevron = item.querySelector('.home-ann-chevron')
+        const isOpen  = item.classList.contains('open')
+        item.classList.toggle('open', !isOpen)
+        item.setAttribute('aria-expanded', String(!isOpen))
+        body.style.display    = isOpen ? 'none' : 'block'
+        chevron.style.transform = isOpen ? '' : 'rotate(90deg)'
+      }
+      item.addEventListener('click', toggle)
+      item.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(e) } })
+    })
   }
 
   /* ── render ──────────────────────────────────────────────── */
@@ -299,25 +396,17 @@ const HomeModule = (() => {
       API.getBirthdayEmployees(),
     ])
 
-    const firstName = Utils.escapeHtml((user.name || '').split(' ')[0])
-
     const html = `
-      <section class="home-greeting">
-        <div style="font-size:24px;font-weight:700;">${_greeting()}, ${firstName} 👋</div>
-        <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">${_formattedToday()}</div>
-        <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">${_motivationalLine()}</div>
-      </section>
-
+      ${_renderHero(user, todayEntries, whoIsOut, pendingLeaveCount, pendingTsCount)}
       ${_renderTimesheetNudge(todayEntries)}
-
       ${_renderPendingApprovals(pendingLeaveCount, pendingTsCount)}
 
-      <div class="home-content-row">
-        <div style="flex:1.4;min-width:0;">
+      <div class="home-content-row" style="margin-top:14px;">
+        <div style="flex:1.5;min-width:0;display:flex;flex-direction:column;gap:14px;">
           ${_renderWhoIsOut(whoIsOut, user.id)}
           ${_renderAnnouncements(announcements || [])}
         </div>
-        <div style="flex:1;min-width:0;">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px;">
           ${_renderBirthdays(allEmployees || [])}
           ${_renderAnniversaries(workAnniversaries || [])}
           ${_renderHolidays(holidays || [])}
@@ -326,7 +415,10 @@ const HomeModule = (() => {
     `
 
     const el = document.getElementById('home-content')
-    if (el) el.innerHTML = html
+    if (el) {
+      el.innerHTML = html
+      _bindInteractions()
+    }
   }
 
   return { render, init }

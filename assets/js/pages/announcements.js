@@ -464,3 +464,18 @@ const Announcements = (() => {
 
   return { render, init }
 })()
+
+ModuleRegistry.register({
+  key:       'announcements',
+  routeId:   'announcements',
+  label:     'Announcements',
+  order:     10,
+  icon:      `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"></path></svg>`,
+  getModule: () => Announcements,
+  features:  {
+    view_announcements:   'View Announcements',
+    react_announcements:  'React to Announcements',
+    post_announcement:    'Post Announcements (HR)',
+    manage_announcements: 'Manage All Announcements',
+  },
+})

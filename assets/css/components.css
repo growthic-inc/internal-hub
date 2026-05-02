@@ -3594,58 +3594,164 @@
    PHASE 8 — Home Dashboard
    ============================================================ */
 
-.home-greeting {
+/* Entry animation */
+@keyframes homeCardIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.home-fade-in { animation: homeCardIn 0.32s ease both; }
+
+/* ── Hero ──────────────────────────────────────────────────── */
+
+.home-hero {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--primary) 0%, #1a6fbf 60%, #0e8a8a 100%);
+  border-radius: var(--radius-lg);
+  padding: 28px 32px;
+  margin-bottom: 14px;
+}
+
+.home-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(255,255,255,0.14);
+  color: rgba(255,255,255,0.92);
+  text-decoration: none;
+  transition: background 0.15s, transform 0.15s;
+  white-space: nowrap;
+}
+.home-stat-pill:hover {
+  background: rgba(255,255,255,0.24);
+  transform: translateY(-1px);
+  color: #fff;
+}
+
+/* ── Timesheet nudge ───────────────────────────────────────── */
+
+.home-ts-nudge {
+  margin-bottom: 0;
+  transition: box-shadow 0.2s;
+}
+.home-ts-nudge:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.07); }
+
+/* ── Hover lift cards ──────────────────────────────────────── */
+
+.home-hover-card {
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  cursor: default;
+}
+.home-hover-card:hover {
+  box-shadow: 0 6px 24px rgba(0,0,0,0.08);
+  transform: translateY(-2px);
+}
+
+/* ── Person row (birthdays, anniversaries) ─────────────────── */
+
+.home-person-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.home-person-row:last-child { border-bottom: none; }
+
+/* ── Who's Out chip grid ───────────────────────────────────── */
+
+.home-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.home-person-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px 7px 8px;
+  border-radius: 100px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 24px 28px;
-  margin-bottom: 20px;
+  transition: box-shadow 0.15s, border-color 0.15s;
+  cursor: default;
+}
+.home-person-chip:hover {
+  border-color: var(--text-muted);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
-.home-stats-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-  margin-bottom: 20px;
-}
+/* ── Holidays ──────────────────────────────────────────────── */
 
-.home-stat-card {
+.home-holiday-row {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 20px 12px;
-  text-align: center;
+  justify-content: space-between;
+  padding: 11px 20px;
+  border-top: 1px solid var(--border-light);
+  transition: background 0.12s;
+}
+.home-holiday-row:hover { background: var(--surface); }
+
+/* ── Announcements ─────────────────────────────────────────── */
+
+.home-ann-item {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-light);
+  cursor: pointer;
+  transition: background 0.15s;
+  outline: none;
+}
+.home-ann-item:last-child { border-bottom: none; }
+.home-ann-item:hover { background: var(--surface); }
+.home-ann-item:focus-visible { box-shadow: inset 0 0 0 2px var(--primary); }
+
+.home-ann-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.home-stat-value {
-  font-size: 32px;
-  font-weight: 700;
+.home-ann-chevron {
+  font-size: 18px;
   line-height: 1;
-  margin-bottom: 6px;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+  display: inline-block;
+  font-style: normal;
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 
-.home-stat-label {
-  font-size: 12px;
-  color: var(--text-muted);
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.home-ann-body {
+  display: none;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-light);
+  animation: homeCardIn 0.2s ease both;
 }
+
+/* ── Layout ────────────────────────────────────────────────── */
 
 .home-content-row {
   display: flex;
-  gap: 16px;
+  gap: 14px;
   align-items: flex-start;
 }
 
 @media (max-width: 900px) {
-  .home-stats-row    { grid-template-columns: 1fr 1fr; }
-  .home-content-row  { flex-direction: column; }
+  .home-content-row { flex-direction: column; }
+  .home-hero { padding: 22px 20px; }
 }
 
 @media (max-width: 600px) {
-  .home-stats-row { grid-template-columns: 1fr 1fr; }
+  .home-stat-pill { font-size: 11px; padding: 5px 10px; }
 }
 
 /* ============================================================
