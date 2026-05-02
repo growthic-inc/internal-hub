@@ -1028,83 +1028,45 @@ const ClientDirectory = (() => {
     const el = document.getElementById('cd-content')
     if (!el) return
 
-    // Sort clients: active first, then alphabetically
-    const sorted = [..._clients].sort((a, b) => {
-      if (a.status === 'active' && b.status !== 'active') return -1
-      if (b.status === 'active' && a.status !== 'active') return 1
-      return a.client_name.localeCompare(b.client_name)
-    })
+    const activeClients   = [..._clients].filter(c => c.status === 'active').sort((a, b) => a.client_name.localeCompare(b.client_name))
+    const inactiveClients = [..._clients].filter(c => c.status !== 'active').sort((a, b) => a.client_name.localeCompare(b.client_name))
+    const activeInt       = _internalProjects.filter(p => p.status === 'active')
+    const inactiveInt     = _internalProjects.filter(p => p.status !== 'active')
 
-    const activeInt   = _internalProjects.filter(p => p.status === 'active')
-    const inactiveInt = _internalProjects.filter(p => p.status !== 'active')
+    const activeRows   = [
+      ...activeClients.map(c => _pcRow(c, true, false)),
+      ...activeInt.map(p => _pcRow(p, false, false)),
+    ]
+    const inactiveRows = [
+      ...inactiveClients.map(c => _pcRow(c, true, true)),
+      ...inactiveInt.map(p => _pcRow(p, false, true)),
+    ]
 
     el.className = ''
     el.innerHTML = `
-      <!-- ── Client Projects ─────────────────────────────── -->
-      <div class="pc-section mb-4">
-        <div class="pc-section-header">
-          <div>
-            <h3 class="pc-section-title">Client Projects</h3>
-            <p class="pc-section-sub">${sorted.length} client${sorted.length !== 1 ? 's' : ''} · codes and tiers are set in the Client Directory</p>
-          </div>
-        </div>
-        <div class="section-card" style="overflow-x:auto;">
-          <table class="data-table pc-table">
-            <thead>
-              <tr>
-                <th style="min-width:200px;">Client Name</th>
-                <th style="min-width:90px;">Code</th>
-                <th style="min-width:80px;">Tier</th>
-                <th style="min-width:180px;">Entities / Contacts</th>
-                <th>Description</th>
-                <th style="width:52px;"></th>
-              </tr>
-            </thead>
-            <tbody>
-              ${sorted.length
-                ? sorted.map(c => _clientProjectRow(c)).join('')
-                : '<tr><td colspan="6" class="pc-empty">No clients yet.</td></tr>'}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- ── Internal Projects ───────────────────────────── -->
-      <div class="pc-section">
-        <div class="pc-section-header">
-          <div>
-            <h3 class="pc-section-title">Internal Projects</h3>
-            <p class="pc-section-sub">Growthic's brands, sister companies, and departmental work areas</p>
-          </div>
-        </div>
-        <div class="section-card" style="overflow-x:auto;">
-          <table class="data-table pc-table">
-            <thead>
-              <tr>
-                <th style="min-width:200px;">Project Name</th>
-                <th style="min-width:100px;">Code</th>
-                <th style="min-width:220px;">Work Areas</th>
-                <th>Description</th>
-                <th style="width:80px;"></th>
-              </tr>
-            </thead>
-            <tbody>
-              ${activeInt.length
-                ? activeInt.map(p => _internalProjectRow(p, false)).join('')
-                : '<tr><td colspan="5" class="pc-empty">No internal projects yet.</td></tr>'}
-              ${inactiveInt.length ? `
-                <tr class="pc-inactive-divider">
-                  <td colspan="5">Inactive</td>
-                </tr>
-                ${inactiveInt.map(p => _internalProjectRow(p, true)).join('')}
-              ` : ''}
-            </tbody>
-          </table>
-        </div>
+      <div class="section-card" style="overflow-x:auto;">
+        <table class="data-table pc-table">
+          <thead>
+            <tr>
+              <th style="min-width:200px;">Client Name / Project Name</th>
+              <th style="min-width:100px;">Project Code</th>
+              <th style="min-width:220px;">Entity Name</th>
+              <th>Description</th>
+              <th style="min-width:80px;">Category</th>
+              <th style="width:80px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${activeRows.length ? activeRows.join('') : '<tr><td colspan="6" class="pc-empty">No project codes yet.</td></tr>'}
+            ${inactiveRows.length ? `
+              <tr class="pc-inactive-divider"><td colspan="6">Inactive</td></tr>
+              ${inactiveRows.join('')}
+            ` : ''}
+          </tbody>
+        </table>
       </div>
     `
 
-    // ── Bind edit buttons ──────────────────────────────────
     el.querySelectorAll('.pc-edit-client').forEach(btn =>
       btn.addEventListener('click', () => {
         const c = _clients.find(x => x.id === btn.dataset.id)
@@ -1130,51 +1092,45 @@ const ClientDirectory = (() => {
     )
   }
 
-  function _clientProjectRow(c) {
-    const cat      = _cap(c.category || '')
-    const entities = c.client_entities || []
-    const inactive = c.status !== 'active'
+  function _pcRow(item, isClient, isInactive) {
+    const SVG_EDIT   = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`
+    const SVG_CHECK  = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
+    const SVG_CROSS  = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
 
-    return `
-      <tr class="${inactive ? 'pc-row--inactive' : ''}">
-        <td>
-          <div class="pc-row-name">${Utils.escapeHtml(c.client_name)}</div>
-          ${inactive ? `<span class="badge badge--muted" style="font-size:10px;margin-top:3px;">${c.status}</span>` : ''}
-        </td>
-        <td><code class="pc-code">${Utils.escapeHtml(c.project_code)}</code></td>
-        <td>
-          ${cat
-            ? `<span class="badge ${CAT_BADGE[cat] || 'badge--muted'}">${cat}</span>`
-            : '<span style="color:var(--text-muted);">—</span>'}
-        </td>
-        <td>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;">
-            ${entities.length
-              ? entities.map(e => `<span class="badge badge--outline" style="font-size:11px;">${Utils.escapeHtml(e.entity_name)}</span>`).join('')
-              : '<span style="color:var(--text-muted);font-size:12px;">—</span>'}
-          </div>
-        </td>
-        <td class="pc-desc-cell">
-          ${c.project_description
-            ? Utils.escapeHtml(c.project_description)
-            : '<span class="pc-desc-empty">No description set</span>'}
-        </td>
-        <td>
-          ${_pcPerms?.can_edit ? `
-            <button class="btn-icon-sm pc-edit-client" data-id="${c.id}" title="Edit description">
-              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            </button>` : ''}
-        </td>
-      </tr>`
-  }
+    let name, code, entities, desc, cat, actions
 
-  function _internalProjectRow(p, isInactive) {
-    const entities = [...(p.internal_project_entities || [])].sort((a, b) => a.sort_order - b.sort_order)
+    if (isClient) {
+      name     = item.client_name
+      code     = item.project_code
+      entities = item.client_entities || []
+      desc     = item.project_description
+      cat      = _cap(item.category || '')
+      actions  = _pcPerms?.can_edit
+        ? `<button class="btn-icon-sm pc-edit-client" data-id="${item.id}" title="Edit description">${SVG_EDIT}</button>`
+        : ''
+    } else {
+      name     = item.name
+      code     = item.project_code
+      entities = [...(item.internal_project_entities || [])].sort((a, b) => a.sort_order - b.sort_order)
+      desc     = item.description
+      cat      = ''
+      actions  = [
+        _pcPerms?.can_edit    ? `<button class="btn-icon-sm pc-edit-internal" data-id="${item.id}" title="Edit">${SVG_EDIT}</button>` : '',
+        _pcPerms?.can_manage  ? `<button class="btn-icon-sm pc-toggle-internal" data-id="${item.id}"
+                                         title="${isInactive ? 'Activate' : 'Deactivate'}"
+                                         style="color:${isInactive ? 'var(--success)' : 'var(--danger)'};">
+                                   ${isInactive ? SVG_CHECK : SVG_CROSS}
+                                 </button>` : '',
+      ].join('')
+    }
 
     return `
       <tr class="${isInactive ? 'pc-row--inactive' : ''}">
-        <td><div class="pc-row-name">${Utils.escapeHtml(p.name)}</div></td>
-        <td><code class="pc-code">${Utils.escapeHtml(p.project_code)}</code></td>
+        <td>
+          <div class="pc-row-name">${Utils.escapeHtml(name)}</div>
+          ${isClient && isInactive ? `<span class="badge badge--muted" style="font-size:10px;margin-top:3px;">${item.status}</span>` : ''}
+        </td>
+        <td><code class="pc-code">${Utils.escapeHtml(code)}</code></td>
         <td>
           <div style="display:flex;flex-wrap:wrap;gap:4px;">
             ${entities.length
@@ -1183,26 +1139,12 @@ const ClientDirectory = (() => {
           </div>
         </td>
         <td class="pc-desc-cell">
-          ${p.description
-            ? Utils.escapeHtml(p.description)
-            : '<span class="pc-desc-empty">No description set</span>'}
+          ${desc ? Utils.escapeHtml(desc) : '<span class="pc-desc-empty">No description set</span>'}
         </td>
         <td>
-          <div style="display:flex;gap:4px;justify-content:flex-end;align-items:center;">
-            ${_pcPerms?.can_edit ? `
-              <button class="btn-icon-sm pc-edit-internal" data-id="${p.id}" title="Edit">
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              </button>` : ''}
-            ${_pcPerms?.can_manage ? `
-              <button class="btn-icon-sm pc-toggle-internal" data-id="${p.id}"
-                      title="${isInactive ? 'Activate' : 'Deactivate'}"
-                      style="color:${isInactive ? 'var(--success)' : 'var(--danger)'};">
-                ${isInactive
-                  ? '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
-                  : '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'}
-              </button>` : ''}
-          </div>
+          ${cat ? `<span class="badge ${CAT_BADGE[cat] || 'badge--muted'}">${cat}</span>` : '<span style="color:var(--text-muted);">—</span>'}
         </td>
+        <td><div style="display:flex;gap:4px;justify-content:flex-end;align-items:center;">${actions}</div></td>
       </tr>`
   }
 
