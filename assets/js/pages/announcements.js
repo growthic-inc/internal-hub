@@ -224,23 +224,55 @@ const Announcements = (() => {
   }
 
   /* ── Lightbox ───────────────────────────────────────────────── */
-  function _openLightbox(src) {
+  function _openLightbox(urls, startIdx) {
+    let current = startIdx || 0
+    const total  = urls.length
+
+    const ARROW_PREV = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`
+    const ARROW_NEXT = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`
+
     const overlay = document.createElement('div')
     overlay.className = 'ann-lightbox'
     overlay.innerHTML = `
       <div class="ann-lightbox-backdrop"></div>
-      <img src="${Utils.escapeHtml(src)}" class="ann-lightbox-img" alt="">
+      <button class="ann-lightbox-nav ann-lightbox-prev" aria-label="Previous">${ARROW_PREV}</button>
+      <div class="ann-lightbox-content">
+        <img src="" class="ann-lightbox-img" alt="">
+        <div class="ann-lightbox-counter"></div>
+      </div>
+      <button class="ann-lightbox-nav ann-lightbox-next" aria-label="Next">${ARROW_NEXT}</button>
       <button class="ann-lightbox-close" aria-label="Close">
         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>`
     document.body.appendChild(overlay)
 
-    const close = () => { overlay.classList.add('ann-lightbox--out'); setTimeout(() => overlay.remove(), 200) }
+    const imgEl     = overlay.querySelector('.ann-lightbox-img')
+    const counter   = overlay.querySelector('.ann-lightbox-counter')
+    const btnPrev   = overlay.querySelector('.ann-lightbox-prev')
+    const btnNext   = overlay.querySelector('.ann-lightbox-next')
+
+    function show(idx) {
+      current = (idx + total) % total
+      imgEl.src = urls[current]
+      counter.textContent = total > 1 ? `${current + 1} / ${total}` : ''
+      btnPrev.style.display = total > 1 ? '' : 'none'
+      btnNext.style.display = total > 1 ? '' : 'none'
+    }
+
+    const close = () => { overlay.classList.add('ann-lightbox--out'); setTimeout(() => overlay.remove(), 200); document.removeEventListener('keydown', onKey) }
+    const onKey = e => {
+      if (e.key === 'Escape')       close()
+      if (e.key === 'ArrowLeft')    show(current - 1)
+      if (e.key === 'ArrowRight')   show(current + 1)
+    }
+
     overlay.querySelector('.ann-lightbox-backdrop').addEventListener('click', close)
     overlay.querySelector('.ann-lightbox-close').addEventListener('click', close)
-    const onKey = e => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey) } }
+    btnPrev.addEventListener('click', () => show(current - 1))
+    btnNext.addEventListener('click', () => show(current + 1))
     document.addEventListener('keydown', onKey)
 
+    show(current)
     requestAnimationFrame(() => overlay.classList.add('ann-lightbox--in'))
   }
 
@@ -249,9 +281,13 @@ const Announcements = (() => {
     const feed = document.getElementById('ann-feed')
     if (!feed) return
 
-    // Image lightbox
-    feed.querySelectorAll('.ann-image-thumb').forEach(img => {
-      img.addEventListener('click', () => _openLightbox(img.src))
+    // Image lightbox — group by post
+    feed.querySelectorAll('.ann-image-grid').forEach(grid => {
+      const imgs = [...grid.querySelectorAll('.ann-image-thumb')]
+      const urls = imgs.map(i => i.src)
+      imgs.forEach((img, idx) => {
+        img.addEventListener('click', () => _openLightbox(urls, idx))
+      })
     })
 
     // Reaction pills — bounce on click

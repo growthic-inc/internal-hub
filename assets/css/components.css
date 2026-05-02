@@ -3681,14 +3681,45 @@
   background: rgba(0,0,0,0.82);
   backdrop-filter: blur(6px);
 }
-.ann-lightbox-img {
+.ann-lightbox-content {
   position: relative;
-  max-width: min(90vw, 1100px);
-  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.ann-lightbox-img {
+  max-width: min(80vw, 1000px);
+  max-height: 84vh;
   object-fit: contain;
   border-radius: var(--radius-lg);
   box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+  display: block;
 }
+.ann-lightbox-counter {
+  color: rgba(255,255,255,0.7);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  min-height: 18px;
+}
+.ann-lightbox-nav {
+  position: relative;
+  z-index: 1;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+  flex-shrink: 0;
+}
+.ann-lightbox-nav:hover { background: rgba(255,255,255,0.28); transform: scale(1.08); }
 .ann-lightbox-close {
   position: absolute;
   top: 20px;
