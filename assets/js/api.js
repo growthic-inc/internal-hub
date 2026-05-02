@@ -1123,6 +1123,65 @@ const API = (() => {
     return supabase.from('policy_categories').delete().eq('id', id)
   }
 
+  // ── Project Codes — Internal Projects ────────────────────────
+  async function getInternalProjects() {
+    const { data, error } = await Config.supabase
+      .from('internal_projects')
+      .select('*, internal_project_entities(id, entity_name, sort_order)')
+      .order('sort_order', { ascending: true })
+    return { data, error }
+  }
+
+  async function createInternalProject({ name, project_code, description, entities = [] }) {
+    const { data: { session } } = await Config.supabase.auth.getSession()
+    const userId = session?.user?.id
+    const { data, error } = await Config.supabase
+      .from('internal_projects')
+      .insert({ name, project_code: project_code.toUpperCase(), description: description || null, created_by: userId })
+      .select('id')
+      .single()
+    if (error || !data) return { data: null, error: error || new Error('Insert failed') }
+    if (entities.length) {
+      await Config.supabase.from('internal_project_entities').insert(
+        entities.map((e, i) => ({ internal_project_id: data.id, entity_name: e, sort_order: i + 1 }))
+      )
+    }
+    return { data, error: null }
+  }
+
+  async function updateInternalProject(id, { name, project_code, description, entities }) {
+    const updates = { updated_at: new Date().toISOString() }
+    if (name         !== undefined) updates.name         = name
+    if (project_code !== undefined) updates.project_code = project_code.toUpperCase()
+    if (description  !== undefined) updates.description  = description || null
+    const { error } = await Config.supabase.from('internal_projects').update(updates).eq('id', id)
+    if (!error && entities !== undefined) {
+      await Config.supabase.from('internal_project_entities').delete().eq('internal_project_id', id)
+      if (entities.length) {
+        await Config.supabase.from('internal_project_entities').insert(
+          entities.map((e, i) => ({ internal_project_id: id, entity_name: e, sort_order: i + 1 }))
+        )
+      }
+    }
+    return { error }
+  }
+
+  async function setInternalProjectStatus(id, status) {
+    const { error } = await Config.supabase
+      .from('internal_projects')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', id)
+    return { error }
+  }
+
+  async function updateClientProjectDescription(clientId, description) {
+    const { error } = await Config.supabase
+      .from('clients')
+      .update({ project_description: description || null })
+      .eq('id', clientId)
+    return { error }
+  }
+
   /* ── Policies (Phase 7) ───────────────────────────────────── */
   async function getPolicies(categoryId = null) {
     let q = supabase
@@ -1197,5 +1256,6 @@ const API = (() => {
     getAnnouncementReactions, addReaction, removeReaction,
     getPolicyCategories, addPolicyCategory, deletePolicyCategory,
     getPolicies, createPolicy, updatePolicy, deletePolicy,
+    getInternalProjects, createInternalProject, updateInternalProject, setInternalProjectStatus, updateClientProjectDescription,
   }
 })()
