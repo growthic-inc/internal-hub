@@ -1156,9 +1156,39 @@ const API = (() => {
   async function createInternalProject({ name, project_code, category, description, entities = [] }) {
     const { data: { session } } = await Config.supabase.auth.getSession()
     const userId = session?.user?.id
+    const code = project_code.toUpperCase()
+
+    // Check if an inactive project with this code already exists — reactivate it
+    const { data: existing } = await Config.supabase
+      .from('internal_projects')
+      .select('id, status')
+      .eq('project_code', code)
+      .single()
+
+    if (existing) {
+      if (existing.status === 'inactive') {
+        // Reactivate and update with new details
+        const { error } = await Config.supabase
+          .from('internal_projects')
+          .update({ name, category: category || 'internal', description: description || null, status: 'active', updated_at: new Date().toISOString() })
+          .eq('id', existing.id)
+        if (error) return { data: null, error }
+        // Replace entities
+        await Config.supabase.from('internal_project_entities').delete().eq('internal_project_id', existing.id)
+        if (entities.length) {
+          await Config.supabase.from('internal_project_entities').insert(
+            entities.map((e, i) => ({ internal_project_id: existing.id, entity_name: e, sort_order: i + 1 }))
+          )
+        }
+        return { data: { id: existing.id }, error: null, reactivated: true }
+      }
+      // Active project with this code already exists
+      return { data: null, error: new Error(`Project code "${code}" is already in use by an active project.`) }
+    }
+
     const { data, error } = await Config.supabase
       .from('internal_projects')
-      .insert({ name, project_code: project_code.toUpperCase(), category: category || 'internal', description: description || null, created_by: userId })
+      .insert({ name, project_code: code, category: category || 'internal', description: description || null, created_by: userId })
       .select('id')
       .single()
     if (error || !data) return { data: null, error: error || new Error('Insert failed') }
@@ -1200,6 +1230,12 @@ const API = (() => {
     if (project_description !== undefined) updates.project_description = project_description || null
     if (category            !== undefined) updates.category            = category || null
     return Config.supabase.from('clients').update(updates).eq('id', clientId)
+  }
+
+  // Sets clients.status (active / inactive / paused / archived) — distinct from
+  // updateClientStatus which manages the CRM health field.
+  async function setClientStatus(clientId, status) {
+    return Config.supabase.from('clients').update({ status }).eq('id', clientId)
   }
 
   return {
@@ -1254,6 +1290,6 @@ const API = (() => {
     getAnnouncementReactions, addReaction, removeReaction,
     getPolicyCategories, addPolicyCategory, deletePolicyCategory,
     getPolicies, createPolicy, updatePolicy, deletePolicy,
-    getInternalProjects, createInternalProject, updateInternalProject, setInternalProjectStatus, updateClientProjectDetails,
+    getInternalProjects, createInternalProject, updateInternalProject, setInternalProjectStatus, updateClientProjectDetails, setClientStatus,
   }
 })()

@@ -456,8 +456,11 @@ const ClientDirectory = (() => {
 
       ${canEdit ? `
       <div class="divider"></div>
-      <div class="cd-drawer-section">
-        <button class="btn btn-secondary btn-sm" id="cdd-edit-btn">Edit Client</button>
+      <div class="cd-drawer-section" style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn--secondary btn--sm" id="cdd-edit-btn">Edit Client</button>
+        <button class="btn btn--sm ${c.status === 'inactive' ? 'btn--success' : 'btn--danger'}" id="cdd-status-btn">
+          ${c.status === 'inactive' ? 'Reactivate' : 'Deactivate'}
+        </button>
       </div>` : ''}
     `
 
@@ -478,6 +481,29 @@ const ClientDirectory = (() => {
       document.getElementById('cdd-edit-btn')?.addEventListener('click', () => {
         Utils.closeDrawer()
         _openForm(c)
+      })
+
+      /* Deactivate / Reactivate button */
+      document.getElementById('cdd-status-btn')?.addEventListener('click', async () => {
+        const btn = document.getElementById('cdd-status-btn')
+        const isInactive = c.status === 'inactive'
+        const nextStatus = isInactive ? 'active' : 'inactive'
+        const label      = isInactive ? 'Reactivating…' : 'Deactivating…'
+
+        btn.disabled = true; btn.textContent = label
+        const { error } = await API.setClientStatus(c.id, nextStatus)
+        if (error) {
+          Utils.showToast('Failed to update client status', 'error')
+          btn.disabled = false; btn.textContent = isInactive ? 'Reactivate' : 'Deactivate'
+          return
+        }
+
+        Utils.closeDrawer()
+        Utils.showToast(
+          isInactive ? `${c.client_name} reactivated` : `${c.client_name} deactivated`,
+          isInactive ? 'success' : 'info'
+        )
+        await _loadClients()
       })
     }
   }
@@ -1339,23 +1365,23 @@ const ClientDirectory = (() => {
 
       btn.disabled = true; btn.textContent = isEdit ? 'Saving…' : 'Creating…'
 
-      const { error } = isEdit
+      const result = isEdit
         ? await API.updateInternalProject(project.id, { name, project_code: code, category: cat, description: desc, entities: ents })
         : await API.createInternalProject({ name, project_code: code, category: cat, description: desc, entities: ents })
 
       btn.disabled = false; btn.textContent = isEdit ? 'Save Changes' : 'Create Project'
 
-      if (error) {
-        const msg = error.message || ''
-        errEl.textContent = (msg.includes('unique') || msg.includes('duplicate'))
-          ? `Project code "${code}" is already in use.`
-          : (msg || 'Something went wrong. Please try again.')
+      if (result.error) {
+        errEl.textContent = result.error.message || 'Something went wrong. Please try again.'
         errEl.style.display = 'block'
         return
       }
 
       Utils.closeModal()
-      Utils.showToast(`Project ${isEdit ? 'updated' : 'created'} successfully`, 'success')
+      Utils.showToast(
+        result.reactivated ? 'Project reactivated successfully' : `Project ${isEdit ? 'updated' : 'created'} successfully`,
+        'success'
+      )
       await _loadProjectCodes()
     })
   }
