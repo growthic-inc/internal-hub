@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset Password — Growthic One</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <link rel="stylesheet" href="../assets/css/components.css">
+</head>
+<body class="auth-body">
+
+  <div class="auth-container">
+
+    <div class="auth-brand">
+      <img class="auth-brand-mark" src="../assets/img/logo.jpg" alt="Growthic One">
+      <div>
+        <div class="auth-brand-name">Growthic One</div>
+        <div class="auth-brand-sub">Internal Operations Hub</div>
+      </div>
+    </div>
+
+    <!-- INVALID / EXPIRED LINK -->
+    <div class="auth-card" id="card-invalid" style="display:none;">
+      <div style="text-align:center;">
+        <div style="width:52px;height:52px;background:#fef2f2;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <h1 class="auth-title" style="margin-bottom:8px;">Link expired or invalid</h1>
+        <p class="auth-subtitle" style="margin-bottom:20px;">This reset link has expired or already been used. Request a new one.</p>
+        <a href="/forgot-password" class="btn btn-primary btn-full" style="text-decoration:none;text-align:center;">Request new link</a>
+      </div>
+    </div>
+
+    <!-- RESET FORM -->
+    <div class="auth-card" id="card-reset" style="display:none;">
+      <h1 class="auth-title">Set a new password</h1>
+      <p class="auth-subtitle">Choose a strong password — at least 8 characters.</p>
+
+      <div id="rp-error" class="alert alert-danger" style="display:none;"></div>
+
+      <form id="rp-form" novalidate>
+        <div class="form-group">
+          <label class="form-label" for="rp-password">New password</label>
+          <div class="input-wrapper">
+            <input class="form-input" type="password" id="rp-password" placeholder="At least 8 characters" autocomplete="new-password" required>
+            <button type="button" class="input-suffix" id="rp-toggle-pw" title="Show password">
+              <svg id="rp-eye" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg id="rp-eye-off" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:20px;">
+          <label class="form-label" for="rp-confirm">Confirm new password</label>
+          <input class="form-input" type="password" id="rp-confirm" placeholder="Re-enter your password" autocomplete="new-password" required>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-full btn-lg" id="rp-btn">Reset Password</button>
+      </form>
+    </div>
+
+    <!-- SUCCESS STATE -->
+    <div class="auth-card" id="card-success" style="display:none;">
+      <div style="text-align:center;">
+        <div style="width:52px;height:52px;background:#f0fdf4;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <h1 class="auth-title" style="margin-bottom:8px;">Password updated</h1>
+        <p class="auth-subtitle" style="margin-bottom:20px;">Your password has been reset successfully. Signing you in…</p>
+        <a href="/" class="btn btn-secondary btn-full" style="text-decoration:none;text-align:center;">Go to Sign In</a>
+      </div>
+    </div>
+
+    <p class="auth-footer">Growthic (Apinzo Technologies) &middot; Internal use only</p>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="../assets/js/config.js"></script>
+  <script src="../assets/js/auth.js"></script>
+  <script>
+    const cardInvalid  = document.getElementById('card-invalid')
+    const cardReset    = document.getElementById('card-reset')
+    const cardSuccess  = document.getElementById('card-success')
+    const errEl        = document.getElementById('rp-error')
+    const btn          = document.getElementById('rp-btn')
+
+    // Supabase emits PASSWORD_RECOVERY event when a valid recovery token is in the URL hash.
+    // We wait for that event before showing the reset form.
+    Config.supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        // Valid recovery session — show the reset form
+        cardReset.style.display = 'block'
+      } else if (event === 'SIGNED_IN' && cardSuccess.style.display !== 'block') {
+        // Already signed in and not in recovery — send to app
+        window.location.href = '/home'
+      }
+    })
+
+    // If no hash at all or wrong type, show invalid card after a short delay
+    // (give Supabase time to process the hash first)
+    setTimeout(() => {
+      const hashParams = new URLSearchParams(window.location.hash.slice(1))
+      const type       = hashParams.get('type')
+      if (cardReset.style.display !== 'block' && cardSuccess.style.display !== 'block') {
+        if (type !== 'recovery') {
+          cardInvalid.style.display = 'block'
+        }
+      }
+    }, 800)
+
+    // Toggle password visibility
+    document.getElementById('rp-toggle-pw').addEventListener('click', () => {
+      const input  = document.getElementById('rp-password')
+      const eye    = document.getElementById('rp-eye')
+      const eyeOff = document.getElementById('rp-eye-off')
+      const show   = input.type === 'text'
+      input.type        = show ? 'password' : 'text'
+      eye.style.display    = show ? 'block' : 'none'
+      eyeOff.style.display = show ? 'none'  : 'block'
+    })
+
+    document.getElementById('rp-form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      errEl.style.display = 'none'
+
+      const pw      = document.getElementById('rp-password').value
+      const confirm = document.getElementById('rp-confirm').value
+
+      if (pw.length < 8) {
+        errEl.textContent   = 'Password must be at least 8 characters.'
+        errEl.style.display = 'block'
+        return
+      }
+      if (pw !== confirm) {
+        errEl.textContent   = 'Passwords do not match.'
+        errEl.style.display = 'block'
+        return
+      }
+
+      btn.disabled    = true
+      btn.textContent = 'Updating…'
+
+      const { error } = await Config.supabase.auth.updateUser({ password: pw })
+
+      if (error) {
+        errEl.textContent   = error.message || 'Failed to reset password. The link may have expired.'
+        errEl.style.display = 'block'
+        btn.disabled    = false
+        btn.textContent = 'Reset Password'
+        return
+      }
+
+      cardReset.style.display   = 'none'
+      cardSuccess.style.display = 'block'
+      // Auto sign out then redirect — user should log in fresh with new password
+      setTimeout(async () => {
+        await Config.supabase.auth.signOut()
+        window.location.href = '/'
+      }, 2000)
+    })
+  </script>
+</body>
+</html>

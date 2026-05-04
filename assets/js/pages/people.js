@@ -19,11 +19,8 @@ const People = (() => {
   ]
 
   const EMP_TYPES = [
-    { value: 'full_time',  label: 'Full Time' },
-    { value: 'part_time',  label: 'Part Time' },
-    { value: 'freelancer', label: 'Freelancer' },
-    { value: 'intern',     label: 'Intern' },
-    { value: 'probation',  label: 'Probation' },
+    { value: 'full_time', label: 'Full Time' },
+    { value: 'intern',    label: 'Intern' },
   ]
 
   const WORK_LOCATIONS = [
@@ -935,13 +932,15 @@ const People = (() => {
           <h3>Add New Employee</h3>
         </div>
         <div class="section-card-body" style="max-width:680px;">
-          <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">
-            Create the employee account directly. Set a temporary password they can change after first login.
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px;line-height:1.6;">
+            Create the employee's account. They'll receive login credentials and be prompted to complete their profile on first sign-in.
           </p>
 
           <div id="ppl-inv-err" class="alert alert--danger" style="display:none;"></div>
           <div id="ppl-inv-success" class="alert alert--success" style="display:none;"></div>
 
+          <!-- Account credentials -->
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:12px;">Account</div>
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Full Name <span class="required">*</span></label>
@@ -949,48 +948,27 @@ const People = (() => {
             </div>
             <div class="form-group">
               <label class="form-label">Work Email <span class="required">*</span></label>
-              <input class="form-input" type="email" id="ppl-inv-email"
-                placeholder="name@thegrowthic.com">
+              <input class="form-input" type="email" id="ppl-inv-email" placeholder="name@thegrowthic.com">
             </div>
           </div>
-
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Temporary Password <span class="required">*</span></label>
-              <input class="form-input" type="password" id="ppl-inv-password"
-                placeholder="Min. 8 characters">
+              <input class="form-input" type="password" id="ppl-inv-password" placeholder="Min. 8 characters">
             </div>
             <div class="form-group">
               <label class="form-label">Confirm Password <span class="required">*</span></label>
-              <input class="form-input" type="password" id="ppl-inv-confirm-password"
-                placeholder="Min. 8 characters">
+              <input class="form-input" type="password" id="ppl-inv-confirm-password" placeholder="Min. 8 characters">
             </div>
           </div>
 
+          <!-- Role & organisation -->
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin:20px 0 12px;">Role & Organisation</div>
           <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Personal Email</label>
-              <input class="form-input" type="email" id="ppl-inv-personal-email"
-                placeholder="personal@email.com">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Phone</label>
-              <input class="form-input" id="ppl-inv-phone" placeholder="+91 98765 43210">
-            </div>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Date of Birth</label>
-              <input class="form-input" type="date" id="ppl-inv-dob">
-            </div>
             <div class="form-group">
               <label class="form-label">Designation <span class="required">*</span></label>
               <input class="form-input" id="ppl-inv-designation" placeholder="e.g. Content Strategist">
             </div>
-          </div>
-
-          <div class="form-row">
             <div class="form-group">
               <label class="form-label">Department <span class="required">*</span></label>
               <select class="form-select" id="ppl-inv-dept">
@@ -998,22 +976,27 @@ const People = (() => {
                 ${deptOptions}
               </select>
             </div>
+          </div>
+          <div class="form-row">
             <div class="form-group">
-              <label class="form-label">Role <span class="required">*</span></label>
-              <select class="form-select" id="ppl-inv-role">
-                <option value="">— Select role —</option>
-                ${roleOptions}
+              <label class="form-label">Reporting Manager <span class="required">*</span></label>
+              <select class="form-select" id="ppl-inv-manager">
+                <option value="">— None —</option>
+                ${mgrOptions}
               </select>
             </div>
-          </div>
-
-          <div class="form-row">
             <div class="form-group">
               <label class="form-label">Employment Type <span class="required">*</span></label>
               <select class="form-select" id="ppl-inv-emp-type">
                 <option value="">— Select —</option>
                 ${empTypeOptions}
               </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Joining Date <span class="required">*</span></label>
+              <input class="form-input" type="date" id="ppl-inv-joining">
             </div>
             <div class="form-group">
               <label class="form-label">Work Location <span class="required">*</span></label>
@@ -1024,41 +1007,7 @@ const People = (() => {
             </div>
           </div>
 
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Joining Date <span class="required">*</span></label>
-              <input class="form-input" type="date" id="ppl-inv-joining">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Reporting Manager</label>
-              <select class="form-select" id="ppl-inv-manager">
-                <option value="">— None —</option>
-                ${mgrOptions}
-              </select>
-            </div>
-          </div>
-
-          <!-- Emergency Contact -->
-          <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
-            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;
-              color:var(--text-muted);margin-bottom:12px;">Emergency Contact</div>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Name</label>
-                <input class="form-input" id="ppl-inv-ec-name" placeholder="Contact name">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Relationship</label>
-                <input class="form-input" id="ppl-inv-ec-rel" placeholder="e.g. Spouse">
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Phone</label>
-              <input class="form-input" id="ppl-inv-ec-phone" placeholder="+91 98765 43210">
-            </div>
-          </div>
-
-          <div style="margin-top:20px;">
+          <div style="margin-top:24px;">
             <button class="btn btn--primary" id="ppl-inv-submit">Add Employee</button>
           </div>
         </div>
@@ -1082,17 +1031,10 @@ const People = (() => {
     const confirmPassword = document.getElementById('ppl-inv-confirm-password')?.value
     const designation     = document.getElementById('ppl-inv-designation')?.value.trim()
     const department      = document.getElementById('ppl-inv-dept')?.value
-    const role            = document.getElementById('ppl-inv-role')?.value
     const employment_type = document.getElementById('ppl-inv-emp-type')?.value
     const work_location   = document.getElementById('ppl-inv-location')?.value
     const joining_date    = document.getElementById('ppl-inv-joining')?.value
-    const manager_id      = document.getElementById('ppl-inv-manager')?.value               || null
-    const personal_email  = document.getElementById('ppl-inv-personal-email')?.value.trim() || null
-    const phone_number    = document.getElementById('ppl-inv-phone')?.value.trim()          || null
-    const date_of_birth   = document.getElementById('ppl-inv-dob')?.value                   || null
-    const emergency_contact_name         = document.getElementById('ppl-inv-ec-name')?.value.trim()  || null
-    const emergency_contact_relationship = document.getElementById('ppl-inv-ec-rel')?.value.trim()   || null
-    const emergency_contact_phone        = document.getElementById('ppl-inv-ec-phone')?.value.trim() || null
+    const manager_id      = document.getElementById('ppl-inv-manager')?.value || null
 
     const missing = []
     if (!name)            missing.push('Full Name')
@@ -1100,13 +1042,12 @@ const People = (() => {
     if (!password)        missing.push('Temporary Password')
     if (!designation)     missing.push('Designation')
     if (!department)      missing.push('Department')
-    if (!role)            missing.push('Role')
     if (!employment_type) missing.push('Employment Type')
     if (!work_location)   missing.push('Work Location')
     if (!joining_date)    missing.push('Joining Date')
 
     if (missing.length) {
-      errEl.textContent   = `Please fill in required fields: ${missing.join(', ')}.`
+      errEl.textContent   = `Please fill in: ${missing.join(', ')}.`
       errEl.style.display = 'block'
       return
     }
@@ -1132,17 +1073,11 @@ const People = (() => {
       password,
       designation,
       department,
-      role,
+      role: 'employee',   // always employee — role changes are SQL-only
       employment_type,
       work_location,
       joining_date,
       manager_id,
-      personal_email,
-      phone_number,
-      date_of_birth,
-      emergency_contact_name,
-      emergency_contact_relationship,
-      emergency_contact_phone,
     })
 
     submitBtn.disabled    = false
@@ -1154,24 +1089,20 @@ const People = (() => {
       return
     }
 
-    successEl.textContent   = 'Employee added successfully. They can now log in with the provided password.'
+    successEl.textContent   = `${name} has been added. Share their login credentials and ask them to sign in and complete their profile.`
     successEl.style.display = 'block'
 
-    // Reset form
-    ;[
-      'ppl-inv-name', 'ppl-inv-email', 'ppl-inv-password', 'ppl-inv-confirm-password',
-      'ppl-inv-personal-email', 'ppl-inv-phone', 'ppl-inv-dob', 'ppl-inv-designation',
-      'ppl-inv-joining', 'ppl-inv-ec-name', 'ppl-inv-ec-rel', 'ppl-inv-ec-phone',
-    ].forEach(id => {
+    // Reset form fields
+    ;['ppl-inv-name', 'ppl-inv-email', 'ppl-inv-password', 'ppl-inv-confirm-password', 'ppl-inv-designation', 'ppl-inv-joining'].forEach(id => {
       const el = document.getElementById(id)
       if (el) el.value = ''
     })
-    ;['ppl-inv-dept', 'ppl-inv-role', 'ppl-inv-emp-type', 'ppl-inv-location', 'ppl-inv-manager'].forEach(id => {
+    ;['ppl-inv-dept', 'ppl-inv-emp-type', 'ppl-inv-location', 'ppl-inv-manager'].forEach(id => {
       const el = document.getElementById(id)
       if (el) el.selectedIndex = 0
     })
 
-    // Reload employees list and re-resolve manager names
+    // Refresh employees list
     const { data } = await API.getEmployeesFull()
     _employees = data || []
     const _empById = Object.fromEntries(_employees.map(e => [e.id, e]))
