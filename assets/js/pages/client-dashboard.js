@@ -687,8 +687,8 @@ const ClientDashboard = (() => {
       const labelEl = document.getElementById('up-file-label')
       const hintEl  = document.getElementById('up-file-hint')
       if (plat === 'Instagram') {
-        if (labelEl) labelEl.textContent = 'Data File (Instagram Insights export)'
-        if (hintEl)  hintEl.textContent  = 'Instagram Insights export (.xlsx, .xls, .csv)'
+        if (labelEl) labelEl.textContent = 'Data File (Instagram Insights — Posts or Follows export)'
+        if (hintEl)  hintEl.textContent  = 'Posts export (.xlsx, .xls) or Follows export (.csv)'
       } else {
         if (labelEl) labelEl.textContent = 'Data File (LinkedIn Analytics export)'
         if (hintEl)  hintEl.textContent  = 'LinkedIn Analytics export (.xlsx, .xls, .csv)'
@@ -744,24 +744,32 @@ const ClientDashboard = (() => {
       return null
     }
 
+    // Detects Instagram post-level Insights sheet (any sheet name)
     function _isInstagramSheet(headerRow) {
       const headers = headerRow.map(h => String(h).trim().toLowerCase())
       return headers.includes('post id') && headers.includes('permalink') && headers.includes('post type') && headers.includes('views')
+    }
+
+    // Detects Instagram Follows CSV (has "Instagram follows" title row)
+    function _isInstagramFollowsFile(wb) {
+      for (const name of wb.SheetNames) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: '' })
+        const preview = rows.slice(0, 5).map(r => r.join(' ')).join(' ').toLowerCase()
+        if (preview.includes('instagram follow')) return true
+      }
+      return false
     }
 
     async function _parseFile(file) {
       if (typeof XLSX === 'undefined') { _showError('SheetJS library is not loaded. Please refresh the page and try again.'); return }
       try {
         const platform = document.getElementById('up-platform')?.value || 'LinkedIn'
-        let wb
-        if (file.name.toLowerCase().endsWith('.csv')) {
-          const text = await file.text()
-          wb = XLSX.read(text, { type: 'string', cellDates: false })
-        } else {
-          wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: false })
-        }
+        // Always read as arrayBuffer — XLSX handles all formats (xlsx, xls, csv)
+        // including UTF-16 LE BOM (Instagram Follows CSV) automatically
+        const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: false })
         if (platform === 'Instagram') {
-          _parseInstagramFile(wb)
+          if (_isInstagramFollowsFile(wb)) _parseInstagramFollowsFile(wb)
+          else _parseInstagramFile(wb)
         } else {
           const fileType = _detectLinkedInFileType(wb)
           if (!fileType) { _showError("This file doesn't look like a valid LinkedIn analytics export. Expected: a Content export (Metrics + All posts sheets), a Followers export (New followers sheet), or a Visitors export (Visitor metrics sheet)."); return }
@@ -888,7 +896,59 @@ const ClientDashboard = (() => {
       _showPreview(_previewAlert(`Found <strong>${posts.length}</strong> Instagram posts across <strong>${metrics.length}</strong> day(s).`, dFrom, dTo))
     }
 
+    function _parseInstagramFollowsFile(wb) {
+      // Follows.csv (UTF-16 LE) has 3 preamble rows: "sep=,", "Instagram follows", "Date","Primary"
+      // We locate the sheet, find the real header row, then parse daily follow counts.
+      let igSheet = null
+      for (const name of wb.SheetNames) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: '' })
+        const preview = rows.slice(0, 5).map(r => r.join(' ')).join(' ').toLowerCase()
+        if (preview.includes('instagram follow')) { igSheet = wb.Sheets[name]; break }
+      }
+      if (!igSheet) { _showError("Couldn't find Instagram Follows data in this file."); return }
 
+      const rows = XLSX.utils.sheet_to_json(igSheet, { header: 1, defval: '' })
+
+      // Find the header row (contains "date" and "primary")
+      let headerIdx = -1
+      for (let i = 0; i < Math.min(6, rows.length); i++) {
+        const cells = rows[i].map(c => String(c).trim().toLowerCase())
+        if (cells.includes('date') && cells.includes('primary')) { headerIdx = i; break }
+      }
+      if (headerIdx === -1) { _showError("Couldn't find Date/Primary columns in the Instagram Follows file."); return }
+
+      const headers = rows[headerIdx].map(h => String(h).trim().toLowerCase())
+      const dateIdx = headers.indexOf('date')
+      const valIdx  = headers.indexOf('primary')
+
+      const followers_daily = []
+      for (let i = headerIdx + 1; i < rows.length; i++) {
+        const row     = rows[i]
+        const rawDate = String(row[dateIdx] || '').trim()
+        if (!rawDate) continue
+        // ISO date strings like "2026-02-03T00:00:00" — strip the time component
+        const date = rawDate.includes('T') ? rawDate.split('T')[0] : _parseDate(rawDate)
+        if (!date) continue
+        const count = _num(row[valIdx])
+        followers_daily.push({
+          date,
+          organic_followers:       count,
+          sponsored_followers:     0,
+          auto_invited_followers:  0,
+          total_new_followers:     count,
+        })
+      }
+
+      if (!followers_daily.length) { _showError('No follower data rows found in the Instagram Follows file.'); return }
+
+      const allDates = followers_daily.map(r => r.date).sort()
+      _parsedPayload = { data_type: 'followers', followers_daily, demographics: [] }
+      _showPreview(_previewAlert(
+        `Found <strong>${followers_daily.length}</strong> days of Instagram follower data.`,
+        allDates[0] || '—',
+        allDates[allDates.length - 1] || '—'
+      ))
+    }
 
     async function _parseContentFile(wb) {
       const sn = wb.SheetNames.map(n => n.trim())
