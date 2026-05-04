@@ -14,7 +14,7 @@
   font-weight: 600;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s, transform 0.15s, box-shadow 0.15s;
   white-space: nowrap;
   line-height: 1;
 }
@@ -29,7 +29,16 @@
   color: #fff;
   border-color: var(--primary);
 }
-.btn-primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(15, 71, 153, 0.38);
+}
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
+}
 
 /* Secondary */
 .btn-secondary {
@@ -123,7 +132,13 @@
 .form-select:focus,
 .form-textarea:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(15, 71, 153, 0.1);
+  box-shadow: 0 0 0 3px rgba(15, 71, 153, 0.12);
+}
+
+/* Stronger focus ring on auth pages (dark background makes it pop) */
+.auth-card .form-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(15, 71, 153, 0.18);
 }
 
 .form-input::placeholder,

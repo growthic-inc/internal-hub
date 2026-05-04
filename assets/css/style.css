@@ -70,12 +70,63 @@ ul, ol { list-style: none; }
    AUTH / LOGIN PAGE
    ============================================================ */
 .auth-body {
-  background: var(--surface);
+  background: linear-gradient(135deg, #0a3a87 0%, #0F4799 50%, #1a72c7 100%);
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Animated gradient orbs */
+.auth-body::before,
+.auth-body::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(72px);
+  pointer-events: none;
+}
+.auth-body::before {
+  width: 480px;
+  height: 480px;
+  background: radial-gradient(circle, #45BBF0 0%, transparent 70%);
+  top: -160px;
+  right: -160px;
+  opacity: 0.35;
+  animation: orb-drift 10s ease-in-out infinite;
+}
+.auth-body::after {
+  width: 360px;
+  height: 360px;
+  background: radial-gradient(circle, #45BBF0 0%, transparent 70%);
+  bottom: -120px;
+  left: -120px;
+  opacity: 0.25;
+  animation: orb-drift 13s ease-in-out infinite reverse;
+}
+
+@keyframes orb-drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%       { transform: translate(24px, -18px) scale(1.06); }
+  66%       { transform: translate(-14px, 12px) scale(0.94); }
+}
+
+/* Card entrance */
+@keyframes auth-card-enter {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Logo bounce */
+@keyframes auth-logo-bounce {
+  0%   { transform: translateY(0); }
+  25%  { transform: translateY(-7px); }
+  50%  { transform: translateY(-2px); }
+  70%  { transform: translateY(-5px); }
+  100% { transform: translateY(0); }
 }
 
 .auth-container {
@@ -100,27 +151,31 @@ ul, ol { list-style: none; }
   object-fit: contain;
   flex-shrink: 0;
   display: block;
+  animation: auth-logo-bounce 0.65s ease-out 0.15s both;
 }
 
 .auth-brand-name {
   font-size: 18px;
   font-weight: 700;
-  color: var(--text);
+  color: #fff;
   letter-spacing: -0.3px;
 }
 
 .auth-brand-sub {
   font-size: 12px;
-  color: var(--text-muted);
+  color: rgba(255,255,255,0.6);
   margin-top: 1px;
 }
 
 .auth-card {
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: #fff;
+  border: 1px solid rgba(255,255,255,0.15);
   border-radius: var(--radius-xl);
   padding: 32px;
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.22), 0 4px 12px rgba(0,0,0,0.1);
+  animation: auth-card-enter 0.4s ease-out 0.05s both;
+  position: relative;
+  z-index: 1;
 }
 
 .auth-title {
@@ -140,7 +195,9 @@ ul, ol { list-style: none; }
 .auth-footer {
   text-align: center;
   font-size: 12px;
-  color: var(--text-muted);
+  color: rgba(255,255,255,0.4);
+  position: relative;
+  z-index: 1;
 }
 
 /* ============================================================
