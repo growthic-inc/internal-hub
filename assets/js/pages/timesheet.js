@@ -7,18 +7,19 @@
 const Timesheet = (() => {
 
   /* ── State ──────────────────────────────────────────────── */
-  let _user          = null
-  let _entries       = []
-  let _clients       = []
-  let _directReports = []   // employees whose manager_id === _user.id
-  let _weekStart     = null
-  let _activeTab     = 'mine'
-  let _p             = null
-  let _sideChart     = null   // Chart.js donut
+  let _user              = null
+  let _entries           = []
+  let _clients           = []
+  let _internalProjects  = []   // active internal projects with their work areas
+  let _directReports     = []   // employees whose manager_id === _user.id
+  let _weekStart         = null
+  let _activeTab         = 'mine'
+  let _p                 = null
+  let _sideChart         = null   // Chart.js donut
   // Team tab
-  let _teamEntries   = []
-  let _teamWeek      = null
-  let _teamEmpId     = ''
+  let _teamEntries       = []
+  let _teamWeek          = null
+  let _teamEmpId         = ''
 
   /* ── Constants ──────────────────────────────────────────── */
   const CHART_COLORS = [
@@ -66,8 +67,12 @@ const Timesheet = (() => {
     _teamWeek  = _getMondayOf(new Date())
     _activeTab = 'mine'
 
-    const { data } = await API.getClients(false)
-    _clients = data || []
+    const [{ data: clients }, { data: internalProjects }] = await Promise.all([
+      API.getClients(false),
+      API.getInternalProjects(),
+    ])
+    _clients          = clients || []
+    _internalProjects = (internalProjects || []).filter(p => p.status === 'active')
 
     // Pre-load direct reports so the Team tab can scope approvals correctly
     if (_p.can_approve) {
@@ -151,10 +156,12 @@ const Timesheet = (() => {
       return d
     })
 
-    // Build sidebar data
+    // Build sidebar data — group by project name (client or internal)
     const clientHours = {}
     _entries.forEach(e => {
-      const name = e.clients?.client_name || 'Internal'
+      const name = e.work_type === 'internal'
+        ? (e.internal_project?.name || 'Internal')
+        : (e.clients?.client_name || 'Internal')
       clientHours[name] = (clientHours[name] || 0) + parseFloat(e.hours || 0)
     })
     const totalHours = Object.values(clientHours).reduce((s, h) => s + h, 0)
@@ -201,9 +208,16 @@ const Timesheet = (() => {
   /* ── Day column ─────────────────────────────────────────── */
   function _renderDayCol(day) {
     const iso        = _toISO(day)
+    const today      = _toISO(new Date())
     const dayEntries = _entries.filter(e => e.date === iso)
-    const isToday    = iso === _toISO(new Date())
+    const isToday    = iso === today
     const dayHours   = dayEntries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+
+    // Hard lock: dates more than 7 days in the past
+    const diffDays  = Math.floor((new Date(today) - new Date(iso)) / 86400000)
+    const isLocked  = diffDays > 7
+    // Warn: past weekdays in the current week with 0 hours and no entries
+    const isPastNoEntry = !isToday && diffDays > 0 && diffDays <= 7 && dayEntries.length === 0
 
     // Determine day-level status
     const drafts    = dayEntries.filter(e => e.status === 'draft').length
@@ -212,7 +226,9 @@ const Timesheet = (() => {
     const rejected  = dayEntries.filter(e => e.status === 'rejected').length
 
     let headerIcon = ''
-    if (dayEntries.length && approved === dayEntries.length) {
+    if (isPastNoEntry) {
+      headerIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" title="No hours logged"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`
+    } else if (dayEntries.length && approved === dayEntries.length) {
       headerIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1D9E75" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
     } else if (submitted > 0 && drafts === 0 && rejected === 0) {
       headerIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`
@@ -221,7 +237,9 @@ const Timesheet = (() => {
     }
 
     let footerHtml = ''
-    if (drafts > 0 && _p.can_edit) {
+    if (isLocked) {
+      footerHtml = `<div class="ts-day-action ts-day-action--locked">Locked</div>`
+    } else if (drafts > 0 && _p.can_edit) {
       footerHtml = `<button class="ts-day-action ts-day-action--submit ts-submit-day" data-date="${iso}">Submit ${drafts} Draft${drafts > 1 ? 's' : ''}</button>`
     } else if (approved === dayEntries.length && dayEntries.length > 0) {
       footerHtml = `<div class="ts-day-action ts-day-action--approved">Approved</div>`
@@ -232,7 +250,7 @@ const Timesheet = (() => {
     }
 
     return `
-      <div class="ts-col${isToday ? ' ts-col--today' : ''}">
+      <div class="ts-col${isToday ? ' ts-col--today' : ''}${isLocked ? ' ts-col--locked' : ''}">
         <div class="ts-col-header">
           <div class="ts-col-top">
             <span class="ts-col-weekday">${day.toLocaleDateString('en-IN', { weekday:'short' }).toUpperCase()}</span>
@@ -244,7 +262,7 @@ const Timesheet = (() => {
 
         <div class="ts-col-body">
           ${dayEntries.map(e => _renderCard(e)).join('')}
-          ${_p.can_create ? `
+          ${_p.can_create && !isLocked ? `
             <button class="ts-add-btn" data-date="${iso}">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Entry
@@ -259,22 +277,23 @@ const Timesheet = (() => {
 
   /* ── Entry card ─────────────────────────────────────────── */
   function _renderCard(e) {
-    const canAct     = e.status === 'draft' || e.status === 'rejected'
-    const clientName = e.clients?.client_name || null
-    const projCode   = e.clients?.project_code || null
-    const entityName = e.entity?.entity_name || null
-    const desc       = e.work_description || e.task_description || ''
+    const canAct      = e.status === 'draft' || e.status === 'rejected'
+    const isInternal  = e.work_type === 'internal'
+    const projName    = isInternal ? (e.internal_project?.name || 'Internal') : (e.clients?.client_name || null)
+    const projCode    = isInternal ? (e.internal_project?.project_code || null) : (e.clients?.project_code || null)
+    const entityName  = isInternal ? (e.internal_entity?.entity_name || null) : (e.entity?.entity_name || null)
+    const desc        = e.work_description || e.task_description || ''
+    const lateIcon    = e.is_late ? `<span title="Logged late" style="color:#F59E0B;font-size:11px;">🕐</span>` : ''
 
     return `
       <div class="ts-card ts-card--${e.status}">
-        ${clientName ? `
-          <div class="ts-card-client">
-            <span class="ts-card-client-name">${Utils.escapeHtml(clientName)}</span>
-            ${projCode ? `<span class="ts-card-code">${Utils.escapeHtml(projCode)}</span>` : ''}
-          </div>
-        ` : '<div class="ts-card-client"><span class="ts-card-client-name" style="color:var(--text-muted);">Internal</span></div>'}
+        <div class="ts-card-client">
+          ${isInternal ? `<span class="ts-card-type-badge ts-card-type-badge--internal">Internal</span>` : ''}
+          <span class="ts-card-client-name">${Utils.escapeHtml(projName || '—')}</span>
+          ${projCode ? `<span class="ts-card-code">${Utils.escapeHtml(projCode)}</span>` : ''}
+          ${lateIcon}
+        </div>
         ${entityName ? `<div class="ts-card-entity">${Utils.escapeHtml(entityName)}</div>` : ''}
-        ${e.activity_type ? `<div class="ts-card-activity">${Utils.escapeHtml(e.activity_type)}</div>` : ''}
         ${desc ? `<div class="ts-card-desc">${Utils.escapeHtml(Utils.truncate(desc, 70))}</div>` : ''}
         <div class="ts-card-footer">
           <span class="ts-card-hours">${parseFloat(e.hours).toFixed(1)}h</span>
@@ -400,9 +419,15 @@ const Timesheet = (() => {
     const draftIds = _entries.filter(e => e.date === date && e.status === 'draft').map(e => e.id)
     if (!draftIds.length) return
 
+    const now      = new Date()
+    const nowISO   = now.toISOString()
+    // is_late: submitted more than 24 hours after the log date
+    const logDate  = new Date(date + 'T00:00:00')
+    const isLate   = (now - logDate) > 24 * 60 * 60 * 1000
+
     const { error } = await Config.supabase
       .from('timesheets')
-      .update({ status: 'submitted', updated_at: new Date().toISOString() })
+      .update({ status: 'submitted', submitted_at: nowISO, is_late: isLate, updated_at: nowISO })
       .in('id', draftIds)
       .eq('employee_id', _user.id)
 
@@ -424,21 +449,31 @@ const Timesheet = (() => {
 
   /* ── Entry modal (create + edit) ────────────────────────── */
   function _openEntryModal(preDate = null, existingEntry = null) {
-    const isEdit       = !!existingEntry
-    const weekEndISO   = _toISO(_weekEnd(_weekStart))
-    const weekStartISO = _toISO(_weekStart)
-    const todayISO     = _toISO(new Date())
-    const defaultDate  = preDate || (todayISO >= weekStartISO && todayISO <= weekEndISO ? todayISO : weekStartISO)
+    const isEdit        = !!existingEntry
+    const todayISO      = _toISO(new Date())
+    const minDateISO    = (() => { const d = new Date(); d.setDate(d.getDate() - 7); return _toISO(d) })()
+    const weekStartISO  = _toISO(_weekStart)
+    const weekEndISO    = _toISO(_weekEnd(_weekStart))
+    const defaultDate   = preDate
+      ? (preDate < minDateISO ? minDateISO : preDate)           // clamp if somehow passed a locked date
+      : (todayISO >= weekStartISO && todayISO <= weekEndISO ? todayISO : weekStartISO)
 
-    // Resolve pre-selected client for edit mode
-    const preClientId  = existingEntry?.client_id || ''
-    const preClient    = preClientId ? _clients.find(c => c.id === preClientId) : null
-    const preEntities  = preClient?.client_entities || []
-    const entityOpts   = preEntities.map(en =>
-      `<option value="${en.id}" ${existingEntry?.entity_id === en.id ? 'selected' : ''}>${Utils.escapeHtml(en.entity_name)}</option>`
-    ).join('')
-    // Combobox display value for edit mode
+    // Resolve work type for edit mode
+    const preWorkType = existingEntry?.work_type || 'client'
+
+    // Client mode pre-fill
+    const preClientId      = existingEntry?.client_id || ''
+    const preClient        = preClientId ? _clients.find(c => c.id === preClientId) : null
     const preClientDisplay = preClient ? `${preClient.project_code} — ${preClient.client_name}` : ''
+    const preClientEntities = preClient?.client_entities || []
+    const preEntityId      = existingEntry?.entity_id || ''
+
+    // Internal mode pre-fill
+    const preIntProjId     = existingEntry?.internal_project_id || ''
+    const preIntProj       = preIntProjId ? _internalProjects.find(p => p.id === preIntProjId) : null
+    const preIntProjDisplay = preIntProj ? `${preIntProj.project_code} — ${preIntProj.name}` : ''
+    const preIntWorkAreas  = preIntProj?.internal_project_entities || []
+    const preIntEntityId   = existingEntry?.internal_entity_id || ''
 
     Utils.openModal(`
       <div class="modal-header">
@@ -450,14 +485,25 @@ const Timesheet = (() => {
       <div class="modal-body">
         <div id="ts-modal-err" class="alert alert--danger" style="display:none;margin-bottom:12px;"></div>
 
+        <!-- Work Type toggle -->
+        <div class="form-group" style="margin-bottom:16px;">
+          <label class="form-label">Work Type</label>
+          <div class="ts-work-type-toggle">
+            <button type="button" class="ts-wt-btn${preWorkType === 'client' ? ' ts-wt-btn--active' : ''}" data-type="client">Client Work</button>
+            <button type="button" class="ts-wt-btn${preWorkType === 'internal' ? ' ts-wt-btn--active' : ''}" data-type="internal">Internal Work</button>
+          </div>
+          <input type="hidden" id="ts-f-work-type" value="${preWorkType}" />
+        </div>
+
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Date <span class="required">*</span></label>
             <input class="form-input" type="date" id="ts-f-date"
+              min="${minDateISO}" max="${todayISO}"
               value="${existingEntry?.date || defaultDate}" />
           </div>
           <div class="form-group">
-            <label class="form-label">Hours Spent <span class="required">*</span></label>
+            <label class="form-label">Hours <span class="required">*</span></label>
             <input class="form-input" type="number" id="ts-f-hours"
               min="0.5" max="12" step="0.5"
               value="${existingEntry?.hours || ''}"
@@ -465,33 +511,60 @@ const Timesheet = (() => {
           </div>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Client / Project <span class="required">*</span></label>
-          <div class="custom-select-wrap" id="ts-client-wrap" style="min-width:0;">
-            <input class="form-input" type="text" id="ts-f-client-search"
-              placeholder="Type to search client or project…"
-              autocomplete="off"
-              value="${Utils.escapeHtml(preClientDisplay)}" />
-            <div class="custom-select-dropdown" id="ts-client-dropdown"
-                 style="display:none;position:absolute;width:100%;left:0;z-index:200;">
-              <div class="custom-select-list" id="ts-client-list"></div>
+        <!-- CLIENT work fields -->
+        <div id="ts-client-fields" style="${preWorkType === 'internal' ? 'display:none;' : ''}">
+          <div class="form-group">
+            <label class="form-label">Client / Project <span class="required">*</span></label>
+            <div class="custom-select-wrap" id="ts-client-wrap" style="min-width:0;">
+              <input class="form-input" type="text" id="ts-f-client-search"
+                placeholder="Type to search client or project code…"
+                autocomplete="off"
+                value="${Utils.escapeHtml(preClientDisplay)}" />
+              <div class="custom-select-dropdown" id="ts-client-dropdown"
+                   style="display:none;position:absolute;width:100%;left:0;z-index:200;">
+                <div class="custom-select-list" id="ts-client-list"></div>
+              </div>
             </div>
+            <input type="hidden" id="ts-f-client" value="${preClientId}" />
           </div>
-          <input type="hidden" id="ts-f-client" value="${preClientId}" />
+          <div class="form-group" id="ts-entity-wrap" style="${preClientEntities.length ? '' : 'display:none;'}">
+            <label class="form-label">Entity <span class="required">*</span></label>
+            <select class="form-select" id="ts-f-entity">
+              <option value="">— Select entity —</option>
+              ${preClientEntities.map(en => `<option value="${en.id}" ${preEntityId === en.id ? 'selected' : ''}>${Utils.escapeHtml(en.entity_name)}</option>`).join('')}
+            </select>
+          </div>
         </div>
 
-        <div class="form-group" id="ts-entity-wrap" style="${preEntities.length ? '' : 'display:none;'}">
-          <label class="form-label">Entity <span class="required">*</span></label>
-          <select class="form-select" id="ts-f-entity">
-            <option value="">— Select entity —</option>
-            ${entityOpts}
-          </select>
+        <!-- INTERNAL work fields -->
+        <div id="ts-internal-fields" style="${preWorkType === 'client' ? 'display:none;' : ''}">
+          <div class="form-group">
+            <label class="form-label">Internal Project <span class="required">*</span></label>
+            <div class="custom-select-wrap" id="ts-int-wrap" style="min-width:0;">
+              <input class="form-input" type="text" id="ts-f-int-search"
+                placeholder="Type to search internal project…"
+                autocomplete="off"
+                value="${Utils.escapeHtml(preIntProjDisplay)}" />
+              <div class="custom-select-dropdown" id="ts-int-dropdown"
+                   style="display:none;position:absolute;width:100%;left:0;z-index:200;">
+                <div class="custom-select-list" id="ts-int-list"></div>
+              </div>
+            </div>
+            <input type="hidden" id="ts-f-int-project" value="${preIntProjId}" />
+          </div>
+          <div class="form-group" id="ts-workarea-wrap" style="${preIntWorkAreas.length ? '' : 'display:none;'}">
+            <label class="form-label">Work Area</label>
+            <select class="form-select" id="ts-f-workarea">
+              <option value="">— Select work area —</option>
+              ${preIntWorkAreas.map(wa => `<option value="${wa.id}" ${preIntEntityId === wa.id ? 'selected' : ''}>${Utils.escapeHtml(wa.entity_name)}</option>`).join('')}
+            </select>
+          </div>
         </div>
 
         <div class="form-group">
           <label class="form-label">Work Description <span class="required">*</span></label>
           <textarea class="form-input" id="ts-f-desc" rows="3"
-            placeholder="Describe what you worked on in detail…"
+            placeholder="Describe what you worked on…"
             style="resize:vertical;">${Utils.escapeHtml(existingEntry?.work_description || existingEntry?.task_description || '')}</textarea>
         </div>
       </div>
@@ -501,126 +574,122 @@ const Timesheet = (() => {
       </div>
     `, { width: '520px' })
 
-    // ── Client combobox ───────────────────────────────────────
-    const clientSearch   = document.getElementById('ts-f-client-search')
-    const clientDropdown = document.getElementById('ts-client-dropdown')
-    const clientList     = document.getElementById('ts-client-list')
-    const clientHidden   = document.getElementById('ts-f-client')
-
-    function _renderClientDropdownList(subset) {
-      clientList.innerHTML = subset.length
-        ? subset.map(c => `
-            <div class="custom-select-item"
-                 data-id="${c.id}"
-                 data-name="${Utils.escapeHtml(c.client_name)}"
-                 data-code="${Utils.escapeHtml(c.project_code)}">
-              <span>${Utils.escapeHtml(c.client_name)}</span>
-              <span class="text-muted text-sm">${Utils.escapeHtml(c.project_code)}</span>
-            </div>`).join('')
-        : '<div class="custom-select-empty">No clients found</div>'
-
-      clientList.querySelectorAll('.custom-select-item').forEach(item => {
-        item.addEventListener('mousedown', e => {
-          // mousedown fires before blur — prevent dropdown closing before click registers
-          e.preventDefault()
-          clientHidden.value   = item.dataset.id
-          clientSearch.value   = `${item.dataset.code} — ${item.dataset.name}`
-          clientDropdown.style.display = 'none'
-          // Cascade entity dropdown
-          _onClientSelected(item.dataset.id)
-        })
+    // ── Work Type toggle ─────────────────────────────────────
+    document.querySelectorAll('.ts-wt-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.ts-wt-btn').forEach(b => b.classList.remove('ts-wt-btn--active'))
+        btn.classList.add('ts-wt-btn--active')
+        document.getElementById('ts-f-work-type').value = btn.dataset.type
+        const isInt = btn.dataset.type === 'internal'
+        document.getElementById('ts-client-fields').style.display   = isInt ? 'none' : ''
+        document.getElementById('ts-internal-fields').style.display = isInt ? '' : 'none'
       })
-    }
-
-    function _onClientSelected(clientId) {
-      const client   = _clients.find(c => c.id === clientId)
-      const entities = client?.client_entities || []
-      const wrap     = document.getElementById('ts-entity-wrap')
-      const sel      = document.getElementById('ts-f-entity')
-      if (entities.length) {
-        sel.innerHTML = '<option value="">— Select entity —</option>' +
-          entities.map(en => `<option value="${en.id}">${Utils.escapeHtml(en.entity_name)}</option>`).join('')
-        wrap.style.display = ''
-      } else {
-        sel.innerHTML = ''
-        wrap.style.display = 'none'
-      }
-    }
-
-    clientSearch.addEventListener('focus', () => {
-      _renderClientDropdownList(_clients)
-      clientDropdown.style.display = 'block'
     })
 
-    clientSearch.addEventListener('input', () => {
-      const q = clientSearch.value.trim().toLowerCase()
-      // Clear the hidden id when user types freely (forces them to pick from list)
-      clientHidden.value = ''
-      _renderClientDropdownList(
-        q ? _clients.filter(c =>
-              c.client_name.toLowerCase().includes(q) ||
-              c.project_code.toLowerCase().includes(q))
-          : _clients
-      )
-      clientDropdown.style.display = 'block'
+    // ── Client combobox ──────────────────────────────────────
+    _bindCombobox({
+      searchId:   'ts-f-client-search',
+      dropdownId: 'ts-client-dropdown',
+      listId:     'ts-client-list',
+      wrapId:     'ts-client-wrap',
+      hiddenId:   'ts-f-client',
+      items:      _clients,
+      getLabel:   c => c.client_name,
+      getCode:    c => c.project_code,
+      getId:      c => c.id,
+      onSelect:   id => {
+        const client   = _clients.find(c => c.id === id)
+        const entities = client?.client_entities || []
+        const wrap     = document.getElementById('ts-entity-wrap')
+        const sel      = document.getElementById('ts-f-entity')
+        if (entities.length) {
+          sel.innerHTML = '<option value="">— Select entity —</option>' +
+            entities.map(en => `<option value="${en.id}">${Utils.escapeHtml(en.entity_name)}</option>`).join('')
+          wrap.style.display = ''
+        } else { sel.innerHTML = ''; wrap.style.display = 'none' }
+      },
     })
 
-    clientSearch.addEventListener('blur', () => {
-      // Small delay so mousedown on list item fires first
-      setTimeout(() => { clientDropdown.style.display = 'none' }, 150)
+    // ── Internal project combobox ────────────────────────────
+    _bindCombobox({
+      searchId:   'ts-f-int-search',
+      dropdownId: 'ts-int-dropdown',
+      listId:     'ts-int-list',
+      wrapId:     'ts-int-wrap',
+      hiddenId:   'ts-f-int-project',
+      items:      _internalProjects,
+      getLabel:   p => p.name,
+      getCode:    p => p.project_code,
+      getId:      p => p.id,
+      onSelect:   id => {
+        const proj      = _internalProjects.find(p => p.id === id)
+        const workAreas = proj?.internal_project_entities || []
+        const wrap      = document.getElementById('ts-workarea-wrap')
+        const sel       = document.getElementById('ts-f-workarea')
+        if (workAreas.length) {
+          sel.innerHTML = '<option value="">— Select work area —</option>' +
+            workAreas.map(wa => `<option value="${wa.id}">${Utils.escapeHtml(wa.entity_name)}</option>`).join('')
+          wrap.style.display = ''
+        } else { sel.innerHTML = ''; wrap.style.display = 'none' }
+      },
     })
 
-    // Close dropdown on outside click
-    document.addEventListener('click', function _outsideClick(e) {
-      if (!document.getElementById('ts-client-wrap')?.contains(e.target)) {
-        clientDropdown.style.display = 'none'
-        document.removeEventListener('click', _outsideClick)
-      }
-    })
-
-    // Save
+    // ── Save ─────────────────────────────────────────────────
     document.getElementById('ts-modal-save')?.addEventListener('click', async () => {
       const errEl    = document.getElementById('ts-modal-err')
       const saveBtn  = document.getElementById('ts-modal-save')
-      const date     = document.getElementById('ts-f-date').value
-      const hours    = parseFloat(document.getElementById('ts-f-hours').value)
-      const clientId = document.getElementById('ts-f-client').value || null
-      const entityId = document.getElementById('ts-f-entity')?.value || null
-      const desc     = document.getElementById('ts-f-desc').value.trim()
-
       errEl.style.display = 'none'
 
-      const errs = []
-      if (!date)                          errs.push('Date is required.')
-      if (!clientId)                      errs.push('Please select a client.')
-      if (!desc)                          errs.push('Work description is required.')
-      if (isNaN(hours) || hours <= 0)     errs.push('Hours must be greater than 0.')
-      if (hours > 12)                     errs.push('Hours cannot exceed 12 per entry.')
+      const date      = document.getElementById('ts-f-date').value
+      const hours     = parseFloat(document.getElementById('ts-f-hours').value)
+      const workType  = document.getElementById('ts-f-work-type').value
+      const desc      = document.getElementById('ts-f-desc').value.trim()
 
-      // Entity required if client has entities
-      const clientObj  = _clients.find(c => c.id === clientId)
-      const hasEntities = (clientObj?.client_entities || []).length > 0
-      if (hasEntities && !entityId)       errs.push('Please select an entity for this client.')
+      const clientId      = document.getElementById('ts-f-client').value || null
+      const entityId      = document.getElementById('ts-f-entity')?.value || null
+      const intProjId     = document.getElementById('ts-f-int-project').value || null
+      const intEntityId   = document.getElementById('ts-f-workarea')?.value || null
+
+      const errs = []
+      if (!date)                      errs.push('Date is required.')
+      if (date < minDateISO)          errs.push('Cannot log entries older than 7 days.')
+      if (isNaN(hours) || hours <= 0) errs.push('Hours must be greater than 0.')
+      if (hours > 12)                 errs.push('Hours cannot exceed 12 per entry.')
+      if (!desc)                      errs.push('Work description is required.')
+
+      if (workType === 'client') {
+        if (!clientId)                errs.push('Please select a client.')
+        const clientObj    = _clients.find(c => c.id === clientId)
+        const hasEntities  = (clientObj?.client_entities || []).length > 0
+        if (hasEntities && !entityId) errs.push('Please select an entity for this client.')
+      } else {
+        if (!intProjId)               errs.push('Please select an internal project.')
+      }
 
       if (errs.length) { errEl.textContent = errs[0]; errEl.style.display = 'block'; return }
 
       saveBtn.disabled    = true
       saveBtn.textContent = isEdit ? 'Updating…' : 'Saving…'
 
+      const clientObj = workType === 'client' ? _clients.find(c => c.id === clientId) : null
+      const intProj   = workType === 'internal' ? _internalProjects.find(p => p.id === intProjId) : null
+
       const payload = {
         date,
         hours,
-        client_id:        clientId,
-        entity_id:        entityId || null,
-        project_code:     clientObj?.project_code || null,
-        work_description: desc,
-        task_description: desc,   // keep populated for backward compat
-        updated_at:       new Date().toISOString(),
+        work_type:            workType,
+        client_id:            workType === 'client' ? clientId : null,
+        entity_id:            workType === 'client' ? (entityId || null) : null,
+        project_code:         workType === 'client' ? (clientObj?.project_code || null) : (intProj?.project_code || null),
+        internal_project_id:  workType === 'internal' ? intProjId : null,
+        internal_entity_id:   workType === 'internal' ? (intEntityId || null) : null,
+        work_description:     desc,
+        task_description:     desc,
+        updated_at:           new Date().toISOString(),
       }
 
       let error
       if (isEdit) {
-        // Editing a rejected entry resets it to draft for resubmission
         if (existingEntry.status === 'rejected') payload.status = 'draft'
         ;({ error } = await Config.supabase.from('timesheets').update(payload).eq('id', existingEntry.id).eq('employee_id', _user.id))
       } else {
@@ -630,13 +699,55 @@ const Timesheet = (() => {
       saveBtn.disabled    = false
       saveBtn.textContent = isEdit ? 'Update Entry' : 'Save Entry'
 
-      if (error) {
-        errEl.textContent   = error.message
-        errEl.style.display = 'block'
-      } else {
-        Utils.closeModal()
-        Utils.showToast(isEdit ? 'Entry updated.' : 'Entry logged.', 'success')
-        await _loadWeek()
+      if (error) { errEl.textContent = error.message; errEl.style.display = 'block' }
+      else { Utils.closeModal(); Utils.showToast(isEdit ? 'Entry updated.' : 'Entry logged.', 'success'); await _loadWeek() }
+    })
+  }
+
+  /* ── Reusable combobox binder ────────────────────────────── */
+  function _bindCombobox({ searchId, dropdownId, listId, wrapId, hiddenId, items, getLabel, getCode, getId, onSelect }) {
+    const searchEl   = document.getElementById(searchId)
+    const dropdownEl = document.getElementById(dropdownId)
+    const listEl     = document.getElementById(listId)
+    const hiddenEl   = document.getElementById(hiddenId)
+    if (!searchEl || !dropdownEl || !listEl || !hiddenEl) return
+
+    function renderList(subset) {
+      listEl.innerHTML = subset.length
+        ? subset.map(item => `
+            <div class="custom-select-item"
+                 data-id="${getId(item)}"
+                 data-name="${Utils.escapeHtml(getLabel(item))}"
+                 data-code="${Utils.escapeHtml(getCode(item))}">
+              <span>${Utils.escapeHtml(getLabel(item))}</span>
+              <span class="text-muted text-sm">${Utils.escapeHtml(getCode(item))}</span>
+            </div>`).join('')
+        : '<div class="custom-select-empty">No results found</div>'
+
+      listEl.querySelectorAll('.custom-select-item').forEach(el => {
+        el.addEventListener('mousedown', ev => {
+          ev.preventDefault()
+          hiddenEl.value         = el.dataset.id
+          searchEl.value         = `${el.dataset.code} — ${el.dataset.name}`
+          dropdownEl.style.display = 'none'
+          if (onSelect) onSelect(el.dataset.id)
+        })
+      })
+    }
+
+    searchEl.addEventListener('focus', () => { renderList(items); dropdownEl.style.display = 'block' })
+    searchEl.addEventListener('input', () => {
+      const q = searchEl.value.trim().toLowerCase()
+      hiddenEl.value = ''
+      renderList(q ? items.filter(i => getLabel(i).toLowerCase().includes(q) || getCode(i).toLowerCase().includes(q)) : items)
+      dropdownEl.style.display = 'block'
+    })
+    searchEl.addEventListener('blur', () => setTimeout(() => { dropdownEl.style.display = 'none' }, 150))
+
+    document.addEventListener('click', function _close(e) {
+      if (!document.getElementById(wrapId)?.contains(e.target)) {
+        dropdownEl.style.display = 'none'
+        document.removeEventListener('click', _close)
       }
     })
   }
@@ -794,16 +905,26 @@ const Timesheet = (() => {
     ].filter(Boolean).join('')
 
     const rows = entries.map(e => {
-      const desc = e.work_description || e.task_description || '—'
+      const desc       = e.work_description || e.task_description || '—'
+      const isInternal = e.work_type === 'internal'
+      const projName   = isInternal ? (e.internal_project?.name || '—') : (e.clients?.client_name || '—')
+      const projCode   = isInternal ? (e.internal_project?.project_code || '') : (e.clients?.project_code || '')
+      const areaName   = isInternal ? (e.internal_entity?.entity_name || '') : (e.entity?.entity_name || '')
+      const lateFlag   = e.is_late ? `<span title="Logged late" style="margin-left:4px;font-size:11px;">🕐</span>` : ''
+
       return `
         <tr>
           <td style="white-space:nowrap;font-size:12px;color:var(--text-muted);">${Utils.formatDate(e.date)}</td>
           <td>
-            ${e.clients ? `<span style="font-weight:500;">${Utils.escapeHtml(e.clients.client_name)}</span>
-            <span class="badge-code" style="margin-left:4px;">${Utils.escapeHtml(e.clients.project_code)}</span>` : '<span class="text-muted">—</span>'}
-            ${e.entity ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${Utils.escapeHtml(e.entity.entity_name)}</div>` : ''}
+            ${isInternal
+              ? `<span class="ts-card-type-badge ts-card-type-badge--internal" style="margin-right:4px;">Internal</span>`
+              : `<span class="ts-card-type-badge ts-card-type-badge--client" style="margin-right:4px;">Client</span>`
+            }
+            <span style="font-weight:500;">${Utils.escapeHtml(projName)}</span>
+            ${projCode ? `<span class="badge-code" style="margin-left:4px;">${Utils.escapeHtml(projCode)}</span>` : ''}
+            ${lateFlag}
+            ${areaName ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${Utils.escapeHtml(areaName)}</div>` : ''}
           </td>
-          <td style="color:var(--text-muted);font-size:12px;">${Utils.escapeHtml(e.activity_type || '—')}</td>
           <td style="max-width:220px;">
             <div style="font-size:12px;" title="${Utils.escapeHtml(desc)}">${Utils.escapeHtml(Utils.truncate(desc, 55))}</div>
           </td>
@@ -844,8 +965,7 @@ const Timesheet = (() => {
             <thead>
               <tr>
                 <th>Date</th>
-                <th>Client</th>
-                <th>Activity</th>
+                <th>Project</th>
                 <th>Description</th>
                 <th style="text-align:right;">Hours</th>
                 <th>Status</th>

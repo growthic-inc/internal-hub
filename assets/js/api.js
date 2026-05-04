@@ -74,7 +74,7 @@ const API = (() => {
   async function getTimesheetEntries(employeeId, from, to) {
     return supabase
       .from('timesheets')
-      .select('*, clients(client_name, project_code)')
+      .select('*, clients(client_name, project_code), internal_project:internal_projects(id, project_code, name), internal_entity:internal_project_entities(id, entity_name)')
       .eq('employee_id', employeeId)
       .gte('date', from)
       .lte('date', to)
@@ -96,7 +96,7 @@ const API = (() => {
     // Passing this ensures approval actions are scoped to the manager's own team only.
     let q = supabase
       .from('timesheets')
-      .select('*, employees!employee_id(id, name, profile_image_url, department), clients!client_id(client_name, project_code)')
+      .select('*, employees!employee_id(id, name, profile_image_url, department), clients!client_id(client_name, project_code), internal_project:internal_projects(id, project_code, name), internal_entity:internal_project_entities(id, entity_name)')
       .gte('date', from)
       .lte('date', to)
       .in('status', ['submitted', 'approved', 'rejected'])

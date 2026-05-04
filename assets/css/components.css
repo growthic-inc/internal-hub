@@ -1633,6 +1633,53 @@
 .ts-day-action--review    { background: #FEF3C7; color: #92400E; }
 .ts-day-action--approved  { background: #D1FAE5; color: #065F46; }
 .ts-day-action--rejected  { background: #FEE2E2; color: #991B1B; }
+.ts-day-action--locked    { background: var(--surface); color: var(--text-muted); font-size: 11px; letter-spacing: .04em; }
+
+/* Locked day column */
+.ts-col--locked { opacity: .55; pointer-events: none; }
+.ts-col--locked .ts-col-body { background: repeating-linear-gradient(135deg, transparent, transparent 6px, rgba(0,0,0,.025) 6px, rgba(0,0,0,.025) 7px); }
+
+/* Work-type toggle in entry modal */
+.ts-work-type-toggle {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.ts-wt-btn {
+  flex: 1;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.ts-wt-btn + .ts-wt-btn { border-left: 1px solid var(--border); }
+.ts-wt-btn--active {
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+}
+.ts-wt-btn:not(.ts-wt-btn--active):hover { background: var(--surface); }
+
+/* Work-type badges on cards and team view */
+.ts-card-type-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.ts-card-type-badge--internal { background: #EDE9FE; color: #5B21B6; }
+.ts-card-type-badge--client   { background: #DBEAFE; color: #1E40AF; }
 
 /* Add entry button */
 .ts-add-btn {
