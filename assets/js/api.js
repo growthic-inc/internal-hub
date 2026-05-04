@@ -82,8 +82,18 @@ const API = (() => {
       .order('created_at')
   }
 
-  async function getTeamTimesheetEntries(from, to, empId = null) {
-    // RLS policy on timesheets filters to the team lead's reports automatically.
+  async function getDirectReports(managerId) {
+    return supabase
+      .from('employees')
+      .select('id, name, department, profile_image_url')
+      .eq('manager_id', managerId)
+      .eq('status', 'active')
+      .order('name')
+  }
+
+  async function getTeamTimesheetEntries(from, to, empId = null, reporteeIds = null) {
+    // reporteeIds: array of employee IDs that are direct reports of the current manager.
+    // Passing this ensures approval actions are scoped to the manager's own team only.
     let q = supabase
       .from('timesheets')
       .select('*, employees!employee_id(id, name, profile_image_url, department), clients!client_id(client_name, project_code)')
@@ -91,7 +101,8 @@ const API = (() => {
       .lte('date', to)
       .in('status', ['submitted', 'approved', 'rejected'])
       .order('date', { ascending: false })
-    if (empId) q = q.eq('employee_id', empId)
+    if (empId)                      q = q.eq('employee_id', empId)
+    if (reporteeIds?.length)        q = q.in('employee_id', reporteeIds)
     return q
   }
 
@@ -1266,7 +1277,7 @@ const API = (() => {
   return {
     getClients, getClient, getClientByProjectCode,
     getEmployees, getEmployee, getTeamLeads, getAllEmployees,
-    getTimesheetEntries, getTeamTimesheetEntries, upsertTimesheetEntry,
+    getTimesheetEntries, getTeamTimesheetEntries, getDirectReports, upsertTimesheetEntry,
     insertMasterFolderFile, softDeleteMasterFolderFile,
     getMyReimbursements, getReimbursementInbox, getApprovedClaims,
     insertReimbursement, getMyPreApprovals,

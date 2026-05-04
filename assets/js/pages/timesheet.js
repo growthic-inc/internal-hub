@@ -7,17 +7,18 @@
 const Timesheet = (() => {
 
   /* ── State ──────────────────────────────────────────────── */
-  let _user        = null
-  let _entries     = []
-  let _clients     = []
-  let _weekStart   = null
-  let _activeTab   = 'mine'
-  let _p           = null
-  let _sideChart   = null   // Chart.js donut
+  let _user          = null
+  let _entries       = []
+  let _clients       = []
+  let _directReports = []   // employees whose manager_id === _user.id
+  let _weekStart     = null
+  let _activeTab     = 'mine'
+  let _p             = null
+  let _sideChart     = null   // Chart.js donut
   // Team tab
-  let _teamEntries = []
-  let _teamWeek    = null
-  let _teamEmpId   = ''
+  let _teamEntries   = []
+  let _teamWeek      = null
+  let _teamEmpId     = ''
 
   /* ── Constants ──────────────────────────────────────────── */
   const CHART_COLORS = [
@@ -67,6 +68,12 @@ const Timesheet = (() => {
 
     const { data } = await API.getClients(false)
     _clients = data || []
+
+    // Pre-load direct reports so the Team tab can scope approvals correctly
+    if (_p.can_approve) {
+      const { data: reports } = await API.getDirectReports(_user.id)
+      _directReports = reports || []
+    }
 
     _bindTabs()
     _loadTab('mine')
@@ -417,23 +424,21 @@ const Timesheet = (() => {
 
   /* ── Entry modal (create + edit) ────────────────────────── */
   function _openEntryModal(preDate = null, existingEntry = null) {
-    const isEdit      = !!existingEntry
-    const weekEndISO  = _toISO(_weekEnd(_weekStart))
+    const isEdit       = !!existingEntry
+    const weekEndISO   = _toISO(_weekEnd(_weekStart))
     const weekStartISO = _toISO(_weekStart)
-    const todayISO    = _toISO(new Date())
-    const defaultDate = preDate || (todayISO >= weekStartISO && todayISO <= weekEndISO ? todayISO : weekStartISO)
+    const todayISO     = _toISO(new Date())
+    const defaultDate  = preDate || (todayISO >= weekStartISO && todayISO <= weekEndISO ? todayISO : weekStartISO)
 
-    // Client options
-    const clientOpts = _clients.map(c =>
-      `<option value="${c.id}" ${existingEntry?.client_id === c.id ? 'selected' : ''}>${Utils.escapeHtml(c.project_code + ' — ' + c.client_name)}</option>`
-    ).join('')
-
-    // Pre-select entities
-    const preClientId = existingEntry?.client_id || ''
-    const preEntities = preClientId ? (_clients.find(c => c.id === preClientId)?.client_entities || []) : []
-    const entityOpts  = preEntities.map(en =>
+    // Resolve pre-selected client for edit mode
+    const preClientId  = existingEntry?.client_id || ''
+    const preClient    = preClientId ? _clients.find(c => c.id === preClientId) : null
+    const preEntities  = preClient?.client_entities || []
+    const entityOpts   = preEntities.map(en =>
       `<option value="${en.id}" ${existingEntry?.entity_id === en.id ? 'selected' : ''}>${Utils.escapeHtml(en.entity_name)}</option>`
     ).join('')
+    // Combobox display value for edit mode
+    const preClientDisplay = preClient ? `${preClient.project_code} — ${preClient.client_name}` : ''
 
     Utils.openModal(`
       <div class="modal-header">
@@ -461,11 +466,18 @@ const Timesheet = (() => {
         </div>
 
         <div class="form-group">
-          <label class="form-label">Client <span class="required">*</span></label>
-          <select class="form-select" id="ts-f-client">
-            <option value="">— Select client —</option>
-            ${clientOpts}
-          </select>
+          <label class="form-label">Client / Project <span class="required">*</span></label>
+          <div class="custom-select-wrap" id="ts-client-wrap" style="min-width:0;">
+            <input class="form-input" type="text" id="ts-f-client-search"
+              placeholder="Type to search client or project…"
+              autocomplete="off"
+              value="${Utils.escapeHtml(preClientDisplay)}" />
+            <div class="custom-select-dropdown" id="ts-client-dropdown"
+                 style="display:none;position:absolute;width:100%;left:0;z-index:200;">
+              <div class="custom-select-list" id="ts-client-list"></div>
+            </div>
+          </div>
+          <input type="hidden" id="ts-f-client" value="${preClientId}" />
         </div>
 
         <div class="form-group" id="ts-entity-wrap" style="${preEntities.length ? '' : 'display:none;'}">
@@ -489,20 +501,80 @@ const Timesheet = (() => {
       </div>
     `, { width: '520px' })
 
-    // Entity cascade on client change
-    document.getElementById('ts-f-client')?.addEventListener('change', e => {
-      const clientId = e.target.value
+    // ── Client combobox ───────────────────────────────────────
+    const clientSearch   = document.getElementById('ts-f-client-search')
+    const clientDropdown = document.getElementById('ts-client-dropdown')
+    const clientList     = document.getElementById('ts-client-list')
+    const clientHidden   = document.getElementById('ts-f-client')
+
+    function _renderClientDropdownList(subset) {
+      clientList.innerHTML = subset.length
+        ? subset.map(c => `
+            <div class="custom-select-item"
+                 data-id="${c.id}"
+                 data-name="${Utils.escapeHtml(c.client_name)}"
+                 data-code="${Utils.escapeHtml(c.project_code)}">
+              <span>${Utils.escapeHtml(c.client_name)}</span>
+              <span class="text-muted text-sm">${Utils.escapeHtml(c.project_code)}</span>
+            </div>`).join('')
+        : '<div class="custom-select-empty">No clients found</div>'
+
+      clientList.querySelectorAll('.custom-select-item').forEach(item => {
+        item.addEventListener('mousedown', e => {
+          // mousedown fires before blur — prevent dropdown closing before click registers
+          e.preventDefault()
+          clientHidden.value   = item.dataset.id
+          clientSearch.value   = `${item.dataset.code} — ${item.dataset.name}`
+          clientDropdown.style.display = 'none'
+          // Cascade entity dropdown
+          _onClientSelected(item.dataset.id)
+        })
+      })
+    }
+
+    function _onClientSelected(clientId) {
       const client   = _clients.find(c => c.id === clientId)
       const entities = client?.client_entities || []
       const wrap     = document.getElementById('ts-entity-wrap')
       const sel      = document.getElementById('ts-f-entity')
       if (entities.length) {
-        sel.innerHTML = `<option value="">— Select entity —</option>` +
+        sel.innerHTML = '<option value="">— Select entity —</option>' +
           entities.map(en => `<option value="${en.id}">${Utils.escapeHtml(en.entity_name)}</option>`).join('')
         wrap.style.display = ''
       } else {
         sel.innerHTML = ''
         wrap.style.display = 'none'
+      }
+    }
+
+    clientSearch.addEventListener('focus', () => {
+      _renderClientDropdownList(_clients)
+      clientDropdown.style.display = 'block'
+    })
+
+    clientSearch.addEventListener('input', () => {
+      const q = clientSearch.value.trim().toLowerCase()
+      // Clear the hidden id when user types freely (forces them to pick from list)
+      clientHidden.value = ''
+      _renderClientDropdownList(
+        q ? _clients.filter(c =>
+              c.client_name.toLowerCase().includes(q) ||
+              c.project_code.toLowerCase().includes(q))
+          : _clients
+      )
+      clientDropdown.style.display = 'block'
+    })
+
+    clientSearch.addEventListener('blur', () => {
+      // Small delay so mousedown on list item fires first
+      setTimeout(() => { clientDropdown.style.display = 'none' }, 150)
+    })
+
+    // Close dropdown on outside click
+    document.addEventListener('click', function _outsideClick(e) {
+      if (!document.getElementById('ts-client-wrap')?.contains(e.target)) {
+        clientDropdown.style.display = 'none'
+        document.removeEventListener('click', _outsideClick)
       }
     })
 
@@ -623,7 +695,8 @@ const Timesheet = (() => {
     const from = _toISO(_teamWeek)
     const to   = _toISO(_weekEnd(_teamWeek))
 
-    const { data, error } = await API.getTeamTimesheetEntries(from, to, _teamEmpId || null)
+    const reporteeIds = _directReports.map(e => e.id)
+    const { data, error } = await API.getTeamTimesheetEntries(from, to, _teamEmpId || null, reporteeIds.length ? reporteeIds : null)
     if (error) { Utils.showToast('Failed to load team data.', 'error'); return }
     _teamEntries = data || []
     _renderTeamView()
