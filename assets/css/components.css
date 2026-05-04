@@ -4380,6 +4380,402 @@
   margin: 0;
 }
 
+/* ── Onboarding Welcome ─────────────────────────── */
+
+.pw-overlay--welcome {
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  align-items: center;
+}
+
+.pw-welcome-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 560px;
+  width: 100%;
+  background: var(--surface);
+  border-radius: 20px;
+  padding: 48px 40px;
+  box-shadow: 0 32px 80px rgba(0,0,0,0.22);
+}
+
+.pw-welcome-emoji {
+  font-size: 52px;
+  line-height: 1;
+  margin-bottom: 16px;
+}
+
+.pw-welcome-title {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--text);
+  margin: 0 0 12px;
+  line-height: 1.2;
+}
+
+.pw-welcome-sub {
+  font-size: 15px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0 0 24px;
+}
+
+.pw-welcome-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 28px;
+}
+
+.pw-welcome-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.pw-welcome-cta {
+  font-size: 15px;
+  padding: 12px 36px;
+  border-radius: 10px;
+}
+
+/* ── Two-column layout ──────────────────────────── */
+
+.pw-layout {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  width: 100%;
+  max-width: 1060px;
+}
+
+.pw-layout .profile-wizard-card {
+  flex: 1;
+  max-width: none;
+}
+
+.pw-preview-panel {
+  width: 240px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 32px;
+}
+
+@media (max-width: 920px) {
+  .pw-preview-panel { display: none; }
+  .pw-layout { max-width: 680px; }
+}
+
+.pw-preview-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.pw-preview-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px 18px;
+  text-align: center;
+}
+
+.pw-prev-avatar {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: var(--primary-light, #eef2ff);
+  color: var(--primary);
+  font-size: 22px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 12px;
+  overflow: hidden;
+  border: 2px solid var(--border);
+}
+
+.pw-prev-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.pw-prev-role {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.pw-prev-dept {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 20px;
+  background: var(--primary-light, #eef2ff);
+  color: var(--primary);
+}
+
+.pw-prev-fields {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  text-align: left;
+}
+
+.pw-prev-field {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.pw-prev-pct {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.pw-prev-pct-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.pw-prev-pct-track {
+  height: 5px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+/* ── Progress bar ───────────────────────────────── */
+
+.pw-progress-wrap {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  margin: 12px 0 22px;
+  overflow: hidden;
+}
+
+#pw-progress-bar {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 2px;
+  width: 0%;
+  transition: width 0.4s ease;
+}
+
+/* ── Tip callout ────────────────────────────────── */
+
+.pw-tip {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 22px;
+  line-height: 1.5;
+}
+
+/* ── Step slide transitions ─────────────────────── */
+
+.pw-slide-right { animation: pw-from-right 0.28s ease forwards; }
+.pw-slide-left  { animation: pw-from-left  0.28s ease forwards; }
+
+@keyframes pw-from-right {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pw-from-left {
+  from { opacity: 0; transform: translateX(-20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── KYC document grid ──────────────────────────── */
+
+.pw-kyc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 600px) {
+  .pw-kyc-grid { grid-template-columns: 1fr; }
+}
+
+.pw-kyc-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 20px 14px;
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  text-align: center;
+  transition: border-color 0.2s, background 0.2s;
+  cursor: pointer;
+}
+
+.pw-kyc-slot:hover { border-color: var(--primary); background: var(--bg); }
+
+.pw-kyc-slot--done {
+  border-style: solid;
+  border-color: var(--success);
+  background: rgba(34, 197, 94, 0.04);
+}
+
+.pw-kyc-icon { font-size: 26px; line-height: 1; }
+
+.pw-kyc-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.pw-kyc-opt  { color: var(--text-muted); font-weight: 400; }
+.pw-kyc-hint { font-size: 11px; color: var(--text-muted); }
+
+.pw-kyc-check {
+  font-size: 11px;
+  color: var(--success);
+  font-weight: 600;
+  word-break: break-all;
+  max-width: 140px;
+}
+
+/* ── PEP / Compliance ───────────────────────────── */
+
+.pw-pep-wrap { display: flex; flex-direction: column; gap: 16px; }
+
+.pw-pep-q {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+
+.pw-pep-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 0;
+}
+
+.pw-pep-options { display: flex; flex-direction: column; gap: 8px; }
+
+.pw-pep-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.pw-pep-option input { accent-color: var(--primary); flex-shrink: 0; }
+.pw-pep-option--sel  { border-color: var(--primary); background: var(--primary-light, #eef2ff); }
+
+.pw-declaration {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.pw-declaration input { accent-color: var(--primary); flex-shrink: 0; margin-top: 2px; }
+
+/* ── Skip button ────────────────────────────────── */
+
+.pw-skip-btn {
+  background: none;
+  border: none;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+.pw-skip-btn:hover { color: var(--text); }
+
+/* ── Confetti ───────────────────────────────────── */
+
+.pw-confetti {
+  position: fixed;
+  top: -12px;
+  pointer-events: none;
+  z-index: 9999;
+  animation: pw-confetti-fall linear forwards;
+}
+
+@keyframes pw-confetti-fall {
+  0%   { transform: translateY(0)    rotate(0deg);   opacity: 1; }
+  100% { transform: translateY(105vh) rotate(540deg); opacity: 0; }
+}
+
+/* ── Done screen extras ─────────────────────────── */
+
+.pw-done-bar-wrap {
+  width: 200px;
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 10px;
+}
+
+.pw-done-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 12px 0 0;
+}
+
 /* ── Multi-step stepper ─────────────────────────── */
 
 .pw-stepper {

@@ -773,6 +773,31 @@ const API = (() => {
     return res.json()
   }
 
+  /**
+   * Upload a KYC document for an employee to Google Drive.
+   * Creates a subfolder per employee inside the root KYC folder
+   * (Employee Database: 1mF_IJw-cSu2BJYbqjMBSuqI15gHlClZt).
+   * Requires the edge function to have KYC_ROOT_FOLDER_ID configured.
+   */
+  async function uploadKycDocument(file, employeeId, employeeName, docType) {
+    const { data: { session } } = await supabase.auth.getSession()
+    const form = new FormData()
+    form.append('file',          file)
+    form.append('employee_id',   employeeId)
+    form.append('employee_name', employeeName)
+    form.append('doc_type',      docType)
+    form.append('folder_type',   'kyc_documents')
+    const res = await fetch(
+      `${Config.SUPABASE_URL}/functions/v1/upload-to-drive`,
+      {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session?.access_token}`, 'apikey': Config.SUPABASE_ANON_KEY },
+        body: form,
+      }
+    )
+    return res.json()
+  }
+
   /* ── Home dashboard data (Phase 8) ──────────────────────────── */
   async function getHomeLeaveData(employeeId, year) {
     const [creditsRes, requestsRes] = await Promise.all([
@@ -1250,7 +1275,7 @@ const API = (() => {
     getAllAssetRepairs, getAssetRepairsForAsset, createAssetRepair, updateAssetRepair,
     getAssetTypes, createAssetType, updateAssetType, deleteAssetType, getMyAssetRepairs,
     getAssetLocations, createAssetLocation, updateAssetLocation, deleteAssetLocation,
-    uploadAssetPhoto,
+    uploadAssetPhoto, uploadKycDocument,
     getMyAssetRequests, createAssetRequest, getMySubmittedAssetRequests,
     getPendingManagerAssetRequests, getPendingHRAssetRequests, getAllAssetRequests,
     updateAssetRequest,

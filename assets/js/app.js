@@ -483,8 +483,8 @@ const App = (() => {
   }
 
   /* ── Profile Completion Wizard ──────────────────────────────
-     Multi-step onboarding shown on first login.
-     Blocks all app access until the employee completes all steps.
+     7-step guided onboarding. Shown on first login.
+     Blocks app access until completed.
   ─────────────────────────────────────────────────────────── */
   function _showProfileCompletionWizard(user) {
     const sidebar = document.querySelector('.sidebar')
@@ -495,45 +495,31 @@ const App = (() => {
     const content = document.getElementById('page-content')
     if (!content) return
 
-    // ── Wizard state ──────────────────────────────────────────
-    let _step       = 1
-    const TOTAL     = 5
+    // ── State ──────────────────────────────────────────────────
+    let _step = 0
+    const TOTAL = 7
+    const SKIPPABLE = [2, 3, 4, 5, 6]
     let _avatarFile = null
-
+    const _kycFiles = { aadhar: null, pan: null, passport: null, passport_photo: null }
     const _d = {
       dob: '', personal_email: '', phone: '', blood_group: '',
       address: '', linkedin_url: '',
       bank_account_number: '', bank_ifsc: '',
       ec_name: '', ec_phone: '', ec_relationship: '',
+      is_pep: null, pep_note: '', declaration: false,
     }
 
     const STEP_META = [
-      { n: 1, title: 'Profile Photo',     sub: 'Put a face to your name. Optional — you can skip this.' },
-      { n: 2, title: 'Personal Details',  sub: 'A few basics we keep on file for your records.' },
-      { n: 3, title: 'Address & Socials', sub: 'Your home address and professional links.' },
-      { n: 4, title: 'Bank Details',      sub: 'Needed for payroll. Stored securely and visible only to HR.' },
-      { n: 5, title: 'Emergency Contact', sub: 'Someone we can reach in case of an emergency.' },
+      { n: 1, title: 'Profile Photo',     sub: 'Your photo appears across the platform — org chart, requests, and more.',   tip: 'A real photo helps teammates recognise you in meetings, on the org chart, and in announcements.' },
+      { n: 2, title: 'Personal Details',  sub: 'A few basics we keep on file for your records.',                            tip: 'This information is only accessible to HR and is never shared externally.' },
+      { n: 3, title: 'Address & Socials', sub: 'Your home address and professional links.',                                 tip: 'Your LinkedIn profile helps with client introductions and builds your professional presence.' },
+      { n: 4, title: 'Bank Details',      sub: 'Required for payroll — stored securely.',                                   tip: '🔒 Bank details are encrypted and only accessible to the Finance team for payroll processing.' },
+      { n: 5, title: 'Emergency Contact', sub: 'Someone we can reach in case of an emergency.',                             tip: 'Only used in genuine emergencies. Never shared outside the company.' },
+      { n: 6, title: 'KYC Documents',     sub: 'Identity documents for your employee records.',                             tip: 'Files are stored in a secure, access-controlled Google Drive folder visible only to HR.' },
+      { n: 7, title: 'Compliance',        sub: 'A quick regulatory check — takes 30 seconds.',                             tip: 'PEP screening is a standard regulatory requirement for all employees.' },
     ]
 
-    // Render shell once
-    content.innerHTML = `
-      <div class="profile-wizard-overlay">
-        <div class="profile-wizard-card">
-          <div class="profile-wizard-header">
-            <div class="profile-wizard-logo">
-              <img src="../assets/img/logo.jpg" alt="Growthic One" style="height:36px;">
-            </div>
-            <h2 class="profile-wizard-title">Welcome, ${Utils.escapeHtml(user.name.split(' ')[0])}!</h2>
-            <p class="profile-wizard-sub">Let's get your profile set up. It only takes a couple of minutes.</p>
-          </div>
-          <div class="pw-stepper" id="pw-stepper"></div>
-          <div class="pw-step-body" id="pw-step-body"></div>
-          <div id="pw-error" class="form-error" style="display:none;margin-top:14px;"></div>
-          <div class="pw-nav" id="pw-nav"></div>
-        </div>
-      </div>`
-
-    // ── Save fields of the current step into _d ───────────────
+    // ── Capture current step fields into _d ────────────────────
     function _capture() {
       if (_step === 2) {
         _d.dob            = document.getElementById('pw-dob')?.value || ''
@@ -554,28 +540,116 @@ const App = (() => {
         _d.ec_phone        = document.getElementById('pw-ec-phone')?.value.trim() || ''
         _d.ec_relationship = document.getElementById('pw-ec-relationship')?.value || ''
       }
+      if (_step === 7) {
+        _d.is_pep      = document.querySelector('input[name="pep"]:checked')?.value ?? null
+        _d.pep_note    = document.getElementById('pw-pep-note')?.value.trim() || ''
+        _d.declaration = document.getElementById('pw-declaration')?.checked || false
+      }
     }
 
     function _validate() {
       if (_step === 1 && !_avatarFile && !user.profile_image_url)
         return 'Please upload a profile photo to continue.'
+      if (_step === 7) {
+        if (_d.is_pep === null) return 'Please answer the PEP question to continue.'
+        if (!_d.declaration)   return 'Please confirm the declaration to continue.'
+      }
       return null
     }
 
-    // ── Stepper dots ──────────────────────────────────────────
+    function _completeness() {
+      let pts = 0
+      if (_avatarFile || user.profile_image_url)           pts += 20
+      if (_d.dob || _d.phone || _d.personal_email)        pts += 15
+      if (_d.address)                                      pts += 5
+      if (_d.linkedin_url)                                 pts += 5
+      if (_d.bank_account_number || _d.bank_ifsc)         pts += 15
+      if (_d.ec_name && _d.ec_phone)                      pts += 15
+      if (Object.values(_kycFiles).some(Boolean))         pts += 20
+      if (_d.is_pep !== null && _d.declaration)           pts += 5
+      return Math.min(pts, 100)
+    }
+
+    // ── Step 0: Welcome ────────────────────────────────────────
+    function _renderWelcome() {
+      const chips = [
+        { icon: '📸', label: 'Profile Photo' },
+        { icon: '👤', label: 'Personal Details' },
+        { icon: '🏠', label: 'Address & Socials' },
+        { icon: '🏦', label: 'Bank Details' },
+        { icon: '🚨', label: 'Emergency Contact' },
+        { icon: '🪪', label: 'KYC Documents' },
+        { icon: '✅', label: 'Compliance' },
+      ]
+      content.innerHTML = `
+        <div class="profile-wizard-overlay pw-overlay--welcome">
+          <div class="pw-welcome-wrap">
+            <img src="../assets/img/logo.jpg" alt="Growthic One" style="height:44px;margin-bottom:20px;">
+            <div class="pw-welcome-emoji">👋</div>
+            <h1 class="pw-welcome-title">Welcome aboard, ${Utils.escapeHtml(user.name.split(' ')[0])}!</h1>
+            <p class="pw-welcome-sub">You're officially part of the Growthic family. Before you dive in, let's get your profile set up — it takes about 3 minutes.</p>
+            <div class="pw-welcome-chips">
+              ${chips.map(c => `<div class="pw-welcome-chip"><span>${c.icon}</span><span>${c.label}</span></div>`).join('')}
+            </div>
+            <button class="btn btn--primary pw-welcome-cta" id="pw-start">Let's get started →</button>
+            <p style="font-size:12px;color:var(--text-muted);margin-top:14px;">You can update all of this later from your profile settings.</p>
+          </div>
+        </div>`
+      document.getElementById('pw-start').addEventListener('click', () => {
+        _step = 1
+        _renderShell()
+        _update(1)
+      })
+    }
+
+    // ── Form shell (rendered once, updated in-place) ───────────
+    function _renderShell() {
+      content.innerHTML = `
+        <div class="profile-wizard-overlay">
+          <div class="pw-layout">
+            <div class="profile-wizard-card" id="pw-card">
+              <div class="profile-wizard-header" style="padding-bottom:12px;margin-bottom:0;">
+                <img src="../assets/img/logo.jpg" alt="" style="height:28px;">
+              </div>
+              <div class="pw-progress-wrap"><div id="pw-progress-bar"></div></div>
+              <div class="pw-stepper" id="pw-stepper"></div>
+              <div class="pw-step-body" id="pw-step-body"></div>
+              <div id="pw-error" class="form-error" style="display:none;margin-top:14px;"></div>
+              <div class="pw-nav" id="pw-nav"></div>
+            </div>
+            <div class="pw-preview-panel">
+              <p class="pw-preview-label">Your Profile Preview</p>
+              <div class="pw-preview-card" id="pw-preview-card"></div>
+            </div>
+          </div>
+        </div>`
+    }
+
+    // ── Full update cycle ──────────────────────────────────────
+    function _update(dir) {
+      _renderProgressBar()
+      _renderStepper()
+      _renderBody(dir)
+      _renderNav()
+      _renderPreview()
+      document.getElementById('pw-card')?.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+
+    function _renderProgressBar() {
+      const bar = document.getElementById('pw-progress-bar')
+      if (bar) bar.style.width = Math.round((_step / TOTAL) * 100) + '%'
+    }
+
     function _renderStepper() {
       const el = document.getElementById('pw-stepper')
       if (!el) return
       el.innerHTML = STEP_META.map((s, i) => {
-        const done   = _step > s.n
-        const active = _step === s.n
-        const cls    = done ? 'pw-dot--done' : active ? 'pw-dot--active' : ''
+        const done = _step > s.n, active = _step === s.n
+        const cls  = done ? 'pw-dot--done' : active ? 'pw-dot--active' : ''
         return `
           <div class="pw-step-item">
-            <div class="pw-dot ${cls}">
-              ${done
-                ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
-                : s.n}
+            <div class="pw-dot ${cls}" title="${s.title}">
+              ${done ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : s.n}
             </div>
             <span class="pw-step-lbl">${s.title}</span>
           </div>
@@ -583,35 +657,30 @@ const App = (() => {
       }).join('')
     }
 
-    // ── Step body ─────────────────────────────────────────────
-    function _renderBody() {
+    function _renderBody(dir) {
       const wrap = document.getElementById('pw-step-body')
       if (!wrap) return
       const meta = STEP_META[_step - 1]
 
       let html = `
         <div class="pw-step-heading">
-          <div>
-            <h3 class="pw-step-title">${meta.title}</h3>
-            <p class="pw-step-sub">${meta.sub}</p>
-          </div>
-        </div>`
+          <h3 class="pw-step-title">${meta.title}</h3>
+          <p class="pw-step-sub">${meta.sub}</p>
+        </div>
+        <div class="pw-tip"><span>💡</span><span>${meta.tip}</span></div>`
 
       if (_step === 1) {
-        const initials = Utils.getInitials(user.name)
-        const preview  = _avatarFile
-          ? '' // will be replaced by FileReader after render
-          : user.profile_image_url
-            ? `<img src="${Utils.escapeHtml(user.profile_image_url)}" alt="">`
-            : `<span>${initials}</span>`
+        const src = user.profile_image_url
+          ? `<img src="${Utils.escapeHtml(user.profile_image_url)}" alt="">`
+          : `<span>${Utils.getInitials(user.name)}</span>`
         html += `
           <div class="pw-avatar-center">
-            <div class="pw-avatar-preview pw-avatar-lg" id="pw-avatar-preview">${preview}</div>
+            <div class="pw-avatar-preview pw-avatar-lg" id="pw-avatar-preview">${_avatarFile ? '' : src}</div>
             <label class="btn btn--secondary" style="cursor:pointer;margin-top:18px;">
-              Choose Photo
+              ${_avatarFile ? '✓ Change Photo' : 'Choose Photo'}
               <input type="file" id="pw-avatar-file" accept="image/*" style="display:none;">
             </label>
-            <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">JPG or PNG · max 2 MB · <span style="color:var(--danger);">Required</span></p>
+            <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">JPG or PNG · max 2 MB · <span style="color:var(--danger);font-weight:600;">Required</span></p>
           </div>`
       }
 
@@ -689,82 +758,198 @@ const App = (() => {
           </div>`
       }
 
-      wrap.innerHTML = html
-
-      // Restore avatar preview if file already chosen
-      if (_step === 1 && _avatarFile) {
-        const reader = new FileReader()
-        reader.onload = e => {
-          const el = document.getElementById('pw-avatar-preview')
-          if (el) el.innerHTML = `<img src="${e.target.result}" alt="Preview">`
-        }
-        reader.readAsDataURL(_avatarFile)
+      if (_step === 6) {
+        const DOCS = [
+          { key: 'aadhar',         label: 'Aadhar Card',         icon: '🪪', optional: false },
+          { key: 'pan',            label: 'PAN Card',            icon: '📋', optional: false },
+          { key: 'passport',       label: 'Passport',            icon: '📔', optional: true  },
+          { key: 'passport_photo', label: 'Passport-size Photo', icon: '🤳', optional: true  },
+        ]
+        html += `
+          <div class="pw-kyc-grid">
+            ${DOCS.map(doc => {
+              const f = _kycFiles[doc.key]
+              return `
+                <label class="pw-kyc-slot${f ? ' pw-kyc-slot--done' : ''}" style="cursor:pointer;">
+                  <span class="pw-kyc-icon">${doc.icon}</span>
+                  <span class="pw-kyc-label">${doc.label}${doc.optional ? '<span class="pw-kyc-opt"> (optional)</span>' : ''}</span>
+                  ${f
+                    ? `<span class="pw-kyc-check">✓ ${Utils.escapeHtml(f.name.length > 22 ? f.name.slice(0,20)+'…' : f.name)}</span>`
+                    : `<span class="pw-kyc-hint">Tap to upload</span>`}
+                  <input type="file" data-doc="${doc.key}" class="pw-kyc-input" accept=".pdf,.jpg,.jpeg,.png" style="display:none;">
+                </label>`
+            }).join('')}
+          </div>
+          <p style="font-size:12px;color:var(--text-muted);margin-top:12px;">PDF, JPG, or PNG · Max 10 MB each</p>`
       }
 
-      // Bind avatar file input
+      if (_step === 7) {
+        html += `
+          <div class="pw-pep-wrap">
+            <p class="pw-pep-q">Are you a Politically Exposed Person (PEP)?</p>
+            <div class="pw-pep-hint">A PEP is someone who holds or has held a prominent public function — such as a head of state, senior politician, senior government, judicial, or military official — or a close family member or associate of such a person.</div>
+            <div class="pw-pep-options">
+              <label class="pw-pep-option${_d.is_pep === 'no'  ? ' pw-pep-option--sel' : ''}">
+                <input type="radio" name="pep" value="no"  ${_d.is_pep === 'no'  ? 'checked' : ''}> No, I am not a PEP
+              </label>
+              <label class="pw-pep-option${_d.is_pep === 'yes' ? ' pw-pep-option--sel' : ''}">
+                <input type="radio" name="pep" value="yes" ${_d.is_pep === 'yes' ? 'checked' : ''}> Yes, I am a PEP
+              </label>
+            </div>
+            ${_d.is_pep === 'yes' ? `
+              <div class="form-group" style="margin-top:12px;">
+                <label class="form-label">Please provide details</label>
+                <textarea id="pw-pep-note" class="form-input" rows="2" placeholder="Role / position held…">${Utils.escapeHtml(_d.pep_note)}</textarea>
+              </div>` : ''}
+            <label class="pw-declaration">
+              <input type="checkbox" id="pw-declaration" ${_d.declaration ? 'checked' : ''}>
+              <span>I confirm that all information provided during this onboarding is accurate and complete to the best of my knowledge.</span>
+            </label>
+          </div>`
+      }
+
+      // Slide animation
+      wrap.innerHTML = dir === 0
+        ? `<div>${html}</div>`
+        : `<div class="pw-slide-${dir > 0 ? 'right' : 'left'}">${html}</div>`
+
+      // Avatar bindings
       if (_step === 1) {
+        if (_avatarFile) {
+          const reader = new FileReader()
+          reader.onload = e => {
+            const el = document.getElementById('pw-avatar-preview')
+            if (el) el.innerHTML = `<img src="${e.target.result}" alt="">`
+          }
+          reader.readAsDataURL(_avatarFile)
+        }
         document.getElementById('pw-avatar-file')?.addEventListener('change', function () {
-          const f = this.files[0]
-          if (!f) return
+          const f = this.files[0]; if (!f) return
           _avatarFile = f
           const reader = new FileReader()
           reader.onload = e => {
             const el = document.getElementById('pw-avatar-preview')
-            if (el) el.innerHTML = `<img src="${e.target.result}" alt="Preview">`
+            if (el) el.innerHTML = `<img src="${e.target.result}" alt="">`
           }
           reader.readAsDataURL(f)
+          _renderPreview()
+        })
+      }
+
+      // KYC bindings
+      if (_step === 6) {
+        wrap.querySelectorAll('.pw-kyc-input').forEach(input => {
+          input.addEventListener('change', function () {
+            const f = this.files[0]; if (!f) return
+            _kycFiles[this.dataset.doc] = f
+            _renderBody(0)
+            _renderPreview()
+          })
+        })
+      }
+
+      // PEP radio live update
+      if (_step === 7) {
+        wrap.querySelectorAll('input[name="pep"]').forEach(r => {
+          r.addEventListener('change', () => { _capture(); _renderBody(0) })
         })
       }
     }
 
-    // ── Bottom navigation ─────────────────────────────────────
+    // ── Right preview panel ────────────────────────────────────
+    function _renderPreview() {
+      const panel = document.getElementById('pw-preview-card')
+      if (!panel) return
+      let avatarHtml
+      if (_avatarFile) {
+        const url = URL.createObjectURL(_avatarFile)
+        avatarHtml = `<img src="${url}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
+      } else if (user.profile_image_url) {
+        avatarHtml = `<img src="${Utils.escapeHtml(user.profile_image_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
+      } else {
+        avatarHtml = `<span>${Utils.getInitials(user.name)}</span>`
+      }
+      const pct = _completeness()
+      const pctColor = pct >= 80 ? 'var(--success)' : pct >= 50 ? 'var(--warning)' : 'var(--primary)'
+      panel.innerHTML = `
+        <div class="pw-prev-avatar">${avatarHtml}</div>
+        <div class="pw-prev-name">${Utils.escapeHtml(user.name)}</div>
+        <div class="pw-prev-role">${Utils.escapeHtml(user.role || '')}</div>
+        ${user.department ? `<div class="pw-prev-dept">${Utils.escapeHtml(user.department)}</div>` : ''}
+        <div class="pw-prev-fields">
+          ${_d.phone         ? `<div class="pw-prev-field"><span>📞</span><span>${Utils.escapeHtml(_d.phone)}</span></div>` : ''}
+          ${_d.personal_email? `<div class="pw-prev-field"><span>✉️</span><span>${Utils.escapeHtml(_d.personal_email)}</span></div>` : ''}
+          ${_d.linkedin_url  ? `<div class="pw-prev-field"><span>🔗</span><span>LinkedIn</span></div>` : ''}
+          ${_d.address       ? `<div class="pw-prev-field"><span>📍</span><span>${Utils.escapeHtml(_d.address.split('\n')[0])}</span></div>` : ''}
+        </div>
+        <div class="pw-prev-pct">
+          <div class="pw-prev-pct-row"><span>Completeness</span><strong style="color:${pctColor};">${pct}%</strong></div>
+          <div class="pw-prev-pct-track">
+            <div style="width:${pct}%;background:${pctColor};height:100%;border-radius:3px;transition:width .4s,background .4s;"></div>
+          </div>
+        </div>`
+    }
+
+    // ── Navigation ─────────────────────────────────────────────
     function _renderNav() {
       const nav = document.getElementById('pw-nav')
       if (!nav) return
-      const isLast = _step === TOTAL
-
+      const isLast   = _step === TOTAL
+      const canSkip  = SKIPPABLE.includes(_step)
       nav.innerHTML = `
         <div class="pw-nav-inner">
-          ${_step > 1
-            ? `<button class="btn btn--ghost pw-back-btn" id="pw-back">← Back</button>`
-            : `<div></div>`}
+          ${_step > 1 ? `<button class="btn btn--ghost" id="pw-back">← Back</button>` : '<div></div>'}
           <span class="pw-step-counter">Step ${_step} of ${TOTAL}</span>
-          <button class="btn btn--primary pw-next-btn" id="pw-next">
-            ${isLast ? 'Save & Finish' : 'Next →'}
-          </button>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+            <button class="btn btn--primary" id="pw-next">${isLast ? 'Save & Finish ✓' : 'Next →'}</button>
+            ${canSkip ? `<button class="pw-skip-btn" id="pw-skip">Skip for now</button>` : ''}
+          </div>
         </div>`
 
       document.getElementById('pw-back')?.addEventListener('click', () => {
         _capture()
         document.getElementById('pw-error').style.display = 'none'
-        _step--
-        _render()
+        _step--; _update(-1)
+      })
+
+      document.getElementById('pw-skip')?.addEventListener('click', () => {
+        document.getElementById('pw-error').style.display = 'none'
+        _step++; _update(1)
       })
 
       document.getElementById('pw-next')?.addEventListener('click', async () => {
         _capture()
         const errEl = document.getElementById('pw-error')
         errEl.style.display = 'none'
-
         const err = _validate()
         if (err) { errEl.textContent = err; errEl.style.display = 'block'; return }
-
-        if (!isLast) { _step++; _render(); return }
+        if (!isLast) { _step++; _update(1); return }
 
         // ── Final save ────────────────────────────────────────
         const btn = document.getElementById('pw-next')
         btn.disabled = true; btn.textContent = 'Saving…'
 
+        // Upload avatar
         let profile_image_url = null
         if (_avatarFile) {
           const { url, error: uploadErr } = await API.uploadAvatar(user.id, _avatarFile)
           if (uploadErr) {
             errEl.textContent = 'Avatar upload failed: ' + uploadErr.message
             errEl.style.display = 'block'
-            btn.disabled = false; btn.textContent = 'Save & Finish'
+            btn.disabled = false; btn.textContent = 'Save & Finish ✓'
             return
           }
           profile_image_url = url
+        }
+
+        // Upload KYC docs to Drive (non-blocking per doc)
+        const kycUrls = {}
+        for (const [key, file] of Object.entries(_kycFiles)) {
+          if (!file) continue
+          try {
+            const res = await API.uploadKycDocument(file, user.id, user.name, key)
+            if (res?.drive_url) kycUrls[key] = res.drive_url
+          } catch (_) { /* doc upload failure must not block profile save */ }
         }
 
         const profileData = {
@@ -776,45 +961,66 @@ const App = (() => {
           linkedin_url:                   _d.linkedin_url        || null,
           bank_account_number:            _d.bank_account_number || null,
           bank_ifsc:                      _d.bank_ifsc           || null,
-          emergency_contact_name:         _d.ec_name,
-          emergency_contact_phone:        _d.ec_phone,
-          emergency_contact_relationship: _d.ec_relationship,
+          emergency_contact_name:         _d.ec_name             || null,
+          emergency_contact_phone:        _d.ec_phone            || null,
+          emergency_contact_relationship: _d.ec_relationship     || null,
+          is_pep:                         _d.is_pep === 'yes',
+          kyc_aadhar_url:                 kycUrls.aadhar         || null,
+          kyc_pan_url:                    kycUrls.pan            || null,
+          kyc_passport_url:               kycUrls.passport       || null,
+          kyc_passport_photo_url:         kycUrls.passport_photo || null,
+          kyc_submitted_at:               new Date().toISOString(),
           profile_completed:              true,
         }
         if (profile_image_url) profileData.profile_image_url = profile_image_url
 
         const { error } = await API.updateOwnProfile(user.id, profileData)
         if (error) {
-          errEl.textContent = 'Could not save profile: ' + error.message
+          errEl.textContent = 'Could not save: ' + error.message
           errEl.style.display = 'block'
-          btn.disabled = false; btn.textContent = 'Save & Finish'
+          btn.disabled = false; btn.textContent = 'Save & Finish ✓'
           return
         }
 
         // ── Done screen ───────────────────────────────────────
+        const pct = _completeness()
         document.getElementById('pw-stepper').innerHTML = ''
         document.getElementById('pw-nav').innerHTML = ''
         document.getElementById('pw-error').style.display = 'none'
+        document.getElementById('pw-progress-bar').style.width = '100%'
         document.getElementById('pw-step-body').innerHTML = `
           <div class="pw-done">
             <div class="pw-done-check">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
             </div>
-            <h3 class="pw-done-title">You're all set!</h3>
-            <p class="pw-done-sub">Your profile has been saved. Taking you to your dashboard…</p>
+            <h3 class="pw-done-title">You're all set, ${Utils.escapeHtml(user.name.split(' ')[0])}! 🎉</h3>
+            <p class="pw-done-sub">Your profile is <strong>${pct}% complete</strong>. You can fill in the rest anytime from your profile settings.</p>
+            <div class="pw-done-bar-wrap">
+              <div style="background:${pct >= 80 ? 'var(--success)' : 'var(--warning)'};height:8px;border-radius:4px;width:${pct}%;transition:width 0.8s ease;"></div>
+            </div>
+            <p class="pw-done-hint">Taking you to your dashboard…</p>
           </div>`
-        setTimeout(() => window.location.reload(), 1600)
+        _launchConfetti()
+        setTimeout(() => window.location.reload(), 2500)
       })
     }
 
-    function _render() {
-      _renderStepper()
-      _renderBody()
-      _renderNav()
-      document.querySelector('.profile-wizard-card')?.scrollTo({ top: 0, behavior: 'smooth' })
+    // ── Confetti ───────────────────────────────────────────────
+    function _launchConfetti() {
+      const overlay = document.querySelector('.profile-wizard-overlay')
+      if (!overlay) return
+      const colors = ['#4f46e5','#22c55e','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4']
+      for (let i = 0; i < 100; i++) {
+        const el = document.createElement('div')
+        el.className = 'pw-confetti'
+        el.style.cssText = `left:${Math.random()*100}%;background:${colors[Math.floor(Math.random()*colors.length)]};animation-duration:${1.6+Math.random()*2}s;animation-delay:${Math.random()*0.8}s;width:${5+Math.random()*8}px;height:${5+Math.random()*8}px;border-radius:${Math.random()>.5?'50%':'2px'};`
+        overlay.appendChild(el)
+        setTimeout(() => el.remove(), 4500)
+      }
     }
 
-    _render()
+    // ── Entry ──────────────────────────────────────────────────
+    _renderWelcome()
   }
 
   return { init, hasAccess, renderAccessDenied }
