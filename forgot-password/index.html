@@ -62,57 +62,90 @@
   <script src="../assets/js/config.js"></script>
   <script src="../assets/js/auth.js"></script>
   <script>
-    // If already signed in, send to app
-    Auth.requireGuest()
+    // Await requireGuest so signed-in users are redirected before seeing the page
+    ;(async () => {
+      await Auth.requireGuest()
 
-    const form      = document.getElementById('fp-form')
-    const errEl     = document.getElementById('fp-error')
-    const btn       = document.getElementById('fp-btn')
-    const cardReq   = document.getElementById('card-request')
-    const cardSent  = document.getElementById('card-sent')
-    const sentEmail = document.getElementById('fp-sent-email')
+      const form      = document.getElementById('fp-form')
+      const errEl     = document.getElementById('fp-error')
+      const btn       = document.getElementById('fp-btn')
+      const cardReq   = document.getElementById('card-request')
+      const cardSent  = document.getElementById('card-sent')
+      const sentEmail = document.getElementById('fp-sent-email')
+      const resendBtn = document.getElementById('fp-resend')
 
-    async function sendReset(email) {
-      errEl.style.display = 'none'
-      btn.disabled    = true
-      btn.textContent = 'Sending…'
+      let _cooldownTimer = null
 
-      const { error } = await Config.supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin + '/reset-password',
+      // Start a 60-second cooldown on the resend button.
+      // Supabase rate-limits reset emails to one per 60 seconds per address.
+      function _startResendCooldown() {
+        let seconds = 60
+        resendBtn.disabled          = true
+        resendBtn.style.cursor      = 'default'
+        resendBtn.style.opacity     = '0.5'
+        resendBtn.style.textDecoration = 'none'
+        resendBtn.textContent       = `send again (${seconds}s)`
+
+        _cooldownTimer = setInterval(() => {
+          seconds--
+          if (seconds <= 0) {
+            clearInterval(_cooldownTimer)
+            resendBtn.disabled             = false
+            resendBtn.style.cursor         = 'pointer'
+            resendBtn.style.opacity        = '1'
+            resendBtn.style.textDecoration = 'underline'
+            resendBtn.textContent          = 'send again'
+          } else {
+            resendBtn.textContent = `send again (${seconds}s)`
+          }
+        }, 1000)
+      }
+
+      async function sendReset(email) {
+        errEl.style.display = 'none'
+        btn.disabled    = true
+        btn.textContent = 'Sending…'
+
+        const { error } = await Config.supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin + '/reset-password',
+        })
+
+        if (error) {
+          errEl.textContent   = error.message || 'Something went wrong. Please try again.'
+          errEl.style.display = 'block'
+          btn.disabled    = false
+          btn.textContent = 'Send Reset Link'
+          return
+        }
+
+        sentEmail.textContent  = email
+        cardReq.style.display  = 'none'
+        cardSent.style.display = 'block'
+        _startResendCooldown()
+      }
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault()
+        const email = document.getElementById('fp-email').value.trim()
+        if (!email) {
+          errEl.textContent   = 'Please enter your work email address.'
+          errEl.style.display = 'block'
+          return
+        }
+        await sendReset(email)
       })
 
-      if (error) {
-        errEl.textContent   = error.message || 'Something went wrong. Please try again.'
-        errEl.style.display = 'block'
-        btn.disabled    = false
-        btn.textContent = 'Send Reset Link'
-        return
-      }
-
-      sentEmail.textContent = email
-      cardReq.style.display  = 'none'
-      cardSent.style.display = 'block'
-    }
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault()
-      const email = document.getElementById('fp-email').value.trim()
-      if (!email) {
-        errEl.textContent   = 'Please enter your work email address.'
-        errEl.style.display = 'block'
-        return
-      }
-      await sendReset(email)
-    })
-
-    document.getElementById('fp-resend').addEventListener('click', async () => {
-      const email = sentEmail.textContent
-      if (!email) return
-      cardSent.style.display = 'none'
-      cardReq.style.display  = 'block'
-      document.getElementById('fp-email').value = email
-      await sendReset(email)
-    })
+      resendBtn.addEventListener('click', async () => {
+        if (resendBtn.disabled) return
+        const email = sentEmail.textContent
+        if (!email) return
+        // Go back to request card so they can see the "Sending…" state
+        cardSent.style.display = 'none'
+        cardReq.style.display  = 'block'
+        document.getElementById('fp-email').value = email
+        await sendReset(email)
+      })
+    })()
   </script>
 </body>
 </html>

@@ -18,9 +18,18 @@ const People = (() => {
     { value: 'super_admin', label: 'Super Admin' },
   ]
 
+  // Types shown in the ADD form (new hires only)
   const EMP_TYPES = [
     { value: 'full_time', label: 'Full Time' },
     { value: 'intern',    label: 'Intern' },
+  ]
+  // All types including legacy values — used for edit modal dropdowns and display labels
+  const EMP_TYPES_ALL = [
+    { value: 'full_time',  label: 'Full Time' },
+    { value: 'intern',     label: 'Intern' },
+    { value: 'part_time',  label: 'Part Time' },
+    { value: 'freelancer', label: 'Freelancer' },
+    { value: 'probation',  label: 'Probation' },
   ]
 
   const WORK_LOCATIONS = [
@@ -428,7 +437,9 @@ const People = (() => {
       `<option value="${r.value}"${emp.role === r.value ? ' selected' : ''}>${r.label}</option>`
     ).join('')
 
-    const empTypeOptions = EMP_TYPES.map(t =>
+    // Use EMP_TYPES_ALL in the edit modal so existing employees with legacy
+    // employment types (part_time, freelancer, probation) still show correctly
+    const empTypeOptions = EMP_TYPES_ALL.map(t =>
       `<option value="${t.value}"${emp.employment_type === t.value ? ' selected' : ''}>${t.label}</option>`
     ).join('')
 
@@ -914,10 +925,6 @@ const People = (() => {
         `<option value="${e.id}">${Utils.escapeHtml(e.name)}${e.designation ? ' — ' + Utils.escapeHtml(e.designation) : ''}</option>`
       ).join('')
 
-    const roleOptions = ROLES.map(r =>
-      `<option value="${r.value}">${r.label}</option>`
-    ).join('')
-
     const empTypeOptions = EMP_TYPES.map(t =>
       `<option value="${t.value}">${t.label}</option>`
     ).join('')
@@ -1042,6 +1049,7 @@ const People = (() => {
     if (!password)        missing.push('Temporary Password')
     if (!designation)     missing.push('Designation')
     if (!department)      missing.push('Department')
+    if (!manager_id)      missing.push('Reporting Manager')
     if (!employment_type) missing.push('Employment Type')
     if (!work_location)   missing.push('Work Location')
     if (!joining_date)    missing.push('Joining Date')
@@ -1113,7 +1121,7 @@ const People = (() => {
 
   /* ── Label helpers ──────────────────────────────────────── */
   function _empTypeLabel(val) {
-    const found = EMP_TYPES.find(t => t.value === val)
+    const found = EMP_TYPES_ALL.find(t => t.value === val)
     return found ? found.label : (val || '—')
   }
 

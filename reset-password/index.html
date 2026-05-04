@@ -19,6 +19,14 @@
       </div>
     </div>
 
+    <!-- LOADING STATE (shown while Supabase processes the recovery token) -->
+    <div class="auth-card" id="card-loading" style="display:none;">
+      <div style="text-align:center;padding:12px 0;">
+        <div style="width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin 0.7s linear infinite;margin:0 auto 16px;"></div>
+        <p style="font-size:14px;color:var(--text-muted);margin:0;">Verifying your reset link…</p>
+      </div>
+    </div>
+
     <!-- INVALID / EXPIRED LINK -->
     <div class="auth-card" id="card-invalid" style="display:none;">
       <div style="text-align:center;">
@@ -66,7 +74,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         </div>
         <h1 class="auth-title" style="margin-bottom:8px;">Password updated</h1>
-        <p class="auth-subtitle" style="margin-bottom:20px;">Your password has been reset successfully. Signing you in…</p>
+        <p class="auth-subtitle" style="margin-bottom:20px;">Your password has been reset. Redirecting to sign in…</p>
         <a href="/" class="btn btn-secondary btn-full" style="text-decoration:none;text-align:center;">Go to Sign In</a>
       </div>
     </div>
@@ -74,39 +82,57 @@
     <p class="auth-footer">Growthic (Apinzo Technologies) &middot; Internal use only</p>
   </div>
 
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="../assets/js/config.js"></script>
   <script src="../assets/js/auth.js"></script>
   <script>
-    const cardInvalid  = document.getElementById('card-invalid')
-    const cardReset    = document.getElementById('card-reset')
-    const cardSuccess  = document.getElementById('card-success')
-    const errEl        = document.getElementById('rp-error')
-    const btn          = document.getElementById('rp-btn')
+    const cardLoading = document.getElementById('card-loading')
+    const cardInvalid = document.getElementById('card-invalid')
+    const cardReset   = document.getElementById('card-reset')
+    const cardSuccess = document.getElementById('card-success')
+    const errEl       = document.getElementById('rp-error')
+    const btn         = document.getElementById('rp-btn')
 
-    // Supabase emits PASSWORD_RECOVERY event when a valid recovery token is in the URL hash.
-    // We wait for that event before showing the reset form.
-    Config.supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        // Valid recovery session — show the reset form
-        cardReset.style.display = 'block'
-      } else if (event === 'SIGNED_IN' && cardSuccess.style.display !== 'block') {
-        // Already signed in and not in recovery — send to app
-        window.location.href = '/home'
-      }
-    })
+    // Check the URL hash synchronously — it's available immediately, no timeout needed.
+    // Supabase appends ?type=recovery (or #type=recovery) to the redirect URL.
+    const rawHash  = window.location.hash.slice(1)
+    const hashParams = new URLSearchParams(rawHash)
+    // Also check query string — Supabase v2 sometimes puts it there after redirect
+    const queryParams = new URLSearchParams(window.location.search)
+    const tokenType = hashParams.get('type') || queryParams.get('type')
 
-    // If no hash at all or wrong type, show invalid card after a short delay
-    // (give Supabase time to process the hash first)
-    setTimeout(() => {
-      const hashParams = new URLSearchParams(window.location.hash.slice(1))
-      const type       = hashParams.get('type')
-      if (cardReset.style.display !== 'block' && cardSuccess.style.display !== 'block') {
-        if (type !== 'recovery') {
+    if (tokenType !== 'recovery') {
+      // No recovery token in the URL at all — show invalid immediately, no waiting
+      cardInvalid.style.display = 'block'
+    } else {
+      // Has a recovery token — show loading and wait for Supabase to validate it
+      cardLoading.style.display = 'block'
+
+      // Safety net: if PASSWORD_RECOVERY never fires within 5s
+      // (e.g. token already consumed), flip to invalid
+      const safetyTimer = setTimeout(() => {
+        if (cardReset.style.display !== 'block' && cardSuccess.style.display !== 'block') {
+          cardLoading.style.display = 'none'
           cardInvalid.style.display = 'block'
         }
-      }
-    }, 800)
+      }, 5000)
+
+      Config.supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          clearTimeout(safetyTimer)
+          cardLoading.style.display = 'none'
+          cardReset.style.display   = 'block'
+        } else if (event === 'SIGNED_IN' && cardSuccess.style.display !== 'block') {
+          // Already authenticated outside of a recovery flow — send to app
+          clearTimeout(safetyTimer)
+          window.location.href = '/home'
+        }
+      })
+    }
 
     // Toggle password visibility
     document.getElementById('rp-toggle-pw').addEventListener('click', () => {
@@ -114,7 +140,7 @@
       const eye    = document.getElementById('rp-eye')
       const eyeOff = document.getElementById('rp-eye-off')
       const show   = input.type === 'text'
-      input.type        = show ? 'password' : 'text'
+      input.type           = show ? 'password' : 'text'
       eye.style.display    = show ? 'block' : 'none'
       eyeOff.style.display = show ? 'none'  : 'block'
     })
@@ -152,7 +178,7 @@
 
       cardReset.style.display   = 'none'
       cardSuccess.style.display = 'block'
-      // Auto sign out then redirect — user should log in fresh with new password
+      // Sign out then redirect so they log in fresh with the new password
       setTimeout(async () => {
         await Config.supabase.auth.signOut()
         window.location.href = '/'
