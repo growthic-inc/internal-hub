@@ -147,6 +147,7 @@ const Assets = (() => {
       can_view_available:  App.hasAccess('asset_management', 'view_available_assets', 'view_only'),
       can_request:         App.hasAccess('asset_management', 'request_asset',         'view_only'),
       can_manage:          App.hasAccess('asset_management', 'manage_assets',         'can_manage'),
+      can_return:          App.hasAccess('asset_management', 'return_asset',          'can_manage'),
       can_report:          App.hasAccess('asset_management', 'report_issue',          'view_only'),
       can_resolve:         App.hasAccess('asset_management', 'resolve_repair',        'can_manage'),
       can_manage_types:    App.hasAccess('asset_management', 'manage_asset_types',    'can_manage'),
@@ -334,12 +335,12 @@ const Assets = (() => {
                 <td>${_statusBadge(a.status)}</td>
                 <td style="white-space:nowrap;text-align:right;">
                   <button class="btn btn--xs btn--ghost ast-view" data-id="${a.id}">View</button>
-                  ${a.status === 'available'
+                  ${a.status === 'available' && _p.can_manage
                     ? `<button class="btn btn--xs btn--secondary ast-assign" data-id="${a.id}">Assign</button>`
-                    : a.status === 'in_use'
+                    : a.status === 'in_use' && (_p.can_return || _p.can_manage)
                     ? `<button class="btn btn--xs btn--ghost ast-return" data-id="${a.id}">Return</button>`
                     : ''}
-                  ${a.status !== 'retired' && a.status !== 'lost'
+                  ${a.status !== 'retired' && a.status !== 'lost' && _p.can_manage
                     ? `<button class="btn btn--xs btn--ghost ast-lost" data-id="${a.id}"
                         style="color:var(--danger);" title="Mark Lost">✕</button>`
                     : ''}
@@ -917,10 +918,11 @@ const Assets = (() => {
           <div><div class="ast-detail-label">Since</div>${asset.assigned_date ? Utils.formatDate(asset.assigned_date) : '—'}</div>
           <div><div class="ast-detail-label">Location</div>${Utils.escapeHtml(asset.location || '—')}</div>
           <div><div class="ast-detail-label">Purchase Date</div>${asset.purchase_date ? Utils.formatDate(asset.purchase_date) : '—'}</div>
+          ${canManage ? `
           <div><div class="ast-detail-label">Vendor</div>${Utils.escapeHtml(asset.vendor || '—')}</div>
           <div><div class="ast-detail-label">Purchase Price</div>
             ${asset.purchase_price ? '₹' + Number(asset.purchase_price).toLocaleString('en-IN') : '—'}
-          </div>
+          </div>` : ''}
         </div>
 
         ${asset.notes ? `
@@ -951,8 +953,8 @@ const Assets = (() => {
         <button class="btn btn--ghost" onclick="Utils.closeModal()">Close</button>
         ${canManage ? `<button class="btn btn--ghost btn--sm" id="ast-detail-edit">Edit</button>` : ''}
         ${canManage && asset.status === 'available' ? `<button class="btn btn--secondary btn--sm" id="ast-detail-assign">Assign</button>` : ''}
-        ${canManage && asset.status === 'in_use'    ? `<button class="btn btn--ghost btn--sm" id="ast-detail-return">Return</button>` : ''}
-        <button class="btn btn--primary btn--sm" id="ast-detail-report">Report Issue</button>
+        ${(canManage || _p.can_return) && asset.status === 'in_use' ? `<button class="btn btn--ghost btn--sm" id="ast-detail-return">Return</button>` : ''}
+        ${_p.can_report || canManage ? `<button class="btn btn--primary btn--sm" id="ast-detail-report">Report Issue</button>` : ''}
       </div>
     `)
 
@@ -993,7 +995,16 @@ const Assets = (() => {
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Asset Name <span class="required">*</span></label>
-            <input class="form-input" id="ast-f-name" value="${Utils.escapeHtml(asset?.name || '')}" placeholder="e.g. MacBook Pro 14">
+            <div class="custom-select-wrap" id="ast-name-wrap" style="min-width:0;">
+              <input class="form-input" id="ast-f-name"
+                value="${Utils.escapeHtml(asset?.name || '')}"
+                placeholder="e.g. MacBook Pro 14"
+                autocomplete="off" />
+              <div class="custom-select-dropdown" id="ast-name-dropdown"
+                   style="display:none;position:absolute;width:100%;left:0;z-index:200;">
+                <div class="custom-select-list" id="ast-name-list"></div>
+              </div>
+            </div>
           </div>
           <div class="form-group">
             <label class="form-label">Type <span class="required">*</span></label>
@@ -1051,6 +1062,37 @@ const Assets = (() => {
         <button class="btn btn--primary" id="ast-form-save">${isEdit ? 'Save Changes' : 'Add Asset'}</button>
       </div>
     `)
+
+    // ── Asset name typeahead (suggestions from existing asset names) ──
+    const _existingNames = [...new Set(_assets.map(a => a.name).filter(Boolean))].sort()
+    const _nameInput     = document.getElementById('ast-f-name')
+    const _nameDropdown  = document.getElementById('ast-name-dropdown')
+    const _nameList      = document.getElementById('ast-name-list')
+
+    function _renderNameSuggestions(q) {
+      const matches = q ? _existingNames.filter(n => n.toLowerCase().includes(q.toLowerCase())) : []
+      if (!matches.length) { _nameDropdown.style.display = 'none'; return }
+      _nameList.innerHTML = matches.map(n =>
+        `<div class="custom-select-item" data-name="${Utils.escapeHtml(n)}">${Utils.escapeHtml(n)}</div>`
+      ).join('')
+      _nameList.querySelectorAll('.custom-select-item').forEach(el => {
+        el.addEventListener('mousedown', ev => {
+          ev.preventDefault()
+          _nameInput.value = el.dataset.name
+          _nameDropdown.style.display = 'none'
+        })
+      })
+      _nameDropdown.style.display = 'block'
+    }
+
+    _nameInput?.addEventListener('input', () => _renderNameSuggestions(_nameInput.value.trim()))
+    _nameInput?.addEventListener('blur',  () => setTimeout(() => { _nameDropdown.style.display = 'none' }, 150))
+    document.addEventListener('click', function _closeNameDrop(e) {
+      if (!document.getElementById('ast-name-wrap')?.contains(e.target)) {
+        _nameDropdown.style.display = 'none'
+        document.removeEventListener('click', _closeNameDrop)
+      }
+    })
 
     document.getElementById('ast-form-save').addEventListener('click', async () => {
       const errEl = document.getElementById('ast-form-err')
@@ -1653,9 +1695,10 @@ ModuleRegistry.register({
     view_assets:           'View Assets',
     view_available_assets: 'View Available Assets',
     request_asset:         'Request Asset',
-    manage_assets:         'Manage Assets (assign/return)',
+    manage_assets:         'Manage Assets (assign / add / edit)',
+    return_asset:          'Return Asset',
     report_issue:          'Report Repair / Issue',
     resolve_repair:        'Resolve / Close Repairs',
-    manage_asset_types:    'Manage Asset Types',
+    manage_asset_types:    'Manage Asset Types & Locations',
   },
 })
