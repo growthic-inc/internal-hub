@@ -557,11 +557,8 @@ const App = (() => {
     }
 
     function _validate() {
-      if (_step === 5) {
-        if (!_d.ec_name)         return 'Emergency contact name is required.'
-        if (!_d.ec_phone)        return 'Emergency contact phone is required.'
-        if (!_d.ec_relationship) return 'Please select the relationship.'
-      }
+      if (_step === 1 && !_avatarFile && !user.profile_image_url)
+        return 'Please upload a profile photo to continue.'
       return null
     }
 
@@ -614,7 +611,7 @@ const App = (() => {
               Choose Photo
               <input type="file" id="pw-avatar-file" accept="image/*" style="display:none;">
             </label>
-            <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">JPG or PNG · max 2 MB</p>
+            <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">JPG or PNG · max 2 MB · <span style="color:var(--danger);">Required</span></p>
           </div>`
       }
 
@@ -674,15 +671,15 @@ const App = (() => {
         html += `
           <div class="people-field-grid">
             <div class="form-group">
-              <label class="form-label">Contact Name <span class="required-star">*</span></label>
+              <label class="form-label">Contact Name</label>
               <input type="text" id="pw-ec-name" class="form-input" placeholder="Full name" value="${Utils.escapeHtml(_d.ec_name)}">
             </div>
             <div class="form-group">
-              <label class="form-label">Phone Number <span class="required-star">*</span></label>
+              <label class="form-label">Phone Number</label>
               <input type="tel" id="pw-ec-phone" class="form-input" placeholder="+91 98765 43210" value="${Utils.escapeHtml(_d.ec_phone)}">
             </div>
             <div class="form-group">
-              <label class="form-label">Relationship <span class="required-star">*</span></label>
+              <label class="form-label">Relationship</label>
               <select id="pw-ec-relationship" class="form-input">
                 <option value="">Select</option>
                 ${['Parent','Spouse','Sibling','Child','Friend','Other'].map(r =>
