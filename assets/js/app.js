@@ -295,7 +295,7 @@ const App = (() => {
         ${items.length === 0
           ? `<div class="notif-empty">You're all caught up!</div>`
           : items.map(n => `
-            <div class="notif-item${n.read ? '' : ' notif-item--unread'}" data-id="${n.id}">
+            <div class="notif-item${n.read ? '' : ' notif-item--unread'}" data-id="${n.id}" data-module="${n.module || ''}" style="cursor:pointer;">
               <div class="notif-item-icon">${_notifIcon(n.type)}</div>
               <div class="notif-item-body">
                 <div class="notif-item-msg">${Utils.escapeHtml(n.message)}</div>
@@ -317,15 +317,26 @@ const App = (() => {
       document.getElementById('notif-mark-all')?.remove()
     })
 
-    panel.querySelectorAll('.notif-item--unread').forEach(el => {
+    // All items are clickable: mark as read + navigate to the relevant module
+    panel.querySelectorAll('.notif-item').forEach(el => {
       el.addEventListener('click', async () => {
-        const id = el.dataset.id
-        await API.markNotificationRead(id)
-        el.classList.remove('notif-item--unread')
-        el.querySelector('.notif-item-dot')?.remove()
-        const remaining = panel.querySelectorAll('.notif-item--unread').length
-        _updateNotifBadge(remaining)
-        if (remaining === 0) document.getElementById('notif-mark-all')?.remove()
+        const id     = el.dataset.id
+        const mod    = el.dataset.module
+        const isUnread = el.classList.contains('notif-item--unread')
+
+        // Mark as read
+        if (isUnread) {
+          await API.markNotificationRead(id)
+          el.classList.remove('notif-item--unread')
+          el.querySelector('.notif-item-dot')?.remove()
+          const remaining = panel.querySelectorAll('.notif-item--unread').length
+          _updateNotifBadge(remaining)
+          if (remaining === 0) document.getElementById('notif-mark-all')?.remove()
+        }
+
+        // Navigate and close panel
+        panel.style.display = 'none'
+        if (mod) window.location.hash = mod
       })
     })
   }
