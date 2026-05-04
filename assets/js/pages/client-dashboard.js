@@ -5,15 +5,31 @@
 
 const ClientDashboard = (() => {
 
-  const METRIC_CONFIG = {
-    impressions:     { label: 'Impressions',     color: '#0F4799', field: 'impressions' },
-    clicks:          { label: 'Clicks',          color: '#45BBF0', field: 'clicks' },
-    reactions:       { label: 'Reactions',       color: '#1D9E75', field: 'reactions' },
-    engagement_rate: { label: 'Engagement Rate', color: '#EF4444', field: 'engagement_rate', scale: 100 },
-    comments:        { label: 'Comments',        color: '#8B5CF6', field: 'comments' },
-    reposts_shares:  { label: 'Reposts',         color: '#F59E0B', field: 'reposts_shares' },
+  // Platform-specific metric configs for the trend chart
+  const METRIC_CONFIG_LINKEDIN = {
+    impressions:     { label: 'Impressions (Organic)', color: '#0F4799', field: 'impressions_organic' },
+    clicks:          { label: 'Clicks (Organic)',      color: '#45BBF0', field: 'clicks_organic' },
+    reactions:       { label: 'Reactions',             color: '#1D9E75', field: 'reactions' },
+    engagement_rate: { label: 'Engagement Rate',       color: '#EF4444', field: 'engagement_rate_organic', scale: 100 },
+    comments:        { label: 'Comments',              color: '#8B5CF6', field: 'comments' },
+    reposts_shares:  { label: 'Reposts',               color: '#F59E0B', field: 'reposts_shares' },
   }
-  const METRIC_KEYS = Object.keys(METRIC_CONFIG)
+  const METRIC_CONFIG_INSTAGRAM = {
+    impressions:     { label: 'Views',           color: '#E1306C', field: 'impressions' },
+    reactions:       { label: 'Likes',           color: '#1D9E75', field: 'reactions' },
+    saves:           { label: 'Saves',           color: '#8B5CF6', field: 'saves' },
+    comments:        { label: 'Comments',        color: '#F59E0B', field: 'comments' },
+    reposts_shares:  { label: 'Shares',          color: '#45BBF0', field: 'reposts_shares' },
+    engagement_rate: { label: 'Engagement Rate', color: '#EF4444', field: 'engagement_rate', scale: 100 },
+  }
+
+  function _getMetricConfig() {
+    return _currentPlatform === 'Instagram' ? METRIC_CONFIG_INSTAGRAM : METRIC_CONFIG_LINKEDIN
+  }
+  function _getMetricKeys() { return Object.keys(_getMetricConfig()) }
+  function _getDefaultActiveMetrics() {
+    return _currentPlatform === 'Instagram' ? ['impressions', 'reactions'] : ['impressions', 'clicks']
+  }
 
   let _user = null, _p = null, _clients = [], _currentClient = null, _currentEntity = null
   let _currentPlatform = 'LinkedIn', _currentRange = '30', _currentMonth = _thisMonth()
@@ -99,6 +115,7 @@ const ClientDashboard = (() => {
       can_edit:   App.hasAccess('client_dashboard', 'update_client_status',    'can_edit'),
     }
     _trendChart = null; _pubChart = null; _followersChart = null; _visitorsChart = null; _currentClient = null
+    _activeMetrics = _getDefaultActiveMetrics()
     const { data } = await API.getClients()
     _clients = data || []
     _bindClientDropdown()
@@ -153,7 +170,11 @@ const ClientDashboard = (() => {
   }
 
   function _bindFilters() {
-    document.getElementById('db-platform-select')?.addEventListener('change', e => { _currentPlatform = e.target.value; if (_currentClient) _loadDashboard() })
+    document.getElementById('db-platform-select')?.addEventListener('change', e => {
+      _currentPlatform = e.target.value
+      _activeMetrics = _getDefaultActiveMetrics()
+      if (_currentClient) _loadDashboard()
+    })
     document.getElementById('db-range-select')?.addEventListener('change', e => {
       _currentRange = e.target.value
       const customEl = document.getElementById('db-custom-dates')
@@ -223,14 +244,22 @@ const ClientDashboard = (() => {
     if (_visitorsChart)  { _visitorsChart.destroy();  _visitorsChart = null }
 
     const kpis = _computeKPIs(metrics, posts, followers, prevMetrics, prevPosts, prevFollowers)
+    const mCfg = _getMetricConfig(), mKeys = _getMetricKeys()
+    const isIG = _currentPlatform === 'Instagram'
+    const organicNote = !isIG ? `<span style="font-size:11px;color:var(--text-muted);background:var(--surface);padding:2px 8px;border-radius:99px;border:1px solid var(--border);">Organic only</span>` : ''
+
     body.innerHTML = `
       ${_renderContextBar(uploadLog, dateFrom, dateTo)}
       <div class="kpi-grid" style="margin-bottom:16px;">${_renderKPICards(kpis)}</div>
+      ${_renderContentTypeBreakdown(posts)}
       <div class="chart-card mb-4">
         <div class="chart-card-header">
-          <span class="chart-card-title">Performance Trend</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="chart-card-title">Performance Trend</span>
+            ${organicNote}
+          </div>
           <div class="chart-multi-select" id="trend-pills">
-            ${METRIC_KEYS.map(k => `<span class="chart-metric-pill${_activeMetrics.includes(k) ? ' active' : ''}" data-metric="${k}">${Utils.escapeHtml(_metricLabel(k))}</span>`).join('')}
+            ${mKeys.map(k => `<span class="chart-metric-pill${_activeMetrics.includes(k) ? ' active' : ''}" data-metric="${k}">${Utils.escapeHtml(mCfg[k].label)}</span>`).join('')}
           </div>
         </div>
         <div class="chart-canvas-wrap" style="height:260px;"><canvas id="trend-chart"></canvas></div>
@@ -323,13 +352,19 @@ const ClientDashboard = (() => {
   }
 
   const _KPI_META = {
-    'Impressions':     { color: '#0F4799', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>` },
-    'Clicks':          { color: '#45BBF0', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><path d="M10 14L21 3"/><path d="M21 16v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>` },
-    'Reactions':       { color: '#1D9E75', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>` },
-    'Likes':           { color: '#1D9E75', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>` },
-    'Engagement Rate': { color: '#EF4444', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>` },
-    'Posts Published': { color: '#8B5CF6', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>` },
-    'Total Followers': { color: '#F59E0B', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>` },
+    // LinkedIn
+    'Impressions':      { color: '#0F4799', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>` },
+    'Clicks':           { color: '#45BBF0', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><path d="M10 14L21 3"/><path d="M21 16v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>` },
+    'Reactions':        { color: '#1D9E75', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>` },
+    'Engagement Rate':  { color: '#EF4444', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>` },
+    'Posts Published':  { color: '#8B5CF6', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>` },
+    'Followers Gained': { color: '#F59E0B', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>` },
+    // Instagram
+    'Views':            { color: '#E1306C', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>` },
+    'Likes':            { color: '#1D9E75', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>` },
+    'Saves':            { color: '#8B5CF6', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>` },
+    'Comments':         { color: '#F59E0B', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>` },
+    'Shares':           { color: '#45BBF0', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>` },
   }
 
   function _computeKPIs(metrics, posts, followers, prevMetrics, prevPosts, prevFollowers) {
@@ -341,28 +376,58 @@ const ClientDashboard = (() => {
       return isFinite(pct) ? +pct.toFixed(1) : null
     }
 
-    const totalImpressions = sum(metrics, 'impressions')
-    const totalClicks      = sum(metrics, 'clicks')
-    const totalReactions   = sum(metrics, 'reactions')
-    const avgEng           = metrics.length ? (sum(metrics, 'engagement_rate') / metrics.length) * 100 : 0
     // New Followers = sum of daily new followers gained in the range
-    // (LinkedIn exports daily gain counts per row, not a running cumulative total)
-    const totalFollowers = sum(followers, 'total_new_followers')
+    const totalFollowers    = sum(followers,     'total_new_followers')
+    const prevTotalFollowers= sum(prevFollowers, 'total_new_followers')
 
-    const pImpressions       = sum(prevMetrics,   'impressions')
-    const pClicks            = sum(prevMetrics,   'clicks')
-    const pReactions         = sum(prevMetrics,   'reactions')
-    const pAvgEng            = prevMetrics.length ? (sum(prevMetrics, 'engagement_rate') / prevMetrics.length) * 100 : 0
-    const prevTotalFollowers = sum(prevFollowers,  'total_new_followers')
+    if (_currentPlatform === 'Instagram') {
+      // Instagram KPIs — all organic (basic export has no paid split)
+      const totalViews    = sum(metrics, 'impressions')
+      const totalLikes    = sum(metrics, 'reactions')
+      const totalSaves    = sum(posts,   'saves')        // saves live on post rows
+      const totalComments = sum(metrics, 'comments')
+      const totalShares   = sum(metrics, 'reposts_shares')
+      const avgEng        = metrics.length ? (sum(metrics, 'engagement_rate') / metrics.length) * 100 : 0
+
+      const pViews    = sum(prevMetrics, 'impressions')
+      const pLikes    = sum(prevMetrics, 'reactions')
+      const pSaves    = sum(prevPosts,   'saves')
+      const pComments = sum(prevMetrics, 'comments')
+      const pShares   = sum(prevMetrics, 'reposts_shares')
+      const pAvgEng   = prevMetrics.length ? (sum(prevMetrics, 'engagement_rate') / prevMetrics.length) * 100 : 0
+
+      return [
+        { label: 'Views',           value: loc(totalViews),          growth: growthPct(totalViews,    pViews)           },
+        { label: 'Likes',           value: loc(totalLikes),          growth: growthPct(totalLikes,    pLikes)           },
+        { label: 'Saves',           value: loc(totalSaves),          growth: growthPct(totalSaves,    pSaves)           },
+        { label: 'Comments',        value: loc(totalComments),       growth: growthPct(totalComments, pComments)        },
+        { label: 'Shares',          value: loc(totalShares),         growth: growthPct(totalShares,   pShares)          },
+        { label: 'Followers Gained',value: loc(totalFollowers),      growth: growthPct(totalFollowers,prevTotalFollowers) },
+      ]
+    }
+
+    // LinkedIn KPIs — organic metrics only (per user preference)
+    const totalImpressions = sum(metrics, 'impressions_organic') || sum(metrics, 'impressions')
+    const totalClicks      = sum(metrics, 'clicks_organic')      || sum(metrics, 'clicks')
+    const totalReactions   = sum(metrics, 'reactions')
+    const avgEng           = metrics.length
+      ? (sum(metrics, 'engagement_rate_organic') || sum(metrics, 'engagement_rate')) / metrics.length * 100
+      : 0
+
+    const pImpressions = sum(prevMetrics, 'impressions_organic') || sum(prevMetrics, 'impressions')
+    const pClicks      = sum(prevMetrics, 'clicks_organic')      || sum(prevMetrics, 'clicks')
+    const pReactions   = sum(prevMetrics, 'reactions')
+    const pAvgEng      = prevMetrics.length
+      ? (sum(prevMetrics, 'engagement_rate_organic') || sum(prevMetrics, 'engagement_rate')) / prevMetrics.length * 100
+      : 0
 
     return [
-      { label: 'Impressions',                               value: loc(totalImpressions),    growth: growthPct(totalImpressions, pImpressions)      },
-      { label: 'Clicks',                                    value: loc(totalClicks),         growth: growthPct(totalClicks,      pClicks)           },
-      { label: _currentPlatform === 'Instagram' ? 'Likes' : 'Reactions',
-                                                            value: loc(totalReactions),      growth: growthPct(totalReactions,   pReactions)        },
-      { label: 'Engagement Rate',                           value: avgEng.toFixed(2) + '%', growth: growthPct(avgEng,           pAvgEng)           },
-      { label: 'Posts Published',                           value: loc(posts.length),        growth: growthPct(posts.length,     prevPosts.length)  },
-      { label: 'Total Followers',                           value: loc(totalFollowers),      growth: growthPct(totalFollowers,   prevTotalFollowers) },
+      { label: 'Impressions',     value: loc(totalImpressions),   growth: growthPct(totalImpressions, pImpressions)    },
+      { label: 'Clicks',          value: loc(totalClicks),        growth: growthPct(totalClicks,      pClicks)         },
+      { label: 'Reactions',       value: loc(totalReactions),     growth: growthPct(totalReactions,   pReactions)      },
+      { label: 'Engagement Rate', value: avgEng.toFixed(2) + '%', growth: growthPct(avgEng,           pAvgEng)         },
+      { label: 'Posts Published', value: loc(posts.length),       growth: growthPct(posts.length,     prevPosts.length)},
+      { label: 'Followers Gained',value: loc(totalFollowers),     growth: growthPct(totalFollowers,   prevTotalFollowers)},
     ]
   }
 
@@ -406,9 +471,10 @@ const ClientDashboard = (() => {
     if (_trendChart) { _trendChart.destroy(); _trendChart = null }
     const canvas = document.getElementById('trend-chart')
     if (!canvas || typeof Chart === 'undefined') return
+    const mCfg = _getMetricConfig()
     const labels = metrics.map(r => _shortDate(r.date))
-    const datasets = _activeMetrics.map(k => {
-      const cfg = METRIC_CONFIG[k], scale = cfg.scale || 1
+    const datasets = _activeMetrics.filter(k => mCfg[k]).map(k => {
+      const cfg = mCfg[k], scale = cfg.scale || 1
       return _mkDataset(cfg.label, metrics.map(r => _num(r[cfg.field]) * scale), cfg.color, metrics.length)
     })
     _trendChart = new Chart(canvas, { type: 'line', data: { labels, datasets }, options: _lineChartOpts(metrics.length) })
@@ -436,9 +502,11 @@ const ClientDashboard = (() => {
   }
 
   function _bindTrendPills(metrics) {
+    const mCfg = _getMetricConfig()
     document.querySelectorAll('.chart-metric-pill').forEach(pill => {
       pill.addEventListener('click', () => {
         const key = pill.dataset.metric
+        if (!mCfg[key]) return
         if (_activeMetrics.includes(key)) { if (_activeMetrics.length === 1) return; _activeMetrics = _activeMetrics.filter(m => m !== key); pill.classList.remove('active') }
         else { _activeMetrics.push(key); pill.classList.add('active') }
         _initTrendChart(metrics)
@@ -451,11 +519,16 @@ const ClientDashboard = (() => {
     if (_followersChart) { _followersChart.destroy(); _followersChart = null }
     const canvas = document.getElementById('followers-chart')
     if (!canvas || typeof Chart === 'undefined' || !followers.length) return
-    const labels = followers.map(r => _shortDate(r.date))
-    _followersChart = new Chart(canvas, { type: 'line', data: { labels, datasets: [
-      _mkDataset('Organic Followers',    followers.map(r => _num(r.organic_followers)),   '#1D9E75', followers.length),
-      _mkDataset('Total New Followers',  followers.map(r => _num(r.total_new_followers)), '#0F4799', followers.length),
-    ]}, options: _lineChartOpts(followers.length) })
+    const labels   = followers.map(r => _shortDate(r.date))
+    const isIG     = _currentPlatform === 'Instagram'
+    // Instagram Follows export only has total new followers (no organic/sponsored split)
+    const datasets = isIG
+      ? [ _mkDataset('New Followers', followers.map(r => _num(r.total_new_followers)), '#E1306C', followers.length) ]
+      : [
+          _mkDataset('Organic Followers',   followers.map(r => _num(r.organic_followers)),   '#1D9E75', followers.length),
+          _mkDataset('Total New Followers',  followers.map(r => _num(r.total_new_followers)), '#0F4799', followers.length),
+        ]
+    _followersChart = new Chart(canvas, { type: 'line', data: { labels, datasets }, options: _lineChartOpts(followers.length) })
   }
 
   /* ── Visitors chart ─────────────────────────────────────── */
@@ -472,19 +545,29 @@ const ClientDashboard = (() => {
 
   /* ── Audience section ───────────────────────────────────── */
   function _renderAudienceSection(followers, visitors, demoFollowers, demoVisitors) {
-    if (!followers.length && !visitors.length && !demoFollowers.length && !demoVisitors.length) return ''
-    const hasDemoF = demoFollowers.length > 0, hasDemoV = demoVisitors.length > 0
+    const isIG = _currentPlatform === 'Instagram'
+    // Instagram: page-visitor analytics is a LinkedIn-only concept — hide it
+    const showVisitors  = !isIG && visitors.length > 0
+    const showFollowers = followers.length > 0
+    const hasDemoF      = demoFollowers.length > 0
+    const hasDemoV      = !isIG && demoVisitors.length > 0
 
-    const chartCol = (title, canvasId) => `
+    if (!showFollowers && !showVisitors && !hasDemoF && !hasDemoV) return ''
+
+    const chartCol = (title, canvasId, subtitle = '') => `
       <div>
-        <h4 style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:0 0 8px;">${title}</h4>
+        <div style="margin-bottom:8px;">
+          <h4 style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:0;">${title}</h4>
+          ${subtitle ? `<span style="font-size:10px;color:var(--text-muted);">${subtitle}</span>` : ''}
+        </div>
         <div class="chart-canvas-wrap" style="height:160px;"><canvas id="${canvasId}"></canvas></div>
       </div>`
-    const bothCharts = followers.length && visitors.length
-    const chartsHtml = (followers.length || visitors.length) ? `
-      <div style="display:grid;grid-template-columns:${bothCharts ? '1fr 1fr' : '1fr'};gap:16px;margin-bottom:16px;">
-        ${followers.length ? chartCol('Audience Growth', 'followers-chart') : ''}
-        ${visitors.length  ? chartCol('Page Visitors',   'visitors-chart')  : ''}
+
+    const bothCharts = showFollowers && showVisitors
+    const chartsHtml = (showFollowers || showVisitors) ? `
+      <div style="display:grid;grid-template-columns:${bothCharts ? '1fr 1fr' : '1fr'};gap:16px;margin-bottom:${(hasDemoF || hasDemoV) ? '20px' : '0'};">
+        ${showFollowers ? chartCol('Followers Growth', 'followers-chart', isIG ? 'New followers gained per day' : 'Organic + total new followers') : ''}
+        ${showVisitors  ? chartCol('Page Visitors',    'visitors-chart',  'Total views & unique visitors') : ''}
       </div>` : ''
 
     let demosHtml = ''
@@ -521,10 +604,11 @@ const ClientDashboard = (() => {
         hasDemoV ? `<button class="demo-tab${!hasDemoF ? ' demo-tab--active' : ''}" data-tab="visitors">Visitors</button>` : '',
       ].filter(Boolean).join('')
 
+      const showTabs = hasDemoF && hasDemoV
       demosHtml = `<div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
           <h4 style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:0;">Audience Demographics</h4>
-          <div style="display:flex;gap:6px;" id="demo-tabs">${tabs}</div>
+          ${showTabs ? `<div style="display:flex;gap:6px;" id="demo-tabs">${tabs}</div>` : ''}
         </div>
         ${hasDemoF ? `<div id="demo-panel-followers" class="demo-panel">${renderList(demoFollowers)}</div>` : ''}
         ${hasDemoV ? `<div id="demo-panel-visitors" class="demo-panel" style="display:none;">${renderList(demoVisitors)}</div>` : ''}
@@ -563,6 +647,118 @@ const ClientDashboard = (() => {
     </div>`
   }
 
+  /* ── Content type breakdown — "What's Working" ─────────────── */
+  function _renderContentTypeBreakdown(posts) {
+    if (!posts.length) return ''
+    const isIG = _currentPlatform === 'Instagram'
+
+    const _igNorm = { 'ig reel': 'Reel', 'ig video': 'Reel', 'ig image': 'Image', 'ig carousel': 'Carousel', 'ig album': 'Carousel' }
+    const normType = raw => {
+      if (!raw) return 'Other'
+      const key = raw.toLowerCase().trim()
+      if (isIG) return _igNorm[key] || (raw.trim() || 'Other')
+      const li = raw.trim()
+      return ['Video', 'Image', 'Text', 'Carousel', 'Article', 'Document'].includes(li) ? li : (li || 'Other')
+    }
+
+    // Group posts by normalized content type
+    const groups = {}
+    for (const p of posts) {
+      const type = normType(p.post_type || p.content_type)
+      if (!groups[type]) groups[type] = []
+      groups[type].push(p)
+    }
+
+    if (Object.keys(groups).length < 1) return ''
+
+    // Compute stats per type
+    const typeStats = Object.entries(groups).map(([type, ps]) => {
+      const count    = ps.length
+      const avgEng   = ps.reduce((a, p) => a + _num(p.engagement_rate), 0) / count
+      const avgViews = ps.reduce((a, p) => a + _num(p.impressions), 0) / count
+      const avgSaves = ps.reduce((a, p) => a + _num(p.saves), 0) / count
+      const avgLikes = ps.reduce((a, p) => a + _num(p.likes), 0) / count
+      const avgClicks= ps.reduce((a, p) => a + _num(p.clicks), 0) / count
+      const bestPost = [...ps].sort((a, b) => _num(b.engagement_rate) - _num(a.engagement_rate))[0]
+      return { type, count, avgEng, avgViews, avgSaves, avgLikes, avgClicks, bestPost }
+    }).sort((a, b) => b.avgEng - a.avgEng)
+
+    const maxEng    = Math.max(...typeStats.map(t => t.avgEng), 0.0001)
+    const CT_COLORS = { Reel: '#E1306C', Image: '#0F4799', Carousel: '#F59E0B', Video: '#8B5CF6', Text: '#64748B', Article: '#1D9E75', Document: '#45BBF0', Other: '#94A3B8' }
+
+    const engRatio = typeStats.length > 1 && typeStats[1].avgEng > 0
+      ? (typeStats[0].avgEng / typeStats[1].avgEng).toFixed(1)
+      : null
+
+    const insightLine = (() => {
+      if (!engRatio || parseFloat(engRatio) < 1.2) return ''
+      const label1 = typeStats[0].type, label2 = typeStats[1]?.type
+      return `<div class="ct-insight-bar">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <strong>${Utils.escapeHtml(label1)}</strong> posts get <strong>${engRatio}×</strong> higher engagement than ${Utils.escapeHtml(label2 || 'other types')}${isIG ? '' : ' organically'} — prioritise this format.
+      </div>`
+    })()
+
+    const cards = typeStats.map((t, idx) => {
+      const color      = CT_COLORS[t.type] || '#94A3B8'
+      const engPct     = (t.avgEng * 100).toFixed(2)
+      const barW       = Math.max(4, Math.round((t.avgEng / maxEng) * 100))
+      const bestTitle  = t.bestPost ? Utils.truncate(t.bestPost.post_title || '(no title)', 60) : ''
+      const bestUrl    = t.bestPost?.post_url ? Utils.escapeHtml(t.bestPost.post_url) : null
+      const bestEng    = t.bestPost ? (_num(t.bestPost.engagement_rate) * 100).toFixed(2) + '%' : '—'
+      const isBest     = idx === 0 && typeStats.length > 1
+
+      return `<div class="ct-card" style="border-top:3px solid ${color};">
+        <div class="ct-card-head">
+          <div class="ct-type-chip" style="color:${color};background:${color}18;">${Utils.escapeHtml(t.type)}</div>
+          ${isBest ? `<span class="ct-best-badge">Top Format</span>` : ''}
+        </div>
+        <div class="ct-post-count">${t.count} post${t.count !== 1 ? 's' : ''}</div>
+        <div class="ct-eng-section">
+          <div class="ct-stat-row">
+            <span class="ct-stat-label">Avg Eng. Rate</span>
+            <span class="ct-stat-val" style="color:${color};">${engPct}%</span>
+          </div>
+          <div class="ct-eng-track"><div class="ct-eng-fill" style="width:${barW}%;background:${color};"></div></div>
+        </div>
+        <div class="ct-mini-stats">
+          <div class="ct-mini-item">
+            <div class="ct-mini-label">${isIG ? 'Avg Views' : 'Avg Impressions'}</div>
+            <div class="ct-mini-val">${Math.round(t.avgViews).toLocaleString('en-IN')}</div>
+          </div>
+          <div class="ct-mini-item">
+            <div class="ct-mini-label">${isIG ? 'Avg Likes' : 'Avg Reactions'}</div>
+            <div class="ct-mini-val">${Math.round(t.avgLikes).toLocaleString('en-IN')}</div>
+          </div>
+          ${isIG ? `<div class="ct-mini-item">
+            <div class="ct-mini-label">Avg Saves</div>
+            <div class="ct-mini-val" style="color:#8B5CF6;font-weight:700;">${Math.round(t.avgSaves).toLocaleString('en-IN')}</div>
+          </div>` : `<div class="ct-mini-item">
+            <div class="ct-mini-label">Avg Clicks</div>
+            <div class="ct-mini-val">${Math.round(t.avgClicks).toLocaleString('en-IN')}</div>
+          </div>`}
+        </div>
+        ${t.bestPost ? `<div class="ct-top-post">
+          <div class="ct-top-post-label">Best post · ${bestEng} eng.</div>
+          ${bestUrl
+            ? `<a href="${bestUrl}" target="_blank" rel="noopener" class="ct-top-post-title">${Utils.escapeHtml(bestTitle)}</a>`
+            : `<span class="ct-top-post-title">${Utils.escapeHtml(bestTitle)}</span>`}
+        </div>` : ''}
+      </div>`
+    }).join('')
+
+    return `<div class="section-card mb-4">
+      <div class="section-card-header">
+        <h3>What's Working</h3>
+        <span style="font-size:12px;color:var(--text-muted);">Performance by content format</span>
+      </div>
+      <div class="section-card-body">
+        ${insightLine}
+        <div class="ct-grid">${cards}</div>
+      </div>
+    </div>`
+  }
+
   /* ── Top content ────────────────────────────────────────── */
   function _renderTopContent(posts) {
     _tcPosts = posts
@@ -572,20 +768,25 @@ const ClientDashboard = (() => {
 
   function _buildTopContentTable() {
     if (!_tcPosts.length) return ''
+    const isIG = _currentPlatform === 'Instagram'
+
     // Canonical content-type colours (platform-agnostic)
-    const CTCOLORS  = { Video: '#8B5CF6', Image: '#0F4799', Text: '#64748B', Carousel: '#F59E0B' }
-    // Instagram post_type → canonical type
-    const _igTypeNorm = { 'ig reel': 'Video', 'ig video': 'Video', 'ig image': 'Image', 'ig carousel': 'Carousel', 'ig album': 'Carousel' }
+    const CTCOLORS    = { Reel: '#E1306C', Video: '#8B5CF6', Image: '#0F4799', Text: '#64748B', Carousel: '#F59E0B', Article: '#1D9E75', Document: '#45BBF0' }
+    const _igTypeNorm = { 'ig reel': 'Reel', 'ig video': 'Reel', 'ig image': 'Image', 'ig carousel': 'Carousel', 'ig album': 'Carousel' }
     const _normType = raw => {
-      if (!raw) return 'Text'
+      if (!raw) return isIG ? 'Other' : 'Text'
       const key = raw.toLowerCase().trim()
-      return _igTypeNorm[key] || raw  // keep LinkedIn types (Video/Image/etc.) as-is
+      if (isIG) return _igTypeNorm[key] || (raw.trim() || 'Other')
+      return ['Video', 'Image', 'Text', 'Carousel', 'Article', 'Document'].includes(raw.trim()) ? raw.trim() : (raw.trim() || 'Text')
     }
+
     const sorted = [..._tcPosts].sort((a, b) => {
       let av, bv
-      if (_tcSort.col === 'impressions')    { av = _num(a.impressions);    bv = _num(b.impressions) }
-      else if (_tcSort.col === 'likes')     { av = _num(a.likes);          bv = _num(b.likes) }
-      else                                  { av = _num(a.engagement_rate); bv = _num(b.engagement_rate) }
+      if (_tcSort.col === 'impressions')      { av = _num(a.impressions);    bv = _num(b.impressions) }
+      else if (_tcSort.col === 'likes')       { av = _num(a.likes);          bv = _num(b.likes) }
+      else if (_tcSort.col === 'saves')       { av = _num(a.saves);          bv = _num(b.saves) }
+      else if (_tcSort.col === 'clicks')      { av = _num(a.clicks);         bv = _num(b.clicks) }
+      else                                    { av = _num(a.engagement_rate); bv = _num(b.engagement_rate) }
       return _tcSort.dir === 'desc' ? bv - av : av - bv
     }).slice(0, 10)
 
@@ -599,14 +800,43 @@ const ClientDashboard = (() => {
     const thSort = (col, label, align = 'right') =>
       `<th style="text-align:${align};cursor:pointer;user-select:none;" class="tc-sort-th" data-sort-col="${col}">${label}${sortIcon(col)}</th>`
 
+    if (isIG) {
+      // Instagram table: Views, Likes, Saves, Eng. Rate
+      return `<table class="data-table" id="top-content-table"><thead><tr>
+        <th>Post Preview</th><th>Type</th><th>Date</th>
+        ${thSort('impressions',    'Views')}
+        ${thSort('likes',          'Likes')}
+        ${thSort('saves',          'Saves')}
+        ${thSort('engagement_rate','Eng. Rate')}
+      </tr></thead><tbody>${sorted.map(p => {
+        const title   = Utils.truncate(p.post_title || '(no title)', 80)
+        const url     = p.post_url ? Utils.escapeHtml(p.post_url) : null
+        const ctNorm  = _normType(p.post_type || p.content_type || '')
+        const engRate = p.engagement_rate != null ? (_num(p.engagement_rate) * 100).toFixed(2) + '%' : '—'
+        const saves   = _num(p.saves)
+        return `<tr>
+          <td>${url ? `<a href="${url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;" title="${Utils.escapeHtml(p.post_title||'')}">${Utils.escapeHtml(title)}</a>` : Utils.escapeHtml(title)}</td>
+          <td><span style="font-size:11px;font-weight:600;color:${CTCOLORS[ctNorm]||'#64748B'};">${Utils.escapeHtml(ctNorm || '—')}</span></td>
+          <td style="white-space:nowrap;">${p.created_date?Utils.formatDate(p.created_date):'—'}</td>
+          <td style="text-align:right;">${_num(p.impressions).toLocaleString('en-IN')}</td>
+          <td style="text-align:right;">${_num(p.likes).toLocaleString('en-IN')}</td>
+          <td style="text-align:right;${saves > 0 ? 'color:#8B5CF6;font-weight:600;' : ''}">${saves > 0 ? saves.toLocaleString('en-IN') : '—'}</td>
+          <td style="text-align:right;font-weight:600;">${engRate}</td>
+        </tr>`
+      }).join('')}</tbody></table>`
+    }
+
+    // LinkedIn table: Impressions, Clicks, Likes/Reactions, Eng. Rate
     return `<table class="data-table" id="top-content-table"><thead><tr>
       <th>Post Preview</th><th>Type</th><th>Posted By</th><th>Date</th>
-      ${thSort('impressions', 'Impressions')}
-      ${thSort('likes', 'Likes')}
-      ${thSort('engagement_rate', 'Eng. Rate')}
+      ${thSort('impressions',    'Impressions')}
+      ${thSort('clicks',         'Clicks')}
+      ${thSort('likes',          'Reactions')}
+      ${thSort('engagement_rate','Eng. Rate')}
     </tr></thead><tbody>${sorted.map(p => {
-      const title = Utils.truncate(p.post_title || '(no title)', 80), url = p.post_url ? Utils.escapeHtml(p.post_url) : null
-      const ctRaw = p.content_type || p.post_type || '', ctNorm = _normType(ctRaw)
+      const title   = Utils.truncate(p.post_title || '(no title)', 80)
+      const url     = p.post_url ? Utils.escapeHtml(p.post_url) : null
+      const ctNorm  = _normType(p.content_type || p.post_type || '')
       const engRate = p.engagement_rate != null ? (_num(p.engagement_rate) * 100).toFixed(2) + '%' : '—'
       return `<tr>
         <td>${url ? `<a href="${url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;" title="${Utils.escapeHtml(p.post_title||'')}">${Utils.escapeHtml(title)}</a>` : Utils.escapeHtml(title)}</td>
@@ -614,6 +844,7 @@ const ClientDashboard = (() => {
         <td style="white-space:nowrap;">${Utils.escapeHtml(p.posted_by||'—')}</td>
         <td style="white-space:nowrap;">${p.created_date?Utils.formatDate(p.created_date):'—'}</td>
         <td style="text-align:right;">${_num(p.impressions).toLocaleString('en-IN')}</td>
+        <td style="text-align:right;">${_num(p.clicks).toLocaleString('en-IN')}</td>
         <td style="text-align:right;">${_num(p.likes).toLocaleString('en-IN')}</td>
         <td style="text-align:right;font-weight:600;">${engRate}</td>
       </tr>`
