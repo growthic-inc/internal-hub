@@ -630,12 +630,12 @@ const ClientDashboard = (() => {
           <div class="form-group"><label class="form-label">Project Code</label><input class="form-input" type="text" id="up-code" value="${Utils.escapeHtml(_currentClient?.project_code||'')}" readonly style="background:var(--surface);color:var(--text-muted);" /></div>
         </div>
         <div class="form-group">
-          <label class="form-label">Data File (Excel export from LinkedIn)</label>
+          <label class="form-label" id="up-file-label">Data File</label>
           <div class="drag-drop-zone" id="up-drop-zone" style="cursor:pointer;">
-            <input type="file" accept=".xlsx,.xls" id="up-file-input" style="position:absolute;inset:0;opacity:0;cursor:pointer;" />
+            <input type="file" accept=".xlsx,.xls,.csv" id="up-file-input" style="position:absolute;inset:0;opacity:0;cursor:pointer;" />
             <div class="drag-drop-icon">📊</div>
             <div class="drag-drop-label">Drop file here or <span style="color:var(--primary);text-decoration:underline;">browse</span></div>
-            <div class="drag-drop-hint">LinkedIn Analytics export (.xlsx)</div>
+            <div class="drag-drop-hint" id="up-file-hint">Analytics export (.xlsx, .csv)</div>
             <div class="drag-drop-file-name" id="up-file-name" style="display:none;font-weight:600;color:var(--text);margin-top:6px;"></div>
           </div>
         </div>
@@ -664,13 +664,27 @@ const ClientDashboard = (() => {
     // Populate entity dropdown for the initially selected client
     _refreshEntityDropdown(document.getElementById('up-client')?.value)
 
+    function _updateFileLabel() {
+      const plat = document.getElementById('up-platform')?.value || 'LinkedIn'
+      const labelEl = document.getElementById('up-file-label')
+      const hintEl  = document.getElementById('up-file-hint')
+      if (plat === 'Instagram') {
+        if (labelEl) labelEl.textContent = 'Data File (Instagram Insights export)'
+        if (hintEl)  hintEl.textContent  = 'Instagram Insights export (.xlsx, .xls, .csv)'
+      } else {
+        if (labelEl) labelEl.textContent = 'Data File (LinkedIn Analytics export)'
+        if (hintEl)  hintEl.textContent  = 'LinkedIn Analytics export (.xlsx, .xls, .csv)'
+      }
+    }
+    _updateFileLabel()
+
     document.getElementById('up-client')?.addEventListener('change', e => {
       const c = _clients.find(cl => cl.id === e.target.value)
       const codeEl = document.getElementById('up-code'); if (c && codeEl) codeEl.value = c.project_code
       _refreshEntityDropdown(e.target.value)
       _resetPreview()
     })
-    document.getElementById('up-platform')?.addEventListener('change', _resetPreview)
+    document.getElementById('up-platform')?.addEventListener('change', () => { _updateFileLabel(); _resetPreview() })
     document.getElementById('up-file-input')?.addEventListener('change', async e => {
       const file = e.target.files?.[0]; if (!file) return
       document.getElementById('up-file-name').textContent = file.name
@@ -704,7 +718,7 @@ const ClientDashboard = (() => {
       return `<div class="alert alert-info" style="margin-bottom:0;"><strong>Ready to upload.</strong> ${summary}<br>Date range: <strong>${Utils.escapeHtml(dFrom)}</strong> to <strong>${Utils.escapeHtml(dTo)}</strong>.<br><span style="color:var(--warning,#B45309);font-size:12px;">This will overwrite existing data in this date range for the selected client.</span></div>`
     }
 
-    function _detectFileType(wb) {
+    function _detectLinkedInFileType(wb) {
       const sheets = wb.SheetNames.map(n => n.toLowerCase().trim())
       if (sheets.includes('metrics') && sheets.includes('all posts')) return 'content'
       if (sheets.includes('new followers')) return 'followers'
@@ -712,16 +726,147 @@ const ClientDashboard = (() => {
       return null
     }
 
+    function _isInstagramSheet(headerRow) {
+      const headers = headerRow.map(h => String(h).trim().toLowerCase())
+      return headers.includes('post id') && headers.includes('permalink') && headers.includes('post type') && headers.includes('views')
+    }
+
     async function _parseFile(file) {
       if (typeof XLSX === 'undefined') { _showError('SheetJS library is not loaded. Please refresh the page and try again.'); return }
       try {
-        const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: false })
-        const fileType = _detectFileType(wb)
-        if (!fileType) { _showError("This file doesn't look like a valid LinkedIn analytics export. Expected: a Content export (Metrics + All posts sheets), a Followers export (New followers sheet), or a Visitors export (Visitor metrics sheet)."); return }
-        if (fileType === 'content')   await _parseContentFile(wb)
-        else if (fileType === 'followers') _parseFollowersFile(wb)
-        else if (fileType === 'visitors')  _parseVisitorsFile(wb)
+        const platform = document.getElementById('up-platform')?.value || 'LinkedIn'
+        let wb
+        if (file.name.toLowerCase().endsWith('.csv')) {
+          const text = await file.text()
+          wb = XLSX.read(text, { type: 'string', cellDates: false })
+        } else {
+          wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: false })
+        }
+        if (platform === 'Instagram') {
+          _parseInstagramFile(wb)
+        } else {
+          const fileType = _detectLinkedInFileType(wb)
+          if (!fileType) { _showError("This file doesn't look like a valid LinkedIn analytics export. Expected: a Content export (Metrics + All posts sheets), a Followers export (New followers sheet), or a Visitors export (Visitor metrics sheet)."); return }
+          if (fileType === 'content')        await _parseContentFile(wb)
+          else if (fileType === 'followers') _parseFollowersFile(wb)
+          else if (fileType === 'visitors')  _parseVisitorsFile(wb)
+        }
       } catch (err) { console.error('[ClientDashboard] parse error', err); _showError('Failed to parse file: ' + (err.message || 'Unknown error.')) }
+    }
+
+    function _parseInstagramFile(wb) {
+      // Instagram Insights exports a single sheet (named after the account or arbitrary)
+      // with per-post rows. Detect the right sheet by column headers.
+      let igSheet = null
+      for (const name of wb.SheetNames) {
+        const s = wb.Sheets[name]
+        const preview = XLSX.utils.sheet_to_json(s, { header: 1, defval: '', range: 0 })
+        if (preview.length && _isInstagramSheet(preview[0])) { igSheet = s; break }
+      }
+      if (!igSheet) { _showError("This file doesn't look like a valid Instagram Insights export. Expected columns: Post ID, Permalink, Post type, Views, Reach, Likes, Shares, Comments, Saves."); return }
+
+      const rows = XLSX.utils.sheet_to_json(igSheet, { header: 1, defval: '' })
+      if (rows.length < 2) { _showError('The Instagram file appears to be empty.'); return }
+
+      const headers = rows[0].map(h => String(h).trim())
+      const idx     = h => headers.indexOf(h)
+
+      const posts = []
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i]
+        // Publish time format: "MM/DD/YYYY HH:MM" — strip the time part before passing to _parseDate
+        const publishRaw  = String(row[idx('Publish time')] || '').trim()
+        const datePart    = publishRaw.includes(' ') ? publishRaw.split(' ')[0] : publishRaw
+        const createdDate = _parseDate(datePart)
+        if (!createdDate) continue
+
+        const views    = _num(row[idx('Views')])
+        const reach    = _num(row[idx('Reach')])
+        const likes    = _num(row[idx('Likes')])
+        const comments = _num(row[idx('Comments')])
+        const saves    = _num(row[idx('Saves')])
+        const shares   = _num(row[idx('Shares')])
+        const follows  = _num(row[idx('Follows')])
+        const engRate  = views > 0 ? (likes + comments + saves + shares) / views : 0
+        const postType = String(row[idx('Post type')] || '').trim()
+
+        posts.push({
+          post_title:     String(row[idx('Description')] || '').slice(0, 2000),
+          post_url:       String(row[idx('Permalink')]   || ''),
+          post_type:      postType,
+          content_type:   postType,
+          posted_by:      String(row[idx('Account username')] || ''),
+          created_date:   createdDate,
+          impressions:    views,
+          views:          views,
+          reach:          reach,
+          likes:          likes,
+          reactions:      likes,     // Instagram likes map to reactions
+          comments:       comments,
+          reposts_shares: shares,
+          follows:        follows,
+          saves:          saves,
+          engagement_rate: engRate,
+          clicks:         0,
+          offsite_views:  0,
+          ctr:            0,
+          campaign_name:  '',
+          campaign_start_date: null,
+          campaign_end_date:   null,
+          audience:       '',
+        })
+      }
+
+      if (!posts.length) { _showError('No valid post data found in the Instagram file. Check that the Publish time column is not empty.'); return }
+
+      // Derive daily aggregated metrics from posts (for trend chart / KPIs)
+      const dayMap = {}
+      for (const p of posts) {
+        if (!dayMap[p.created_date]) dayMap[p.created_date] = { impressions: 0, reach: 0, reactions: 0, comments: 0, reposts_shares: 0, follows: 0, eng_sum: 0, count: 0 }
+        const d = dayMap[p.created_date]
+        d.impressions    += p.impressions
+        d.reach          += p.reach
+        d.reactions      += p.reactions
+        d.comments       += p.comments
+        d.reposts_shares += p.reposts_shares
+        d.follows        += p.follows
+        d.eng_sum        += p.engagement_rate
+        d.count++
+      }
+
+      const metrics = Object.entries(dayMap).map(([date, d]) => {
+        const engRate = d.count > 0 ? d.eng_sum / d.count : 0
+        return {
+          date,
+          impressions:               d.impressions,
+          reach:                     d.reach,
+          clicks:                    0,
+          reactions:                 d.reactions,
+          comments:                  d.comments,
+          reposts_shares:            d.reposts_shares,
+          follows:                   d.follows,
+          engagement_rate:           engRate,
+          // Organic = all (Instagram doesn't split organic/sponsored in basic exports)
+          impressions_organic:       d.impressions,
+          impressions_sponsored:     0,
+          unique_impressions_organic: d.reach,
+          clicks_organic:            0,
+          clicks_sponsored:          0,
+          reactions_organic:         d.reactions,
+          reactions_sponsored:       0,
+          comments_organic:          d.comments,
+          comments_sponsored:        0,
+          reposts_organic:           d.reposts_shares,
+          reposts_sponsored:         0,
+          engagement_rate_organic:   engRate,
+          engagement_rate_sponsored: 0,
+        }
+      })
+
+      const allDates = posts.map(p => p.created_date).sort()
+      const dFrom = allDates[0] || '—', dTo = allDates[allDates.length - 1] || '—'
+      _parsedPayload = { data_type: 'content', metrics, posts }
+      _showPreview(_previewAlert(`Found <strong>${posts.length}</strong> Instagram posts across <strong>${metrics.length}</strong> day(s).`, dFrom, dTo))
     }
 
 
