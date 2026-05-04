@@ -230,7 +230,7 @@ const ClientDashboard = (() => {
         <div class="chart-card-header">
           <span class="chart-card-title">Performance Trend</span>
           <div class="chart-multi-select" id="trend-pills">
-            ${METRIC_KEYS.map(k => `<span class="chart-metric-pill${_activeMetrics.includes(k) ? ' active' : ''}" data-metric="${k}">${Utils.escapeHtml(METRIC_CONFIG[k].label)}</span>`).join('')}
+            ${METRIC_KEYS.map(k => `<span class="chart-metric-pill${_activeMetrics.includes(k) ? ' active' : ''}" data-metric="${k}">${Utils.escapeHtml(_metricLabel(k))}</span>`).join('')}
           </div>
         </div>
         <div class="chart-canvas-wrap" style="height:260px;"><canvas id="trend-chart"></canvas></div>
@@ -315,10 +315,18 @@ const ClientDashboard = (() => {
   }
 
   /* ── KPI computation + cards ────────────────────────────── */
+  // Platform-agnostic label helper — call wherever a metric name is shown to the user
+  function _metricLabel(key) {
+    const ig = _currentPlatform === 'Instagram'
+    const overrides = { reactions: ig ? 'Likes' : 'Reactions', reposts_shares: ig ? 'Shares' : 'Reposts' }
+    return overrides[key] || METRIC_CONFIG[key]?.label || key
+  }
+
   const _KPI_META = {
     'Impressions':     { color: '#0F4799', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>` },
     'Clicks':          { color: '#45BBF0', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><path d="M10 14L21 3"/><path d="M21 16v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>` },
     'Reactions':       { color: '#1D9E75', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>` },
+    'Likes':           { color: '#1D9E75', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>` },
     'Engagement Rate': { color: '#EF4444', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>` },
     'Posts Published': { color: '#8B5CF6', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>` },
     'Total Followers': { color: '#F59E0B', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>` },
@@ -348,12 +356,13 @@ const ClientDashboard = (() => {
     const prevTotalFollowers = sum(prevFollowers,  'total_new_followers')
 
     return [
-      { label: 'Impressions',     value: loc(totalImpressions),    growth: growthPct(totalImpressions, pImpressions)      },
-      { label: 'Clicks',          value: loc(totalClicks),         growth: growthPct(totalClicks,      pClicks)           },
-      { label: 'Reactions',       value: loc(totalReactions),      growth: growthPct(totalReactions,   pReactions)        },
-      { label: 'Engagement Rate', value: avgEng.toFixed(2) + '%', growth: growthPct(avgEng,           pAvgEng)           },
-      { label: 'Posts Published', value: loc(posts.length),        growth: growthPct(posts.length,     prevPosts.length)  },
-      { label: 'Total Followers', value: loc(totalFollowers),      growth: growthPct(totalFollowers,   prevTotalFollowers) },
+      { label: 'Impressions',                               value: loc(totalImpressions),    growth: growthPct(totalImpressions, pImpressions)      },
+      { label: 'Clicks',                                    value: loc(totalClicks),         growth: growthPct(totalClicks,      pClicks)           },
+      { label: _currentPlatform === 'Instagram' ? 'Likes' : 'Reactions',
+                                                            value: loc(totalReactions),      growth: growthPct(totalReactions,   pReactions)        },
+      { label: 'Engagement Rate',                           value: avgEng.toFixed(2) + '%', growth: growthPct(avgEng,           pAvgEng)           },
+      { label: 'Posts Published',                           value: loc(posts.length),        growth: growthPct(posts.length,     prevPosts.length)  },
+      { label: 'Total Followers',                           value: loc(totalFollowers),      growth: growthPct(totalFollowers,   prevTotalFollowers) },
     ]
   }
 
@@ -563,7 +572,15 @@ const ClientDashboard = (() => {
 
   function _buildTopContentTable() {
     if (!_tcPosts.length) return ''
-    const CTCOLORS = { Video: '#8B5CF6', Image: '#0F4799', Text: '#64748B', Carousel: '#F59E0B' }
+    // Canonical content-type colours (platform-agnostic)
+    const CTCOLORS  = { Video: '#8B5CF6', Image: '#0F4799', Text: '#64748B', Carousel: '#F59E0B' }
+    // Instagram post_type → canonical type
+    const _igTypeNorm = { 'ig reel': 'Video', 'ig video': 'Video', 'ig image': 'Image', 'ig carousel': 'Carousel', 'ig album': 'Carousel' }
+    const _normType = raw => {
+      if (!raw) return 'Text'
+      const key = raw.toLowerCase().trim()
+      return _igTypeNorm[key] || raw  // keep LinkedIn types (Video/Image/etc.) as-is
+    }
     const sorted = [..._tcPosts].sort((a, b) => {
       let av, bv
       if (_tcSort.col === 'impressions')    { av = _num(a.impressions);    bv = _num(b.impressions) }
@@ -589,10 +606,11 @@ const ClientDashboard = (() => {
       ${thSort('engagement_rate', 'Eng. Rate')}
     </tr></thead><tbody>${sorted.map(p => {
       const title = Utils.truncate(p.post_title || '(no title)', 80), url = p.post_url ? Utils.escapeHtml(p.post_url) : null
-      const ct = p.content_type || p.post_type || '—', engRate = p.engagement_rate != null ? (_num(p.engagement_rate) * 100).toFixed(2) + '%' : '—'
+      const ctRaw = p.content_type || p.post_type || '', ctNorm = _normType(ctRaw)
+      const engRate = p.engagement_rate != null ? (_num(p.engagement_rate) * 100).toFixed(2) + '%' : '—'
       return `<tr>
         <td>${url ? `<a href="${url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;" title="${Utils.escapeHtml(p.post_title||'')}">${Utils.escapeHtml(title)}</a>` : Utils.escapeHtml(title)}</td>
-        <td><span style="font-size:11px;font-weight:600;color:${CTCOLORS[ct]||'#64748B'};">${Utils.escapeHtml(ct)}</span></td>
+        <td><span style="font-size:11px;font-weight:600;color:${CTCOLORS[ctNorm]||'#64748B'};">${Utils.escapeHtml(ctNorm || '—')}</span></td>
         <td style="white-space:nowrap;">${Utils.escapeHtml(p.posted_by||'—')}</td>
         <td style="white-space:nowrap;">${p.created_date?Utils.formatDate(p.created_date):'—'}</td>
         <td style="text-align:right;">${_num(p.impressions).toLocaleString('en-IN')}</td>
@@ -791,29 +809,28 @@ const ClientDashboard = (() => {
         const postType = String(row[idx('Post type')] || '').trim()
 
         posts.push({
-          post_title:     String(row[idx('Description')] || '').slice(0, 2000),
-          post_url:       String(row[idx('Permalink')]   || ''),
-          post_type:      postType,
-          content_type:   postType,
-          posted_by:      String(row[idx('Account username')] || ''),
-          created_date:   createdDate,
-          impressions:    views,
-          views:          views,
-          reach:          reach,
-          likes:          likes,
-          reactions:      likes,     // Instagram likes map to reactions
-          comments:       comments,
-          reposts_shares: shares,
-          follows:        follows,
-          saves:          saves,
-          engagement_rate: engRate,
-          clicks:         0,
-          offsite_views:  0,
-          ctr:            0,
-          campaign_name:  '',
+          post_title:          String(row[idx('Description')] || '').slice(0, 2000),
+          post_url:            String(row[idx('Permalink')]   || ''),
+          post_type:           postType,
+          content_type:        postType,
+          posted_by:           String(row[idx('Account username')] || ''),
+          created_date:        createdDate,
+          impressions:         views,
+          views:               views,
+          reach:               reach,   // stored once social_posts.reach column is added via migration
+          likes:               likes,   // Instagram Likes = social_posts.likes (platform-agnostic)
+          comments:            comments,
+          reposts_shares:      shares,  // Instagram Shares = reposts_shares
+          follows:             follows,
+          saves:               saves,
+          engagement_rate:     engRate,
+          clicks:              0,
+          offsite_views:       0,
+          ctr:                 0,
+          campaign_name:       '',
           campaign_start_date: null,
           campaign_end_date:   null,
-          audience:       '',
+          audience:            '',
         })
       }
 
@@ -822,14 +839,15 @@ const ClientDashboard = (() => {
       // Derive daily aggregated metrics from posts (for trend chart / KPIs)
       const dayMap = {}
       for (const p of posts) {
-        if (!dayMap[p.created_date]) dayMap[p.created_date] = { impressions: 0, reach: 0, reactions: 0, comments: 0, reposts_shares: 0, follows: 0, eng_sum: 0, count: 0 }
+        if (!dayMap[p.created_date]) dayMap[p.created_date] = { impressions: 0, reach: 0, reactions: 0, comments: 0, reposts_shares: 0, follows: 0, saves: 0, eng_sum: 0, count: 0 }
         const d = dayMap[p.created_date]
         d.impressions    += p.impressions
         d.reach          += p.reach
-        d.reactions      += p.reactions
+        d.reactions      += p.likes       // likes → reactions in daily metrics
         d.comments       += p.comments
         d.reposts_shares += p.reposts_shares
         d.follows        += p.follows
+        d.saves          += p.saves
         d.eng_sum        += p.engagement_rate
         d.count++
       }
@@ -841,12 +859,13 @@ const ClientDashboard = (() => {
           impressions:               d.impressions,
           reach:                     d.reach,
           clicks:                    0,
-          reactions:                 d.reactions,
+          reactions:                 d.reactions,  // likes summed as reactions
           comments:                  d.comments,
           reposts_shares:            d.reposts_shares,
           follows:                   d.follows,
+          saves:                     d.saves,       // now populated from post-level data
           engagement_rate:           engRate,
-          // Organic = all (Instagram doesn't split organic/sponsored in basic exports)
+          // Organic = all (Instagram basic export doesn't split organic/sponsored)
           impressions_organic:       d.impressions,
           impressions_sponsored:     0,
           unique_impressions_organic: d.reach,
