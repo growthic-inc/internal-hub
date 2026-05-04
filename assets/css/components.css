@@ -4380,6 +4380,173 @@
   margin: 0;
 }
 
+/* ── Multi-step stepper ─────────────────────────── */
+
+.pw-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 32px;
+  padding: 0 4px;
+}
+
+.pw-step-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.pw-dot {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.pw-dot--active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 0 0 3px var(--primary-light, rgba(79,70,229,.15));
+}
+
+.pw-dot--done {
+  border-color: var(--success);
+  background: var(--success);
+  color: #fff;
+}
+
+.pw-step-lbl {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+  max-width: 72px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pw-step-line {
+  flex: 1;
+  height: 2px;
+  background: var(--border);
+  margin: 0 4px;
+  margin-bottom: 22px;
+  transition: background 0.2s;
+}
+
+.pw-step-line--done { background: var(--success); }
+
+/* ── Step body ──────────────────────────────────── */
+
+.pw-step-body {
+  min-height: 200px;
+}
+
+.pw-step-heading {
+  margin-bottom: 22px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pw-step-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 4px;
+}
+
+.pw-step-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* ── Avatar (step 1) ────────────────────────────── */
+
+.pw-avatar-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 0;
+}
+
+.pw-avatar-lg {
+  width: 100px !important;
+  height: 100px !important;
+  font-size: 32px !important;
+}
+
+/* ── Bottom nav ─────────────────────────────────── */
+
+.pw-nav {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.pw-nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pw-step-counter {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* ── Done screen ────────────────────────────────── */
+
+.pw-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 0 24px;
+  text-align: center;
+  gap: 12px;
+}
+
+.pw-done-check {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--success);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.pw-done-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+
+.pw-done-sub {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* ── Legacy section label (kept for any stray use) ─ */
+
 .pw-section-label {
   font-size: 11px;
   font-weight: 700;

@@ -483,11 +483,10 @@ const App = (() => {
   }
 
   /* ── Profile Completion Wizard ──────────────────────────────
-     Shown full-screen to new employees on first login.
-     Blocks all app access until the employee saves their profile.
+     Multi-step onboarding shown on first login.
+     Blocks all app access until the employee completes all steps.
   ─────────────────────────────────────────────────────────── */
   function _showProfileCompletionWizard(user) {
-    // Render the full-page overlay into #page-content (sidebar hidden)
     const sidebar = document.querySelector('.sidebar')
     const header  = document.querySelector('.app-header')
     if (sidebar) sidebar.style.display = 'none'
@@ -496,6 +495,27 @@ const App = (() => {
     const content = document.getElementById('page-content')
     if (!content) return
 
+    // ── Wizard state ──────────────────────────────────────────
+    let _step       = 1
+    const TOTAL     = 5
+    let _avatarFile = null
+
+    const _d = {
+      dob: '', personal_email: '', phone: '', blood_group: '',
+      address: '', linkedin_url: '',
+      bank_account_number: '', bank_ifsc: '',
+      ec_name: '', ec_phone: '', ec_relationship: '',
+    }
+
+    const STEP_META = [
+      { n: 1, title: 'Profile Photo',     sub: 'Put a face to your name. Optional — you can skip this.' },
+      { n: 2, title: 'Personal Details',  sub: 'A few basics we keep on file for your records.' },
+      { n: 3, title: 'Address & Socials', sub: 'Your home address and professional links.' },
+      { n: 4, title: 'Bank Details',      sub: 'Needed for payroll. Stored securely and visible only to HR.' },
+      { n: 5, title: 'Emergency Contact', sub: 'Someone we can reach in case of an emergency.' },
+    ]
+
+    // Render shell once
     content.innerHTML = `
       <div class="profile-wizard-overlay">
         <div class="profile-wizard-card">
@@ -503,189 +523,301 @@ const App = (() => {
             <div class="profile-wizard-logo">
               <img src="../assets/img/logo.jpg" alt="Growthic One" style="height:36px;">
             </div>
-            <h2 class="profile-wizard-title">Welcome to Growthic One!</h2>
-            <p class="profile-wizard-sub">Please complete your profile before continuing. This only takes a minute.</p>
+            <h2 class="profile-wizard-title">Welcome, ${Utils.escapeHtml(user.name.split(' ')[0])}!</h2>
+            <p class="profile-wizard-sub">Let's get your profile set up. It only takes a couple of minutes.</p>
           </div>
-
-          <div id="pw-error"   class="form-error"   style="display:none;margin-bottom:12px;"></div>
-          <div id="pw-success" class="form-success"  style="display:none;margin-bottom:12px;"></div>
-
-          <form id="profile-wizard-form" autocomplete="off">
-
-            <!-- Avatar -->
-            <div class="pw-section-label">Profile Picture</div>
-            <div class="pw-avatar-row">
-              <div class="pw-avatar-preview" id="pw-avatar-preview">
-                ${user.profile_image_url ? `<img src="${Utils.escapeHtml(user.profile_image_url)}" alt="">` : `<span>${Utils.getInitials(user.name)}</span>`}
-              </div>
-              <label class="btn btn--secondary btn--sm" style="cursor:pointer;">
-                Upload Photo
-                <input type="file" id="pw-avatar-file" accept="image/*" style="display:none;">
-              </label>
-            </div>
-
-            <!-- Personal -->
-            <div class="pw-section-label">Personal Details</div>
-            <div class="people-field-grid">
-              <div class="form-group">
-                <label class="form-label">Date of Birth</label>
-                <input type="date" id="pw-dob" class="form-input">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Personal Email</label>
-                <input type="email" id="pw-personal-email" class="form-input" placeholder="personal@example.com">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Phone Number</label>
-                <input type="tel" id="pw-phone" class="form-input" placeholder="+91 98765 43210">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Blood Group</label>
-                <select id="pw-blood-group" class="form-input">
-                  <option value="">Select</option>
-                  ${['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(bg =>
-                    `<option value="${bg}">${bg}</option>`).join('')}
-                </select>
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Residential Address</label>
-              <textarea id="pw-address" class="form-input" rows="2" placeholder="House no., Street, City, State, PIN"></textarea>
-            </div>
-            <div class="form-group">
-              <label class="form-label">LinkedIn URL</label>
-              <input type="url" id="pw-linkedin" class="form-input" placeholder="https://linkedin.com/in/yourprofile">
-            </div>
-
-            <!-- Bank -->
-            <div class="pw-section-label">Bank Details</div>
-            <div class="people-field-grid">
-              <div class="form-group">
-                <label class="form-label">Bank Account Number</label>
-                <input type="text" id="pw-bank-account" class="form-input" placeholder="Account number">
-              </div>
-              <div class="form-group">
-                <label class="form-label">IFSC Code</label>
-                <input type="text" id="pw-bank-ifsc" class="form-input" placeholder="e.g. HDFC0001234">
-              </div>
-            </div>
-
-            <!-- Emergency Contact -->
-            <div class="pw-section-label">Emergency Contact</div>
-            <div class="people-field-grid">
-              <div class="form-group">
-                <label class="form-label">Contact Name <span class="required-star">*</span></label>
-                <input type="text" id="pw-ec-name" class="form-input" placeholder="Full name" required>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Phone Number <span class="required-star">*</span></label>
-                <input type="tel" id="pw-ec-phone" class="form-input" placeholder="+91 98765 43210" required>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Relationship <span class="required-star">*</span></label>
-                <select id="pw-ec-relationship" class="form-input" required>
-                  <option value="">Select</option>
-                  <option value="Parent">Parent</option>
-                  <option value="Spouse">Spouse</option>
-                  <option value="Sibling">Sibling</option>
-                  <option value="Child">Child</option>
-                  <option value="Friend">Friend</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-            </div>
-
-            <button type="submit" class="btn btn--primary" id="pw-submit-btn" style="width:100%;margin-top:8px;">
-              Save Profile &amp; Continue
-            </button>
-          </form>
+          <div class="pw-stepper" id="pw-stepper"></div>
+          <div class="pw-step-body" id="pw-step-body"></div>
+          <div id="pw-error" class="form-error" style="display:none;margin-top:14px;"></div>
+          <div class="pw-nav" id="pw-nav"></div>
         </div>
-      </div>
-    `
+      </div>`
 
-    // Avatar preview
-    const avatarFile = document.getElementById('pw-avatar-file')
-    const avatarPreview = document.getElementById('pw-avatar-preview')
-    if (avatarFile) {
-      avatarFile.addEventListener('change', () => {
-        const file = avatarFile.files[0]
-        if (!file) return
+    // ── Save fields of the current step into _d ───────────────
+    function _capture() {
+      if (_step === 2) {
+        _d.dob            = document.getElementById('pw-dob')?.value || ''
+        _d.personal_email = document.getElementById('pw-personal-email')?.value.trim() || ''
+        _d.phone          = document.getElementById('pw-phone')?.value.trim() || ''
+        _d.blood_group    = document.getElementById('pw-blood-group')?.value || ''
+      }
+      if (_step === 3) {
+        _d.address      = document.getElementById('pw-address')?.value.trim() || ''
+        _d.linkedin_url = document.getElementById('pw-linkedin')?.value.trim() || ''
+      }
+      if (_step === 4) {
+        _d.bank_account_number = document.getElementById('pw-bank-account')?.value.trim() || ''
+        _d.bank_ifsc           = document.getElementById('pw-bank-ifsc')?.value.trim() || ''
+      }
+      if (_step === 5) {
+        _d.ec_name         = document.getElementById('pw-ec-name')?.value.trim() || ''
+        _d.ec_phone        = document.getElementById('pw-ec-phone')?.value.trim() || ''
+        _d.ec_relationship = document.getElementById('pw-ec-relationship')?.value || ''
+      }
+    }
+
+    function _validate() {
+      if (_step === 5) {
+        if (!_d.ec_name)         return 'Emergency contact name is required.'
+        if (!_d.ec_phone)        return 'Emergency contact phone is required.'
+        if (!_d.ec_relationship) return 'Please select the relationship.'
+      }
+      return null
+    }
+
+    // ── Stepper dots ──────────────────────────────────────────
+    function _renderStepper() {
+      const el = document.getElementById('pw-stepper')
+      if (!el) return
+      el.innerHTML = STEP_META.map((s, i) => {
+        const done   = _step > s.n
+        const active = _step === s.n
+        const cls    = done ? 'pw-dot--done' : active ? 'pw-dot--active' : ''
+        return `
+          <div class="pw-step-item">
+            <div class="pw-dot ${cls}">
+              ${done
+                ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
+                : s.n}
+            </div>
+            <span class="pw-step-lbl">${s.title}</span>
+          </div>
+          ${i < STEP_META.length - 1 ? `<div class="pw-step-line${done ? ' pw-step-line--done' : ''}"></div>` : ''}`
+      }).join('')
+    }
+
+    // ── Step body ─────────────────────────────────────────────
+    function _renderBody() {
+      const wrap = document.getElementById('pw-step-body')
+      if (!wrap) return
+      const meta = STEP_META[_step - 1]
+
+      let html = `
+        <div class="pw-step-heading">
+          <div>
+            <h3 class="pw-step-title">${meta.title}</h3>
+            <p class="pw-step-sub">${meta.sub}</p>
+          </div>
+        </div>`
+
+      if (_step === 1) {
+        const initials = Utils.getInitials(user.name)
+        const preview  = _avatarFile
+          ? '' // will be replaced by FileReader after render
+          : user.profile_image_url
+            ? `<img src="${Utils.escapeHtml(user.profile_image_url)}" alt="">`
+            : `<span>${initials}</span>`
+        html += `
+          <div class="pw-avatar-center">
+            <div class="pw-avatar-preview pw-avatar-lg" id="pw-avatar-preview">${preview}</div>
+            <label class="btn btn--secondary" style="cursor:pointer;margin-top:18px;">
+              Choose Photo
+              <input type="file" id="pw-avatar-file" accept="image/*" style="display:none;">
+            </label>
+            <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">JPG or PNG · max 2 MB</p>
+          </div>`
+      }
+
+      if (_step === 2) {
+        html += `
+          <div class="people-field-grid">
+            <div class="form-group">
+              <label class="form-label">Date of Birth</label>
+              <input type="date" id="pw-dob" class="form-input" value="${_d.dob}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Personal Email</label>
+              <input type="email" id="pw-personal-email" class="form-input" placeholder="personal@example.com" value="${Utils.escapeHtml(_d.personal_email)}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Phone Number</label>
+              <input type="tel" id="pw-phone" class="form-input" placeholder="+91 98765 43210" value="${Utils.escapeHtml(_d.phone)}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Blood Group</label>
+              <select id="pw-blood-group" class="form-input">
+                <option value="">Select</option>
+                ${['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(bg =>
+                  `<option value="${bg}"${_d.blood_group === bg ? ' selected' : ''}>${bg}</option>`).join('')}
+              </select>
+            </div>
+          </div>`
+      }
+
+      if (_step === 3) {
+        html += `
+          <div class="form-group">
+            <label class="form-label">Residential Address</label>
+            <textarea id="pw-address" class="form-input" rows="3" placeholder="House no., Street, City, State, PIN">${Utils.escapeHtml(_d.address)}</textarea>
+          </div>
+          <div class="form-group" style="margin-top:14px;">
+            <label class="form-label">LinkedIn URL</label>
+            <input type="url" id="pw-linkedin" class="form-input" placeholder="https://linkedin.com/in/yourprofile" value="${Utils.escapeHtml(_d.linkedin_url)}">
+          </div>`
+      }
+
+      if (_step === 4) {
+        html += `
+          <div class="people-field-grid">
+            <div class="form-group">
+              <label class="form-label">Bank Account Number</label>
+              <input type="text" id="pw-bank-account" class="form-input" placeholder="Account number" value="${Utils.escapeHtml(_d.bank_account_number)}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">IFSC Code</label>
+              <input type="text" id="pw-bank-ifsc" class="form-input" placeholder="e.g. HDFC0001234" value="${Utils.escapeHtml(_d.bank_ifsc)}">
+            </div>
+          </div>`
+      }
+
+      if (_step === 5) {
+        html += `
+          <div class="people-field-grid">
+            <div class="form-group">
+              <label class="form-label">Contact Name <span class="required-star">*</span></label>
+              <input type="text" id="pw-ec-name" class="form-input" placeholder="Full name" value="${Utils.escapeHtml(_d.ec_name)}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Phone Number <span class="required-star">*</span></label>
+              <input type="tel" id="pw-ec-phone" class="form-input" placeholder="+91 98765 43210" value="${Utils.escapeHtml(_d.ec_phone)}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Relationship <span class="required-star">*</span></label>
+              <select id="pw-ec-relationship" class="form-input">
+                <option value="">Select</option>
+                ${['Parent','Spouse','Sibling','Child','Friend','Other'].map(r =>
+                  `<option value="${r}"${_d.ec_relationship === r ? ' selected' : ''}>${r}</option>`).join('')}
+              </select>
+            </div>
+          </div>`
+      }
+
+      wrap.innerHTML = html
+
+      // Restore avatar preview if file already chosen
+      if (_step === 1 && _avatarFile) {
         const reader = new FileReader()
         reader.onload = e => {
-          avatarPreview.innerHTML = `<img src="${e.target.result}" alt="Preview">`
+          const el = document.getElementById('pw-avatar-preview')
+          if (el) el.innerHTML = `<img src="${e.target.result}" alt="Preview">`
         }
-        reader.readAsDataURL(file)
+        reader.readAsDataURL(_avatarFile)
+      }
+
+      // Bind avatar file input
+      if (_step === 1) {
+        document.getElementById('pw-avatar-file')?.addEventListener('change', function () {
+          const f = this.files[0]
+          if (!f) return
+          _avatarFile = f
+          const reader = new FileReader()
+          reader.onload = e => {
+            const el = document.getElementById('pw-avatar-preview')
+            if (el) el.innerHTML = `<img src="${e.target.result}" alt="Preview">`
+          }
+          reader.readAsDataURL(f)
+        })
+      }
+    }
+
+    // ── Bottom navigation ─────────────────────────────────────
+    function _renderNav() {
+      const nav = document.getElementById('pw-nav')
+      if (!nav) return
+      const isLast = _step === TOTAL
+
+      nav.innerHTML = `
+        <div class="pw-nav-inner">
+          ${_step > 1
+            ? `<button class="btn btn--ghost pw-back-btn" id="pw-back">← Back</button>`
+            : `<div></div>`}
+          <span class="pw-step-counter">Step ${_step} of ${TOTAL}</span>
+          <button class="btn btn--primary pw-next-btn" id="pw-next">
+            ${isLast ? 'Save & Finish' : 'Next →'}
+          </button>
+        </div>`
+
+      document.getElementById('pw-back')?.addEventListener('click', () => {
+        _capture()
+        document.getElementById('pw-error').style.display = 'none'
+        _step--
+        _render()
+      })
+
+      document.getElementById('pw-next')?.addEventListener('click', async () => {
+        _capture()
+        const errEl = document.getElementById('pw-error')
+        errEl.style.display = 'none'
+
+        const err = _validate()
+        if (err) { errEl.textContent = err; errEl.style.display = 'block'; return }
+
+        if (!isLast) { _step++; _render(); return }
+
+        // ── Final save ────────────────────────────────────────
+        const btn = document.getElementById('pw-next')
+        btn.disabled = true; btn.textContent = 'Saving…'
+
+        let profile_image_url = null
+        if (_avatarFile) {
+          const { url, error: uploadErr } = await API.uploadAvatar(user.id, _avatarFile)
+          if (uploadErr) {
+            errEl.textContent = 'Avatar upload failed: ' + uploadErr.message
+            errEl.style.display = 'block'
+            btn.disabled = false; btn.textContent = 'Save & Finish'
+            return
+          }
+          profile_image_url = url
+        }
+
+        const profileData = {
+          date_of_birth:                  _d.dob                 || null,
+          personal_email:                 _d.personal_email      || null,
+          phone:                          _d.phone               || null,
+          blood_group:                    _d.blood_group         || null,
+          address:                        _d.address             || null,
+          linkedin_url:                   _d.linkedin_url        || null,
+          bank_account_number:            _d.bank_account_number || null,
+          bank_ifsc:                      _d.bank_ifsc           || null,
+          emergency_contact_name:         _d.ec_name,
+          emergency_contact_phone:        _d.ec_phone,
+          emergency_contact_relationship: _d.ec_relationship,
+          profile_completed:              true,
+        }
+        if (profile_image_url) profileData.profile_image_url = profile_image_url
+
+        const { error } = await API.updateOwnProfile(user.id, profileData)
+        if (error) {
+          errEl.textContent = 'Could not save profile: ' + error.message
+          errEl.style.display = 'block'
+          btn.disabled = false; btn.textContent = 'Save & Finish'
+          return
+        }
+
+        // ── Done screen ───────────────────────────────────────
+        document.getElementById('pw-stepper').innerHTML = ''
+        document.getElementById('pw-nav').innerHTML = ''
+        document.getElementById('pw-error').style.display = 'none'
+        document.getElementById('pw-step-body').innerHTML = `
+          <div class="pw-done">
+            <div class="pw-done-check">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <h3 class="pw-done-title">You're all set!</h3>
+            <p class="pw-done-sub">Your profile has been saved. Taking you to your dashboard…</p>
+          </div>`
+        setTimeout(() => window.location.reload(), 1600)
       })
     }
 
-    // Form submit
-    const form = document.getElementById('profile-wizard-form')
-    if (!form) return
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault()
-      const errEl = document.getElementById('pw-error')
-      const sucEl = document.getElementById('pw-success')
-      const btn   = document.getElementById('pw-submit-btn')
-      errEl.style.display = 'none'
-      sucEl.style.display = 'none'
+    function _render() {
+      _renderStepper()
+      _renderBody()
+      _renderNav()
+      document.querySelector('.profile-wizard-card')?.scrollTo({ top: 0, behavior: 'smooth' })
+    }
 
-      const ecName         = document.getElementById('pw-ec-name')?.value.trim()
-      const ecPhone        = document.getElementById('pw-ec-phone')?.value.trim()
-      const ecRelationship = document.getElementById('pw-ec-relationship')?.value
-
-      if (!ecName || !ecPhone || !ecRelationship) {
-        errEl.textContent = 'Emergency contact name, phone, and relationship are required.'
-        errEl.style.display = 'block'
-        return
-      }
-
-      btn.disabled = true
-      btn.textContent = 'Saving…'
-
-      // Upload avatar if chosen
-      let profile_image_url = null
-      const file = document.getElementById('pw-avatar-file')?.files[0]
-      if (file) {
-        const { url, error: uploadErr } = await API.uploadAvatar(user.id, file)
-        if (uploadErr) {
-          errEl.textContent = 'Avatar upload failed: ' + uploadErr.message
-          errEl.style.display = 'block'
-          btn.disabled = false
-          btn.textContent = 'Save Profile & Continue'
-          return
-        }
-        profile_image_url = url
-      }
-
-      const profileData = {
-        date_of_birth:     document.getElementById('pw-dob')?.value         || null,
-        personal_email:    document.getElementById('pw-personal-email')?.value.trim() || null,
-        phone:             document.getElementById('pw-phone')?.value.trim() || null,
-        blood_group:       document.getElementById('pw-blood-group')?.value  || null,
-        address:           document.getElementById('pw-address')?.value.trim() || null,
-        linkedin_url:      document.getElementById('pw-linkedin')?.value.trim() || null,
-        bank_account_number: document.getElementById('pw-bank-account')?.value.trim() || null,
-        bank_ifsc:         document.getElementById('pw-bank-ifsc')?.value.trim() || null,
-        emergency_contact_name:         ecName,
-        emergency_contact_phone:        ecPhone,
-        emergency_contact_relationship: ecRelationship,
-        profile_completed: true,
-      }
-      if (profile_image_url) profileData.profile_image_url = profile_image_url
-
-      const { error } = await API.updateOwnProfile(user.id, profileData)
-      if (error) {
-        errEl.textContent = 'Could not save profile: ' + error.message
-        errEl.style.display = 'block'
-        btn.disabled = false
-        btn.textContent = 'Save Profile & Continue'
-        return
-      }
-
-      sucEl.textContent = 'Profile saved! Loading your dashboard…'
-      sucEl.style.display = 'block'
-      setTimeout(() => window.location.reload(), 1200)
-    })
+    _render()
   }
 
   return { init, hasAccess, renderAccessDenied }
