@@ -293,16 +293,19 @@ const LeaveTracker = (() => {
         takenByType[r.leave_type_id] += Number(r.days)
       })
 
-    const pendingCount     = _leaveRequests.filter(r => r.status === 'pending').length
-    const typesWithCredits = _leaveTypes.filter(t => creditedByType[t.id] !== undefined)
+    const pendingCount = _leaveRequests.filter(r => r.status === 'pending').length
 
-    const kpiCards = typesWithCredits.length
-      ? typesWithCredits.map(t => {
+    // Drive cards from ALL active leave types — a new type added in Settings
+    // automatically appears here even before any credits are assigned.
+    const kpiCards = _leaveTypes.length
+      ? _leaveTypes.map(t => {
           const credited  = creditedByType[t.id] || 0
           const taken     = takenByType[t.id]    || 0
           const remaining = credited - taken
+          // Card dims slightly when HR hasn't credited this type yet
+          const notYetCredited = credited === 0
           return `
-            <div class="lt-stat-card lt-stat-card--category section-card">
+            <div class="lt-stat-card lt-stat-card--category section-card${notYetCredited ? ' lt-stat-card--uncredited' : ''}">
               <div class="lt-stat-cat-name">${Utils.escapeHtml(t.name)}</div>
               <div class="lt-stat-cat-body">
                 <div class="lt-stat-cat-col">
@@ -315,12 +318,13 @@ const LeaveTracker = (() => {
                   <div class="lt-stat-label">Pending Leaves</div>
                 </div>
               </div>
+              ${notYetCredited ? `<div class="lt-stat-cat-hint">Not yet allocated</div>` : ''}
             </div>
           `
         }).join('')
       : `<div class="lt-stat-card section-card" style="grid-column:1/-1;">
            <div class="lt-stat-label" style="font-size:13px;color:var(--text-muted);">
-             No leave allocations found for ${currentYear}. Contact HR to get your leaves credited.
+             No leave types configured yet. Ask HR to set them up in Settings.
            </div>
          </div>`
 
