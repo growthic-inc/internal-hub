@@ -11,7 +11,8 @@ const Assets = (() => {
   let _employees = []
   let _types     = []
   let _repairs   = []
-  let _requests  = []
+  let _requests       = []
+  let _returnRequests = []
   let _isManager = false
   let _activeTab = 'all'
   let _p         = null
@@ -22,11 +23,12 @@ const Assets = (() => {
   const CONDITIONS = ['New', 'Good', 'Fair', 'Poor']
 
   const STATUSES = {
-    available:    { label: 'Available',    cls: 'badge--success' },
-    in_use:       { label: 'In Use',       cls: 'badge--primary' },
-    under_repair: { label: 'Under Repair', cls: 'badge--warning' },
-    lost:         { label: 'Lost',         cls: 'badge--danger'  },
-    retired:      { label: 'Retired',      cls: 'badge--muted'   },
+    available:      { label: 'Available',      cls: 'badge--success' },
+    in_use:         { label: 'In Use',         cls: 'badge--primary' },
+    pending_return: { label: 'Pending Return', cls: 'badge--warning' },
+    under_repair:   { label: 'Under Repair',   cls: 'badge--warning' },
+    lost:           { label: 'Lost',           cls: 'badge--danger'  },
+    retired:        { label: 'Retired',        cls: 'badge--muted'   },
   }
 
   const REPAIR_STATUS = {
@@ -36,15 +38,16 @@ const Assets = (() => {
   }
 
   const HISTORY_ICONS = {
-    created:           '📦',
-    assigned:          '👤',
-    returned:          '↩️',
-    condition_updated: '🔄',
-    photo_added:       '📷',
-    lost:              '⚠️',
-    retired:           '🗃️',
-    repair_logged:     '🔧',
-    repair_resolved:   '✅',
+    created:          '📦',
+    assigned:         '👤',
+    returned:         '↩️',
+    return_requested: '📤',
+    condition_updated:'🔄',
+    photo_added:      '📷',
+    lost:             '⚠️',
+    retired:          '🗃️',
+    repair_logged:    '🔧',
+    repair_resolved:  '✅',
   }
 
   /* ── Helpers ─────────────────────────────────────────────── */
@@ -91,7 +94,8 @@ const Assets = (() => {
     switch (h.action) {
       case 'created':            return 'Added to inventory'
       case 'assigned':           return `Assigned to ${h.to_emp?.name || '—'}`
-      case 'returned':           return `Returned by ${h.from_emp?.name || '—'}`
+      case 'returned':           return `Returned by ${h.from_emp?.name || '—'} (HR approved)`
+      case 'return_requested':   return `Return requested by ${h.from_emp?.name || '—'}`
       case 'condition_updated':  return `Condition updated → ${h.condition_after || '—'}`
       case 'photo_added':        return 'Photo added'
       case 'lost':               return 'Marked as lost'
@@ -173,21 +177,29 @@ const Assets = (() => {
       _repairs = data || []
     }
 
-    // Load requests
+    // Load asset requests + return requests
     if (canManage) {
-      const { data } = await API.getAllAssetRequests()
-      _requests = data || []
+      const [reqsRes, retReqsRes] = await Promise.all([
+        API.getAllAssetRequests(),
+        API.getAllAssetReturnRequests(),
+      ])
+      _requests       = reqsRes.data    || []
+      _returnRequests = retReqsRes.data || []
     } else {
-      const fetches = [API.getMySubmittedAssetRequests(user.id)]
+      const assetReqFetch  = API.getMySubmittedAssetRequests(user.id)
+      const returnReqFetch = API.getMyReturnRequests(user.id)
+      const fetches = [assetReqFetch, returnReqFetch]
       if (_isManager) fetches.push(API.getPendingManagerAssetRequests(user.id))
       const results = await Promise.all(fetches)
       const seen = new Set()
-      _requests = [...(results[0].data || []), ...(results[1]?.data || [])]
+      _requests       = [...(results[0].data || []), ...(results[2]?.data || [])]
         .filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true })
+      _returnRequests = results[1].data || []
     }
 
     // Build tabs
-    const pendingCount = _requests.filter(r => r.status === 'pending_hr' && canManage).length
+    const pendingReturnCount = canManage ? _returnRequests.filter(r => r.status === 'pending').length : 0
+    const pendingCount = _requests.filter(r => r.status === 'pending_hr' && canManage).length + pendingReturnCount
     const tabs = []
     if (canManage) tabs.push({ id: 'all',         label: 'All Assets' })
     tabs.push(              { id: 'mine',        label: 'My Assets' })
@@ -418,7 +430,12 @@ const Assets = (() => {
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
           <button class="btn btn--xs btn--ghost ast-view" data-id="${a.id}">View Details</button>
           <button class="btn btn--xs btn--danger ast-report" data-id="${a.id}">Report Issue</button>
-          ${a.status === 'in_use' ? `<button class="btn btn--xs btn--ghost ast-return-mine" data-id="${a.id}" style="color:var(--text-muted);">Return Asset</button>` : ''}
+          ${a.status === 'in_use'
+            ? `<button class="btn btn--xs btn--ghost ast-return-mine" data-id="${a.id}" style="color:var(--text-muted);">Return Asset</button>`
+            : ''}
+          ${a.status === 'pending_return'
+            ? `<span style="font-size:12px;color:var(--warning);padding:3px 8px;border:1px solid var(--warning);border-radius:var(--radius);display:inline-flex;align-items:center;gap:4px;">⏳ Return Pending HR</span>`
+            : ''}
         </div>
       </div>`).join('')}</div>`
 
@@ -449,19 +466,28 @@ const Assets = (() => {
     rejected:    { label: 'Rejected',     cls: 'badge--danger'  },
   }
 
+  const RETURN_STATUS = {
+    pending:  { label: 'Pending HR',  cls: 'badge--warning' },
+    approved: { label: 'Approved',    cls: 'badge--success' },
+    rejected: { label: 'Rejected',    cls: 'badge--danger'  },
+  }
+
   function _renderRequestsTab() {
     const content = document.getElementById('ast-content')
     if (!content) return
 
-    const pendingHR  = _p.can_manage ? _requests.filter(r => r.status === 'pending_hr') : []
-    const myRequests = _requests.filter(r => r.requested_by === _user.id)
-    const allLog     = _p.can_manage ? _requests : []
+    const pendingHR      = _p.can_manage ? _requests.filter(r => r.status === 'pending_hr') : []
+    const pendingReturns = _p.can_manage ? _returnRequests.filter(r => r.status === 'pending') : []
+    const myRequests     = _requests.filter(r => r.requested_by === _user.id)
+    const myReturns      = _returnRequests.filter(r => r.returned_by === _user.id)
+    const allLog         = _p.can_manage ? _requests : []
+    const allReturns     = _p.can_manage ? _returnRequests : []
 
+    // ── Asset acquisition request row ───────────────────────────
     function _reqRow(r, showActions) {
       const asset     = r.asset || {}
       const reqBy     = r.requester?.name || '—'
       const statusCfg = REQ_STATUS[r.status] || { label: r.status, cls: 'badge--muted' }
-
       return `
         <tr>
           <td>
@@ -489,28 +515,91 @@ const Assets = (() => {
       </table></div>`
     }
 
+    // ── Return request row ──────────────────────────────────────
+    function _returnRow(r, showActions) {
+      const asset     = _assets.find(a => a.id === r.asset_id) || r.asset || {}
+      const rrStatus  = RETURN_STATUS[r.status] || { label: r.status, cls: 'badge--muted' }
+      return `
+        <tr>
+          <td>
+            <strong>${Utils.escapeHtml(asset.name || '—')}</strong>
+            <br><span class="text-muted" style="font-size:11px;">${Utils.escapeHtml(asset.type || '')}</span>
+          </td>
+          <td>${Utils.escapeHtml(r.returned_by_emp?.name || '—')}</td>
+          <td class="text-sm">${Utils.escapeHtml(r.condition_on_return || '—')}</td>
+          <td style="max-width:180px;font-size:12px;">${Utils.escapeHtml(r.notes || '—')}</td>
+          <td><span class="badge ${rrStatus.cls}">${rrStatus.label}</span></td>
+          <td class="text-sm text-muted">${Utils.formatDate(r.created_at)}</td>
+          <td class="text-sm text-muted">${r.hr_actor?.name || '—'}</td>
+          <td style="white-space:nowrap;">
+            ${showActions && r.status === 'pending' && _p.can_manage ? `
+              <button class="btn btn--xs btn--primary ast-ret-approve" data-id="${r.id}">Approve</button>
+              <button class="btn btn--xs btn--ghost ast-ret-reject" data-id="${r.id}" style="color:var(--danger);">Reject</button>
+            ` : ''}
+            ${r.status === 'rejected' && r.hr_notes
+              ? `<span class="text-sm text-muted" title="${Utils.escapeHtml(r.hr_notes)}" style="cursor:help;">📝 Note</span>`
+              : ''}
+          </td>
+        </tr>`
+    }
+
+    function _returnTable(rows, showActions = false) {
+      if (!rows.length) return '<p class="empty-state-text" style="padding:16px;">No return requests.</p>'
+      return `<div style="overflow-x:auto;"><table class="data-table">
+        <thead><tr>
+          <th>Asset</th><th>Returned By</th><th>Condition</th><th>Notes</th>
+          <th>Status</th><th>Return Date</th><th>Approved By</th><th></th>
+        </tr></thead>
+        <tbody>${rows.map(r => _returnRow(r, showActions)).join('')}</tbody>
+      </table></div>`
+    }
+
     const sections = []
 
+    // Pending asset acquisition requests (HR)
     if (pendingHR.length) {
       sections.push(`
         <div class="section-card" style="border-left:3px solid var(--warning);">
-          <div class="section-card-header"><h3>Pending HR Approval <span class="badge badge--warning" style="margin-left:8px;">${pendingHR.length}</span></h3></div>
+          <div class="section-card-header"><h3>Pending Asset Requests <span class="badge badge--warning" style="margin-left:8px;">${pendingHR.length}</span></h3></div>
           <div class="section-card-body" style="padding:0;">${_reqTable(pendingHR, true)}</div>
+        </div>`)
+    }
+
+    // Pending return approvals (HR)
+    if (pendingReturns.length) {
+      sections.push(`
+        <div class="section-card" style="border-left:3px solid var(--primary);">
+          <div class="section-card-header"><h3>Pending Return Approvals <span class="badge badge--primary" style="margin-left:8px;">${pendingReturns.length}</span></h3></div>
+          <div class="section-card-body" style="padding:0;">${_returnTable(pendingReturns, true)}</div>
         </div>`)
     }
 
     if (_p.can_manage) {
       sections.push(`
         <div class="section-card">
-          <div class="section-card-header"><h3>All Requests</h3></div>
+          <div class="section-card-header"><h3>All Asset Requests</h3></div>
           <div class="section-card-body" style="padding:0;">${_reqTable(allLog, true)}</div>
         </div>`)
-    } else if (myRequests.length || _p.can_request) {
       sections.push(`
         <div class="section-card">
-          <div class="section-card-header"><h3>My Requests</h3></div>
-          <div class="section-card-body" style="padding:0;">${_reqTable(myRequests)}</div>
+          <div class="section-card-header"><h3>Return History</h3></div>
+          <div class="section-card-body" style="padding:0;">${_returnTable(allReturns)}</div>
         </div>`)
+    } else {
+      if (myRequests.length || _p.can_request) {
+        sections.push(`
+          <div class="section-card">
+            <div class="section-card-header"><h3>My Asset Requests</h3></div>
+            <div class="section-card-body" style="padding:0;">${_reqTable(myRequests)}</div>
+          </div>`)
+      }
+      if (myReturns.length) {
+        sections.push(`
+          <div class="section-card">
+            <div class="section-card-header"><h3>My Return Requests</h3></div>
+            <div class="section-card-body" style="padding:0;">${_returnTable(myReturns)}</div>
+          </div>`)
+      }
     }
 
     content.innerHTML = sections.length
@@ -522,6 +611,12 @@ const Assets = (() => {
     )
     content.querySelectorAll('.ast-req-reject').forEach(btn =>
       btn.addEventListener('click', () => _openRejectRequestModal(btn.dataset.id))
+    )
+    content.querySelectorAll('.ast-ret-approve').forEach(btn =>
+      btn.addEventListener('click', () => _approveReturnRequest(btn.dataset.id))
+    )
+    content.querySelectorAll('.ast-ret-reject').forEach(btn =>
+      btn.addEventListener('click', () => _openRejectReturnModal(btn.dataset.id))
     )
   }
 
@@ -632,6 +727,132 @@ const Assets = (() => {
       await _refreshAll()
       Utils.closeModal()
       Utils.showToast('Request rejected.', 'success')
+      _renderRequestsTab()
+    })
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     RETURN REQUEST — APPROVE / REJECT (HR only)
+  ══════════════════════════════════════════════════════════ */
+
+  async function _approveReturnRequest(returnReqId) {
+    const rr    = _returnRequests.find(r => r.id === returnReqId)
+    if (!rr) return
+    const asset     = _assets.find(a => a.id === rr.asset_id)
+    const assetName = asset?.name || rr.asset?.name || 'the asset'
+    const empName   = rr.returned_by_emp?.name || 'the employee'
+
+    if (!confirm(`Approve return of "${assetName}" from ${empName}?`)) return
+
+    try {
+      const now = new Date().toISOString()
+
+      // 1. Approve the return request
+      const { error: rrErr } = await API.updateAssetReturnRequest(returnReqId, {
+        status:      'approved',
+        hr_acted_by: _user.id,
+        hr_acted_at: now,
+      })
+      if (rrErr) throw rrErr
+
+      // 2. Mark asset as available and unassign
+      const { error: assetErr } = await API.updateAsset(rr.asset_id, {
+        status:        'available',
+        assigned_to:   null,
+        assigned_date: null,
+        condition:     rr.condition_on_return || asset?.condition,
+        updated_at:    now,
+      })
+      if (assetErr) throw assetErr
+
+      // 3. Asset history
+      await API.addAssetHistory({
+        asset_id:         rr.asset_id,
+        action:           'returned',
+        from_employee_id: rr.returned_by,
+        condition_before: asset?.condition,
+        condition_after:  rr.condition_on_return,
+        notes:            `Return approved by ${_user.name}.${rr.notes ? ' Employee note: ' + rr.notes : ''}`,
+        performed_by:     _user.id,
+      })
+
+      // 4. Notify employee
+      await Config.supabase.from('notifications').insert({
+        recipient_employee_id: rr.returned_by,
+        type:    'success',
+        message: `Your return request for "${assetName}" has been approved. The asset has been successfully returned.`,
+        module:  'assets',
+      })
+
+      await _refreshAll()
+      Utils.showToast('Return approved — asset is now available.', 'success')
+      _renderRequestsTab()
+
+    } catch (err) {
+      Utils.showToast(err.message || 'Failed to approve return.', 'error')
+    }
+  }
+
+  function _openRejectReturnModal(returnReqId) {
+    const rr    = _returnRequests.find(r => r.id === returnReqId)
+    if (!rr) return
+    const asset     = _assets.find(a => a.id === rr.asset_id)
+    const assetName = asset?.name || rr.asset?.name || 'the asset'
+
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">Reject Return Request</h3>${_modalCloseBtn()}
+      </div>
+      <div class="modal-body">
+        <p style="font-size:14px;margin:0 0 16px;">
+          Reject return of <strong>${Utils.escapeHtml(assetName)}</strong> from
+          <strong>${Utils.escapeHtml(rr.returned_by_emp?.name || '—')}</strong>?
+          The asset will remain assigned to them.
+        </p>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Comments for Employee <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+          <textarea class="form-input" id="ast-ret-reject-note" rows="2" style="resize:vertical;"
+            placeholder="Reason for rejection or next steps…"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
+        <button class="btn btn--danger" id="ast-ret-reject-confirm">Reject Return</button>
+      </div>
+    `)
+
+    document.getElementById('ast-ret-reject-confirm').addEventListener('click', async () => {
+      const btn  = document.getElementById('ast-ret-reject-confirm')
+      const note = document.getElementById('ast-ret-reject-note').value.trim() || null
+      btn.disabled = true; btn.textContent = 'Rejecting…'
+
+      const now = new Date().toISOString()
+      const { error } = await API.updateAssetReturnRequest(returnReqId, {
+        status:      'rejected',
+        hr_acted_by: _user.id,
+        hr_acted_at: now,
+        hr_notes:    note,
+      })
+
+      if (!error) {
+        // Revert asset back to in_use
+        await API.updateAsset(rr.asset_id, { status: 'in_use', updated_at: now })
+
+        // Notify employee with HR comments
+        await Config.supabase.from('notifications').insert({
+          recipient_employee_id: rr.returned_by,
+          type:    'warning',
+          message: `Your return request for "${assetName}" was not approved.${note ? ' HR note: ' + note : ''}`,
+          module:  'assets',
+        })
+      }
+
+      btn.disabled = false; btn.textContent = 'Reject Return'
+      if (error) { Utils.showToast(error.message, 'error'); return }
+
+      await _refreshAll()
+      Utils.closeModal()
+      Utils.showToast('Return request rejected — asset remains assigned.', 'success')
       _renderRequestsTab()
     })
   }
@@ -997,8 +1218,8 @@ const Assets = (() => {
     const latestPhoto    = (history || []).find(h => h.photo_url)
 
     // Determine available actions for this user
-    const canReturn  = isAssignedToMe || isSuperAdmin
-    const canReport  = isAssignedToMe
+    const canReturn  = (isAssignedToMe || isSuperAdmin) && asset.status === 'in_use'
+    const canReport  = isAssignedToMe && asset.status !== 'pending_return'
     const canAssign  = canManage && asset.status === 'available'
     const canEdit    = canManage
     const canRetire  = _p.can_retire_delete && asset.status !== 'retired'
@@ -1377,13 +1598,15 @@ const Assets = (() => {
   function _openReturnModal(asset) {
     Utils.openModal(`
       <div class="modal-header">
-        <h3 class="modal-title">Return Asset</h3>${_modalCloseBtn()}
+        <h3 class="modal-title">Request Asset Return</h3>${_modalCloseBtn()}
       </div>
       <div class="modal-body">
         <div id="ast-return-err" class="alert alert--danger" style="display:none;"></div>
-        <div style="font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:16px;">
-          ${Utils.escapeHtml(asset.name)}
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--text-muted);">
+          Your return request will be sent to HR for review. The asset will show as
+          <strong>Pending Return</strong> until HR approves. You are still responsible for it until then.
         </div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:16px;">${Utils.escapeHtml(asset.name)}</div>
         <div class="form-group">
           <label class="form-label">Condition on Return <span class="required">*</span></label>
           <select class="form-select" id="ast-return-cond">
@@ -1393,17 +1616,12 @@ const Assets = (() => {
         <div class="form-group">
           <label class="form-label">Notes</label>
           <textarea class="form-input" id="ast-return-notes" rows="2" style="resize:vertical;"
-            placeholder="Any observations on return…"></textarea>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Photo <span style="font-weight:400;color:var(--text-muted);">(recommended)</span></label>
-          <input type="file" class="form-input" id="ast-return-photo" accept="image/*" style="padding:6px;">
-          <div id="ast-return-photo-status" style="font-size:12px;color:var(--primary);margin-top:4px;display:none;"></div>
+            placeholder="Any observations, damage, accessories included…"></textarea>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
-        <button class="btn btn--primary" id="ast-return-save">Confirm Return</button>
+        <button class="btn btn--primary" id="ast-return-save">Submit Return Request</button>
       </div>
     `)
 
@@ -1413,30 +1631,69 @@ const Assets = (() => {
       const cond  = document.getElementById('ast-return-cond').value
       const notes = document.getElementById('ast-return-notes').value.trim()
 
-      btn.disabled = true; btn.textContent = 'Processing…'
+      btn.disabled = true; btn.textContent = 'Submitting…'
 
-      const photoUrl = await _uploadPhoto('ast-return-photo', 'ast-return-photo-status', asset.id, 'return')
-
-      const { error } = await API.updateAsset(asset.id, {
-        assigned_to: null, assigned_date: null,
-        status: 'available', condition: cond, updated_at: new Date().toISOString(),
-      })
-
-      if (!error) {
-        await API.addAssetHistory({
-          asset_id: asset.id, action: 'returned',
-          from_employee_id: asset.assigned_to,
-          condition_before: asset.condition, condition_after: cond,
-          notes: notes || null, photo_url: photoUrl, performed_by: _user.id,
+      try {
+        // 1. Create the return request record
+        const { data: rr, error: rrErr } = await API.createAssetReturnRequest({
+          asset_id:            asset.id,
+          returned_by:         _user.id,
+          condition_on_return: cond,
+          notes:               notes || null,
+          status:              'pending',
         })
+        if (rrErr) throw rrErr
+
+        // 2. Move asset to pending_return — still assigned to user
+        const { error: assetErr } = await API.updateAsset(asset.id, {
+          status:     'pending_return',
+          updated_at: new Date().toISOString(),
+        })
+        if (assetErr) throw assetErr
+
+        // 3. Asset history
+        await API.addAssetHistory({
+          asset_id:         asset.id,
+          action:           'return_requested',
+          from_employee_id: _user.id,
+          condition_before: asset.condition,
+          condition_after:  cond,
+          notes:            `Return requested by ${_user.name}. Condition: ${cond}.${notes ? ' ' + notes : ''}`,
+          performed_by:     _user.id,
+        })
+
+        // 4. Notify all HR / Super Admin
+        const { data: hrs } = await Config.supabase
+          .from('employees').select('id').in('role', ['super_admin', 'hr'])
+        if (hrs?.length) {
+          await Config.supabase.from('notifications').insert(
+            hrs.map(e => ({
+              recipient_employee_id: e.id,
+              type:    'info',
+              message: `${_user.name} has submitted a return request for "${asset.name}". Please review in Requests → Returns.`,
+              module:  'assets',
+              record_id: rr?.id || null,
+            }))
+          )
+        }
+
+        // Refresh local state
+        const [assetsRes, retReqsRes] = await Promise.all([
+          API.getAssets(),
+          API.getMyReturnRequests(_user.id),
+        ])
+        _assets         = assetsRes.data   || []
+        _returnRequests = retReqsRes.data  || []
+
+        Utils.closeModal()
+        Utils.showToast('Return request submitted — HR has been notified.', 'success')
+        _renderMineTab()
+
+      } catch (err) {
+        btn.disabled = false; btn.textContent = 'Submit Return Request'
+        errEl.textContent = err.message || 'Failed to submit return request.'
+        errEl.style.display = 'block'
       }
-
-      btn.disabled = false; btn.textContent = 'Confirm Return'
-      if (error) { errEl.textContent = error.message; errEl.style.display = 'block'; return }
-
-      Utils.closeModal()
-      Utils.showToast('Asset returned.', 'success')
-      await _refresh()
     })
   }
 
@@ -1935,12 +2192,14 @@ const Assets = (() => {
   }
 
   async function _refreshAll() {
-    const [assetsRes, repairsRes] = await Promise.all([
+    const [assetsRes, repairsRes, retReqsRes] = await Promise.all([
       API.getAssets(),
       _p.can_manage || _p.can_resolve ? API.getAllAssetRepairs() : API.getMyAssetRepairs(_user.id),
+      _p.can_manage ? API.getAllAssetReturnRequests() : API.getMyReturnRequests(_user.id),
     ])
-    _assets  = assetsRes.data  || []
-    _repairs = repairsRes.data || []
+    _assets         = assetsRes.data   || []
+    _repairs        = repairsRes.data  || []
+    _returnRequests = retReqsRes.data  || []
   }
 
   return { render, init }

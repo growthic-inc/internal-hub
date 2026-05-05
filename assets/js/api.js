@@ -316,6 +316,38 @@ const API = (() => {
     return supabase.from('asset_requests').update(data).eq('id', id).select().single()
   }
 
+  /* ── Asset Return Requests ───────────────────────────────── */
+
+  const ASSET_RETURN_REQUEST_SELECT = `
+    *,
+    asset:assets(id, name, type),
+    returned_by_emp:employees!returned_by(id, name, department),
+    hr_actor:employees!hr_acted_by(id, name)
+  `
+
+  async function createAssetReturnRequest(data) {
+    return supabase.from('asset_return_requests').insert(data).select(ASSET_RETURN_REQUEST_SELECT).single()
+  }
+
+  async function getAllAssetReturnRequests() {
+    return supabase
+      .from('asset_return_requests')
+      .select(ASSET_RETURN_REQUEST_SELECT)
+      .order('created_at', { ascending: false })
+  }
+
+  async function getMyReturnRequests(employeeId) {
+    return supabase
+      .from('asset_return_requests')
+      .select(ASSET_RETURN_REQUEST_SELECT)
+      .eq('returned_by', employeeId)
+      .order('created_at', { ascending: false })
+  }
+
+  async function updateAssetReturnRequest(id, data) {
+    return supabase.from('asset_return_requests').update(data).eq('id', id)
+  }
+
   async function getMyAssetRequests(employeeId) {
     return supabase
       .from('asset_requests')
@@ -1294,6 +1326,7 @@ const API = (() => {
     getMyAssetRequests, createAssetRequest, getMySubmittedAssetRequests,
     getPendingManagerAssetRequests, getPendingHRAssetRequests, getAllAssetRequests,
     updateAssetRequest,
+    createAssetReturnRequest, getAllAssetReturnRequests, getMyReturnRequests, updateAssetReturnRequest,
     getPendingApprovals, updateApproval,
     getTools, getToolAccess, getMyToolAccess, getToolRequests, getMyToolRequests,
     getUnreadNotifications, markNotificationRead, markAllNotificationsRead,
