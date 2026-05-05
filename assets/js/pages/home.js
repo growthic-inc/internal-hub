@@ -373,69 +373,20 @@ const HomeModule = (() => {
       </div>`
   }
 
-  /* ── Section: Badge Spotlight (team-wide, left column) ──── */
-
-  function _renderBadgeSpotlight(recentAwards) {
-    const awards = (recentAwards || []).filter(a => a.badge && a.employee)
-    if (!awards.length) return ''
-
-    const rows = awards.map(a => {
-      const b          = a.badge
-      const emp        = a.employee
-      const colour     = b.colour || '#0F4799'
-      const awardedAgo = _relativeTime(a.awarded_at)
-      const isAuto     = !a.awarded_by
-      const byLine     = a.awarder?.name
-        ? `Awarded by <strong>${Utils.escapeHtml(a.awarder.name)}</strong>`
-        : b.category === 'tenure'
-        ? 'Tenure milestone'
-        : b.category === 'special'
-        ? '🎂 Birthday week!'
-        : 'Awarded'
-
-      const avatar = emp.profile_image_url
-        ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" alt=""
-               style="width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0;">`
-        : `<span class="avatar-circle avatar-circle--sm" style="flex-shrink:0;width:36px;height:36px;font-size:12px;">
-             ${Utils.escapeHtml(Utils.getInitials(emp.name))}
-           </span>`
-
-      return `
-        <div class="bs-row" style="--bs-accent:${colour};">
-          <div class="bs-badge-icon" style="background:${colour}18;border-color:${colour}50;">
-            <span style="font-size:22px;line-height:1;">${b.icon || '🏅'}</span>
-          </div>
-          <div class="bs-body">
-            <div class="bs-headline">
-              ${avatar}
-              <div class="bs-text">
-                <span class="bs-name">${Utils.escapeHtml(emp.name)}</span>
-                <span class="bs-earned">earned</span>
-                <span class="bs-badge-name" style="color:${colour};">${Utils.escapeHtml(b.name)}</span>
-              </div>
-            </div>
-            ${a.note ? `<div class="bs-note">"${Utils.escapeHtml(a.note)}"</div>` : ''}
-            <div class="bs-meta">${byLine} · ${awardedAgo}</div>
-          </div>
-        </div>`
-    }).join('')
-
-    return `
-      <div class="section-card home-hover-card">
-        <div class="section-card-header">
-          <h3>🏅 Badge Spotlight</h3>
-          <span style="font-size:12px;color:var(--text-muted);">Recent recognitions</span>
-        </div>
-        <div class="section-card-body" style="padding:0;">
-          <div class="bs-list">${rows}</div>
-        </div>
-      </div>`
-  }
-
   /* ── Section: Your Badges (right column mini-cards) ──────── */
 
+  /** On the home page show only the highest tenure badge + all other categories */
+  function _filterHomeBadges(earnedBadges) {
+    const all     = earnedBadges || []
+    const tenure  = all
+      .filter(eb => eb.badge?.category === 'tenure')
+      .sort((a, b) => (b.badge?.criteria_months || 0) - (a.badge?.criteria_months || 0))
+    const others  = all.filter(eb => eb.badge?.category !== 'tenure')
+    return [...(tenure.length ? [tenure[0]] : []), ...others]
+  }
+
   function _renderMyBadges(earnedBadges) {
-    const badges = earnedBadges || []
+    const badges = _filterHomeBadges(earnedBadges)
     const now    = Date.now()
 
     const body = badges.length
@@ -500,16 +451,10 @@ const HomeModule = (() => {
           .sort((a, b) => a.criteria_months - b.criteria_months)
 
         // Split into: badges to insert silently vs. the one to announce
+        // Only ever award the single highest milestone not yet earned.
+        // Lower milestones are skipped entirely — profile shows only current level.
         const unearned = tenureBadges.filter(b => months >= b.criteria_months && !existingMap[b.id])
-
         if (unearned.length > 0) {
-          // Silently insert all lower milestones (no announcement, no notification)
-          const silent = unearned.slice(0, -1)
-          for (const badge of silent) {
-            await API.awardBadge({ employee_id: user.id, badge_id: badge.id, awarded_by: null, note: null })
-              .catch(() => {})
-          }
-          // Announce only the highest milestone reached
           toAward.push({ badge: unearned[unearned.length - 1], note: null })
         }
       }
@@ -574,27 +519,15 @@ const HomeModule = (() => {
         }).catch(() => {})
       }
 
-      // Refresh both widgets if new badges were awarded
+      // Refresh "Your Badges" widget if new badges were awarded
       if (toAward.length > 0) {
-        const [{ data: refreshed }, { data: spotlight }] = await Promise.all([
-          API.getEmployeeBadges(user.id),
-          API.getRecentBadgeAwards(8),
-        ])
-        // Update "Your Badges" inner content (stable wrapper ID)
+        const { data: refreshed } = await API.getEmployeeBadges(user.id)
         const inner = document.getElementById('home-badges-inner')
         if (inner) {
           const tmpDiv = document.createElement('div')
           tmpDiv.innerHTML = _renderMyBadges(refreshed)
           const newInner = tmpDiv.querySelector('#home-badges-inner')
           if (newInner) inner.innerHTML = newInner.innerHTML
-        }
-        // Update spotlight
-        const spotEl = document.getElementById('home-badge-spotlight')
-        if (spotEl) {
-          const tmp = document.createElement('div')
-          tmp.innerHTML = _renderBadgeSpotlight(spotlight)
-          const newSpot = tmp.firstElementChild
-          if (newSpot) spotEl.replaceWith(newSpot)
         }
       }
     } catch (_) { /* silent — badge check never crashes the home page */ }
@@ -616,7 +549,6 @@ const HomeModule = (() => {
       { data: workAnniversaries },
       { data: allEmployees },
       { data: myBadges },
-      { data: recentAwards },
     ] = await Promise.all([
       API.getTimesheetEntries(user.id, todayISO, todayISO),
       API.getWhoIsOutToday(),
@@ -627,14 +559,7 @@ const HomeModule = (() => {
       API.getWorkAnniversaries(),
       API.getBirthdayEmployees(),
       API.getEmployeeBadges(user.id),
-      API.getRecentBadgeAwards(8),
     ])
-
-    // Wrap spotlight with stable ID for DOM refresh
-    const spotlightRaw  = _renderBadgeSpotlight(recentAwards)
-    const spotlightHtml = spotlightRaw
-      ? spotlightRaw.replace('<div class="section-card', '<div id="home-badge-spotlight" class="section-card')
-      : ''
 
     const html = `
       ${_renderHero(user, todayEntries, whoIsOut, pendingLeaveCount, pendingTsCount)}
@@ -644,7 +569,6 @@ const HomeModule = (() => {
       <div class="home-content-row" style="margin-top:14px;">
         <div style="flex:1.5;min-width:0;display:flex;flex-direction:column;gap:14px;">
           ${_renderWhoIsOut(whoIsOut, user.id)}
-          ${spotlightHtml}
           ${_renderAnnouncements(announcements || [])}
         </div>
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px;">

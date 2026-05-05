@@ -371,6 +371,23 @@ ul, ol { list-style: none; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+}
+
+/* Announcement nudge dot */
+.nav-ann-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f87171;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px rgba(248,113,113,0.3);
+  animation: ann-dot-pulse 2s ease-in-out infinite;
+}
+
+@keyframes ann-dot-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(248,113,113,0.3); }
+  50%       { box-shadow: 0 0 0 4px rgba(248,113,113,0.15); }
 }
 
 /* ── Sidebar Footer ─────────────────────────────────────────── */

@@ -155,6 +155,7 @@ const App = (() => {
     _setupUserMenu()
     _setupLogout()
     _loadNotificationCount()
+    _checkAnnouncementDot()
     _initNotificationPanel()
     _initMobileNav()
 
@@ -177,6 +178,7 @@ const App = (() => {
       <a class="nav-item" data-route="${item.id}" href="#${item.id}">
         <span class="nav-icon">${item.icon}</span>
         <span class="nav-label">${item.label}</span>
+        ${item.id === 'announcements' ? `<span class="nav-ann-dot" id="ann-nav-dot" style="display:none;"></span>` : ''}
       </a>
     `).join('')
 
@@ -238,6 +240,27 @@ const App = (() => {
   async function _loadNotificationCount() {
     const { data } = await API.getUnreadNotifications(currentUser.id)
     _updateNotifBadge(data ? data.length : 0)
+  }
+
+  /* ── Announcement dot ───────────────────────────────────── */
+
+  async function _checkAnnouncementDot() {
+    try {
+      const { data } = await API.getRecentAnnouncements(1)
+      if (!data?.length) return
+      const latestAt  = new Date(data[0].created_at).getTime()
+      const lastSeen  = Number(localStorage.getItem('ann_last_seen') || 0)
+      if (latestAt > lastSeen) {
+        const dot = document.getElementById('ann-nav-dot')
+        if (dot) dot.style.display = 'block'
+      }
+    } catch (_) {}
+  }
+
+  function _markAnnouncementsSeen() {
+    localStorage.setItem('ann_last_seen', Date.now())
+    const dot = document.getElementById('ann-nav-dot')
+    if (dot) dot.style.display = 'none'
   }
 
   function _updateNotifBadge(count) {
@@ -488,6 +511,9 @@ const App = (() => {
     const pageModule = navItem.module()
     const content    = document.getElementById('page-content')
     if (!content) return
+
+    // Clear the announcement nudge as soon as the user lands on that page
+    if (route === 'announcements') _markAnnouncementsSeen()
 
     content.innerHTML = pageModule.render(currentUser)
     if (pageModule.init) pageModule.init(currentUser)
