@@ -136,6 +136,7 @@ const LeaveTracker = (() => {
       { id: 'my-wfh',             label: 'My WFH' },
       { id: 'pending-approvals',  label: 'Pending Approvals', conditional: true },
       { id: 'team-overview',      label: 'Team Overview',     hrOnly: true },
+      { id: 'visibility',         label: 'Visibility',        hrOnly: true },
       { id: 'settings',           label: 'Settings',          hrOnly: true },
     ]
 
@@ -259,6 +260,7 @@ const LeaveTracker = (() => {
       case 'my-wfh':            return _loadMyWfhTab()
       case 'pending-approvals': return _loadPendingApprovalsTab()
       case 'team-overview':     return _loadTeamOverviewTab()
+      case 'visibility':        return _loadVisibilityTab()
       case 'settings':          return _loadSettingsTab()
     }
   }
@@ -276,31 +278,58 @@ const LeaveTracker = (() => {
     const content = document.getElementById('lt-content')
     if (!content) return
 
-    // Compute summary stats
-    const totalCredited = _leaveCredits.reduce((s, c) => s + Number(c.credited_days), 0)
-    const leavesTaken   = _leaveRequests
+    // Category-wise leave breakdown
+    const creditedByType = {}
+    const takenByType    = {}
+
+    _leaveCredits.forEach(c => {
+      if (!creditedByType[c.leave_type_id]) creditedByType[c.leave_type_id] = 0
+      creditedByType[c.leave_type_id] += Number(c.credited_days)
+    })
+    _leaveRequests
       .filter(r => r.status === 'approved' && new Date(r.start_date).getFullYear() === currentYear)
-      .reduce((s, r) => s + Number(r.days), 0)
-    const remaining     = totalCredited - leavesTaken
-    const pendingCount  = _leaveRequests.filter(r => r.status === 'pending').length
+      .forEach(r => {
+        if (!takenByType[r.leave_type_id]) takenByType[r.leave_type_id] = 0
+        takenByType[r.leave_type_id] += Number(r.days)
+      })
+
+    const pendingCount     = _leaveRequests.filter(r => r.status === 'pending').length
+    const typesWithCredits = _leaveTypes.filter(t => creditedByType[t.id] !== undefined)
+
+    const kpiCards = typesWithCredits.length
+      ? typesWithCredits.map(t => {
+          const credited  = creditedByType[t.id] || 0
+          const taken     = takenByType[t.id]    || 0
+          const remaining = credited - taken
+          return `
+            <div class="lt-stat-card lt-stat-card--category section-card">
+              <div class="lt-stat-cat-name">${Utils.escapeHtml(t.name)}</div>
+              <div class="lt-stat-cat-body">
+                <div class="lt-stat-cat-col">
+                  <div class="lt-stat-value">${taken}</div>
+                  <div class="lt-stat-label">Total Taken</div>
+                </div>
+                <div class="lt-stat-cat-sep"></div>
+                <div class="lt-stat-cat-col">
+                  <div class="lt-stat-value ${remaining < 0 ? 'lt-stat-value--warning' : ''}">${remaining}</div>
+                  <div class="lt-stat-label">Pending Leaves</div>
+                </div>
+              </div>
+            </div>
+          `
+        }).join('')
+      : `<div class="lt-stat-card section-card" style="grid-column:1/-1;">
+           <div class="lt-stat-label" style="font-size:13px;color:var(--text-muted);">
+             No leave allocations found for ${currentYear}. Contact HR to get your leaves credited.
+           </div>
+         </div>`
 
     content.innerHTML = `
-      <div class="lt-summary-cards mb-4">
-        <div class="lt-stat-card section-card">
-          <div class="lt-stat-value">${totalCredited}</div>
-          <div class="lt-stat-label">Total Credited</div>
-        </div>
-        <div class="lt-stat-card section-card">
-          <div class="lt-stat-value">${leavesTaken}</div>
-          <div class="lt-stat-label">Leaves Taken</div>
-        </div>
-        <div class="lt-stat-card section-card">
-          <div class="lt-stat-value ${remaining < 0 ? 'lt-stat-value--warning' : ''}">${remaining}</div>
-          <div class="lt-stat-label">Remaining</div>
-        </div>
-        <div class="lt-stat-card section-card">
+      <div class="lt-summary-cards lt-summary-cards--cat mb-4">
+        ${kpiCards}
+        <div class="lt-stat-card lt-stat-card--pending section-card">
           <div class="lt-stat-value">${pendingCount}</div>
-          <div class="lt-stat-label">Pending</div>
+          <div class="lt-stat-label">Pending Requests</div>
         </div>
       </div>
 
@@ -1601,6 +1630,125 @@ const LeaveTracker = (() => {
     d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow))
     d.setHours(0, 0, 0, 0)
     return d
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     TAB: VISIBILITY (HR / Super Admin only)
+     Centralised leave balance view — all employees × all
+     active leave types for the current year.
+  ══════════════════════════════════════════════════════════ */
+  async function _loadVisibilityTab() {
+    const content = document.getElementById('lt-content')
+    if (!content) return
+    content.innerHTML = '<p class="loading-text">Loading visibility data…</p>'
+
+    const [creditsRes, requestsRes, ltRes] = await Promise.all([
+      API.getAllLeaveCredits(currentYear),
+      API.getAllLeaveRequests({ status: 'approved' }),
+      API.getLeaveTypes(true),
+    ])
+
+    const allCredits  = creditsRes.data  || []
+    const allRequests = requestsRes.data || []
+    const allTypes    = ltRes.data       || []
+
+    if (!allTypes.length) {
+      content.innerHTML = '<p class="empty-state">No active leave types configured. Add them in the Settings tab.</p>'
+      return
+    }
+
+    // Filter requests to current year only
+    const yearRequests = allRequests.filter(r =>
+      new Date(r.start_date).getFullYear() === currentYear
+    )
+
+    // Build balance map: empId → typeId → { credited, taken }
+    const balanceMap = {}
+    allCredits.forEach(c => {
+      if (!balanceMap[c.employee_id]) balanceMap[c.employee_id] = {}
+      if (!balanceMap[c.employee_id][c.leave_type_id])
+        balanceMap[c.employee_id][c.leave_type_id] = { credited: 0, taken: 0 }
+      balanceMap[c.employee_id][c.leave_type_id].credited += Number(c.credited_days)
+    })
+    yearRequests.forEach(r => {
+      if (!balanceMap[r.employee_id]) balanceMap[r.employee_id] = {}
+      if (!balanceMap[r.employee_id][r.leave_type_id])
+        balanceMap[r.employee_id][r.leave_type_id] = { credited: 0, taken: 0 }
+      balanceMap[r.employee_id][r.leave_type_id].taken += Number(r.days)
+    })
+
+    const activeEmps = _employees
+      .filter(e => e.status === 'active')
+      .sort((a, b) => a.name.localeCompare(b.name))
+
+    content.innerHTML = `
+      <div class="section-card">
+        <div class="section-card-header">
+          <div>
+            <h3 style="margin:0;">Leave Balance Visibility — ${currentYear}</h3>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">
+              ${activeEmps.length} active employee${activeEmps.length !== 1 ? 's' : ''} · ${allTypes.length} leave type${allTypes.length !== 1 ? 's' : ''}
+            </div>
+          </div>
+        </div>
+        <div class="section-card-body" style="padding:0;overflow-x:auto;">
+          <table class="data-table lt-vis-table">
+            <thead>
+              <tr>
+                <th class="lt-vis-th-sticky lt-vis-th-emp">Employee</th>
+                <th class="lt-vis-th-dept">Department</th>
+                ${allTypes.map(t => `
+                  <th class="lt-vis-th-type" colspan="2">${Utils.escapeHtml(t.name)}</th>
+                `).join('')}
+              </tr>
+              <tr class="lt-vis-subrow">
+                <th class="lt-vis-th-sticky"></th>
+                <th></th>
+                ${allTypes.map(() => `
+                  <th class="lt-vis-sub">Taken</th>
+                  <th class="lt-vis-sub">Remaining</th>
+                `).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${activeEmps.map(emp => {
+                const empBal = balanceMap[emp.id] || {}
+                return `
+                  <tr>
+                    <td class="lt-vis-td-sticky">
+                      <div style="display:flex;align-items:center;gap:8px;">
+                        <div class="lt-vis-avatar">
+                          ${emp.profile_image_url
+                            ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
+                            : Utils.getInitials(emp.name || '?')}
+                        </div>
+                        <span style="font-size:13px;font-weight:500;">${Utils.escapeHtml(emp.name)}</span>
+                      </div>
+                    </td>
+                    <td style="font-size:12px;color:var(--text-muted);">${Utils.escapeHtml(Utils.getDeptLabel(emp.department) || emp.department || '—')}</td>
+                    ${allTypes.map(t => {
+                      const b = empBal[t.id]
+                      if (!b || b.credited === 0) {
+                        return `
+                          <td class="lt-vis-cell lt-vis-cell--na">—</td>
+                          <td class="lt-vis-cell lt-vis-cell--na">—</td>
+                        `
+                      }
+                      const remaining = b.credited - b.taken
+                      const remCls    = remaining < 0 ? 'lt-vis-neg' : remaining === 0 ? 'lt-vis-zero' : 'lt-vis-pos'
+                      return `
+                        <td class="lt-vis-cell">${b.taken || 0}</td>
+                        <td class="lt-vis-cell ${remCls}">${remaining}</td>
+                      `
+                    }).join('')}
+                  </tr>
+                `
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `
   }
 
   /* ══════════════════════════════════════════════════════════

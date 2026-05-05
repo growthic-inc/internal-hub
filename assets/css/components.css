@@ -3116,6 +3116,122 @@
   margin-top: 4px;
 }
 
+/* ── Category KPI cards ─────────────────────────────────── */
+.lt-summary-cards--cat {
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+}
+
+.lt-stat-card--category {
+  padding: 14px 18px;
+}
+
+.lt-stat-cat-name {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lt-stat-cat-body {
+  display: flex;
+  align-items: center;
+}
+
+.lt-stat-cat-col {
+  flex: 1;
+  text-align: center;
+}
+
+.lt-stat-cat-sep {
+  width: 1px;
+  height: 36px;
+  background: var(--border);
+  flex-shrink: 0;
+  margin: 0 10px;
+}
+
+.lt-stat-card--pending {
+  border-left: 3px solid var(--warning);
+}
+
+/* ── Visibility table ────────────────────────────────────── */
+.lt-vis-table {
+  min-width: 600px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.lt-vis-th-emp  { min-width: 200px; }
+.lt-vis-th-dept { min-width: 130px; }
+.lt-vis-th-type {
+  text-align: center !important;
+  min-width: 150px;
+  background: var(--bg, #f5f6fa);
+  border-bottom: 1px solid var(--border);
+}
+
+.lt-vis-subrow th {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg, #f5f6fa);
+  padding: 6px 12px;
+}
+
+.lt-vis-sub {
+  text-align: center !important;
+  min-width: 75px;
+}
+
+.lt-vis-cell {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
+  vertical-align: middle;
+}
+
+.lt-vis-cell--na {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.lt-vis-pos  { color: #16a34a; font-weight: 600; }
+.lt-vis-zero { color: var(--text-muted); }
+.lt-vis-neg  { color: var(--danger); font-weight: 600; }
+
+.lt-vis-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--primary-light, #e8f0fe);
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.lt-vis-th-sticky,
+.lt-vis-td-sticky {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 1;
+  box-shadow: 2px 0 4px rgba(0,0,0,0.04);
+}
+
+.lt-vis-th-sticky {
+  background: var(--bg, #f5f6fa);
+}
+
 .lt-content-row {
   display: grid;
   grid-template-columns: 1fr 260px;
