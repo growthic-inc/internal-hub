@@ -10,6 +10,7 @@ const People = (() => {
   let _employees   = []
   let _departments = []
   let _canManage   = false
+  let _empBadgeMap = {}   // employeeId → [{ name, icon, colour, category }]
   let _activeTab   = 'directory'
 
   /* ── Constants ─────────────────────────────────────────── */
@@ -67,12 +68,24 @@ const People = (() => {
     _user      = user
     _canManage = App.hasAccess('people_hrms', 'create_employee', 'can_manage')
 
-    const [empRes, deptRes] = await Promise.all([
+    const [empRes, deptRes, badgeRes] = await Promise.all([
       API.getEmployeesFull(),
       API.getDepartments(),
+      API.getAllEmployeeBadgeSummary(),
     ])
     _employees   = empRes.data   || []
     _departments = deptRes.data  || []
+
+    // Build badge lookup map — sort by sort_order so tenure comes first
+    _empBadgeMap = {}
+    ;(badgeRes.data || []).forEach(row => {
+      if (!row.badge) return
+      if (!_empBadgeMap[row.employee_id]) _empBadgeMap[row.employee_id] = []
+      _empBadgeMap[row.employee_id].push(row.badge)
+    })
+    Object.values(_empBadgeMap).forEach(arr =>
+      arr.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    )
 
     // Resolve manager names from the loaded array (fallback if PostgREST self-join misses)
     const _empById = Object.fromEntries(_employees.map(e => [e.id, e]))
@@ -220,7 +233,19 @@ const People = (() => {
                            style="width:100%;height:100%;object-fit:cover;">`
                       : Utils.getInitials(e.name)}
                   </div>
-                  <strong>${Utils.escapeHtml(e.name)}</strong>
+                  <div>
+                    <strong>${Utils.escapeHtml(e.name)}</strong>
+                    ${(() => {
+                      const badges = _empBadgeMap[e.id] || []
+                      if (!badges.length) return ''
+                      const shown = badges.slice(0, 4)
+                      const extra = badges.length - shown.length
+                      return `<div class="dir-badge-row">
+                        ${shown.map(b => `<span class="dir-badge-icon" title="${Utils.escapeHtml(b.name)}" style="color:${b.colour || '#0F4799'};">${b.icon}</span>`).join('')}
+                        ${extra > 0 ? `<span class="dir-badge-more">+${extra}</span>` : ''}
+                      </div>`
+                    })()}
+                  </div>
                 </div>
               </td>
               <td class="text-sm">${Utils.escapeHtml(e.designation || '—')}</td>

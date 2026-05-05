@@ -5786,6 +5786,144 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
    BADGE SYSTEM
    ============================================================ */
 
+/* ── Badge Spotlight (home left column) ─────────────────────── */
+.bs-list { display: flex; flex-direction: column; }
+
+.bs-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-light);
+  transition: background 0.1s;
+}
+.bs-row:last-child { border-bottom: none; }
+.bs-row:hover { background: var(--surface); }
+
+.bs-badge-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  border: 1.5px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.bs-body { flex: 1; min-width: 0; }
+
+.bs-headline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.bs-text {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.bs-name  { font-weight: 700; color: var(--text); }
+.bs-earned { color: var(--text-muted); }
+.bs-badge-name { font-weight: 700; }
+
+.bs-note {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin-bottom: 4px;
+  padding-left: 4px;
+  border-left: 2px solid var(--border);
+}
+
+.bs-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── Your Badges mini-cards (home right column) ─────────────── */
+.my-badges-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.my-badge-card {
+  position: relative;
+  padding: 12px 10px 10px;
+  border-radius: var(--radius);
+  border: 1.5px solid color-mix(in srgb, var(--bc, #0F4799) 25%, transparent);
+  background: color-mix(in srgb, var(--bc, #0F4799) 7%, white);
+  text-align: center;
+  transition: transform 0.12s, box-shadow 0.12s;
+  cursor: default;
+}
+.my-badge-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.1);
+}
+
+.my-badge-new {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 20px;
+  letter-spacing: 0.04em;
+}
+
+.my-badge-icon {
+  font-size: 26px;
+  line-height: 1;
+  margin-bottom: 6px;
+}
+
+.my-badge-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--bc, var(--text));
+  margin-bottom: 3px;
+  line-height: 1.3;
+}
+
+.my-badge-desc {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── Directory badge row (HRMS table name cell) ─────────────── */
+.dir-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 2px;
+}
+.dir-badge-icon {
+  font-size: 13px;
+  line-height: 1;
+  cursor: default;
+}
+.dir-badge-more {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-left: 2px;
+}
+
 /* Individual badge chip — used in profile modal + home */
 .badge-chip {
   display: inline-flex;

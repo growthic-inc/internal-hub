@@ -1224,6 +1224,23 @@ const API = (() => {
       .eq('id', employeeBadgeId)
   }
 
+  /** Recent badge awards across the whole team — for the home spotlight */
+  async function getRecentBadgeAwards(limit = 8) {
+    return supabase
+      .from('employee_badges')
+      .select('*, badge:badges(*), employee:employees!employee_id(id, name, profile_image_url, designation), awarder:employees!awarded_by(name)')
+      .order('awarded_at', { ascending: false })
+      .limit(limit)
+  }
+
+  /** All employee badge awards (summarised) — for the HRMS directory badge column */
+  async function getAllEmployeeBadgeSummary() {
+    return supabase
+      .from('employee_badges')
+      .select('employee_id, badge:badges(name, icon, colour, category, sort_order)')
+      .order('awarded_at', { ascending: false })
+  }
+
   /* ── Policy Categories (Phase 7) ──────────────────────────── */
   async function getPolicyCategories() {
     return supabase.from('policy_categories').select('*').order('name')
@@ -1404,6 +1421,7 @@ const API = (() => {
     uploadAnnouncementImage,
     getAnnouncementReactions, addReaction, removeReaction,
     getBadges, getEmployeeBadges, awardBadge, revokeEmployeeBadge,
+    getRecentBadgeAwards, getAllEmployeeBadgeSummary,
     getPolicyCategories, addPolicyCategory, deletePolicyCategory,
     getPolicies, createPolicy, updatePolicy, deletePolicy,
     getInternalProjects, createInternalProject, updateInternalProject, setInternalProjectStatus, updateClientProjectDetails, setClientStatus,

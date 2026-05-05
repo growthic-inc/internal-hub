@@ -373,35 +373,96 @@ const HomeModule = (() => {
       </div>`
   }
 
-  /* ── Section: My Badges ─────────────────────────────────── */
+  /* ── Section: Badge Spotlight (team-wide, left column) ──── */
+
+  function _renderBadgeSpotlight(recentAwards) {
+    const awards = (recentAwards || []).filter(a => a.badge && a.employee)
+    if (!awards.length) return ''
+
+    const rows = awards.map(a => {
+      const b          = a.badge
+      const emp        = a.employee
+      const colour     = b.colour || '#0F4799'
+      const awardedAgo = _relativeTime(a.awarded_at)
+      const isAuto     = !a.awarded_by
+      const byLine     = a.awarder?.name
+        ? `Awarded by <strong>${Utils.escapeHtml(a.awarder.name)}</strong>`
+        : b.category === 'tenure'
+        ? 'Tenure milestone'
+        : b.category === 'special'
+        ? '🎂 Birthday week!'
+        : 'Awarded'
+
+      const avatar = emp.profile_image_url
+        ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" alt=""
+               style="width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0;">`
+        : `<span class="avatar-circle avatar-circle--sm" style="flex-shrink:0;width:36px;height:36px;font-size:12px;">
+             ${Utils.escapeHtml(Utils.getInitials(emp.name))}
+           </span>`
+
+      return `
+        <div class="bs-row">
+          <div class="bs-badge-icon" style="background:${colour}18;border-color:${colour}30;">
+            <span style="font-size:22px;line-height:1;">${b.icon || '🏅'}</span>
+          </div>
+          <div class="bs-body">
+            <div class="bs-headline">
+              ${avatar}
+              <div class="bs-text">
+                <span class="bs-name">${Utils.escapeHtml(emp.name)}</span>
+                <span class="bs-earned">earned</span>
+                <span class="bs-badge-name" style="color:${colour};">${Utils.escapeHtml(b.name)}</span>
+              </div>
+            </div>
+            ${a.note ? `<div class="bs-note">"${Utils.escapeHtml(a.note)}"</div>` : ''}
+            <div class="bs-meta">${byLine} · ${awardedAgo}</div>
+          </div>
+        </div>`
+    }).join('')
+
+    return `
+      <div class="section-card home-hover-card">
+        <div class="section-card-header">
+          <h3>🏅 Badge Spotlight</h3>
+          <span style="font-size:12px;color:var(--text-muted);">Recent recognitions</span>
+        </div>
+        <div class="section-card-body" style="padding:0;">
+          <div class="bs-list">${rows}</div>
+        </div>
+      </div>`
+  }
+
+  /* ── Section: Your Badges (right column mini-cards) ──────── */
 
   function _renderMyBadges(earnedBadges) {
     const badges = earnedBadges || []
+    const now    = Date.now()
 
     const body = badges.length
-      ? `<div class="badge-chip-row">
+      ? `<div class="my-badges-grid">
           ${badges.map(eb => {
-            const b = eb.badge || {}
+            const b      = eb.badge || {}
             const colour = b.colour || '#0F4799'
-            // Derive lighter bg and border from badge colour via inline vars
+            const isNew  = eb.awarded_at && (now - new Date(eb.awarded_at)) < 86400000 * 3
             return `
-              <div class="badge-chip badge-chip--${b.category || 'recognition'}"
-                   style="--badge-bg:${colour}18;--badge-text:${colour};--badge-border:${colour}40;"
-                   title="${Utils.escapeHtml(b.description || b.name || '')}">
-                <span class="badge-chip-icon">${b.icon || '🏅'}</span>
-                <span class="badge-chip-name">${Utils.escapeHtml(b.name || '')}</span>
+              <div class="my-badge-card" style="--bc:${colour};"
+                   title="${Utils.escapeHtml(b.description || '')}">
+                ${isNew ? `<span class="my-badge-new">NEW</span>` : ''}
+                <div class="my-badge-icon">${b.icon || '🏅'}</div>
+                <div class="my-badge-name">${Utils.escapeHtml(b.name || '')}</div>
+                <div class="my-badge-desc">${Utils.escapeHtml(b.description || '')}</div>
               </div>`
           }).join('')}
         </div>`
       : `<p class="home-badges-empty">No badges yet — keep showing up!</p>`
 
     return `
-      <div class="section-card home-hover-card home-badges-card">
+      <div class="section-card home-badges-card">
         <div class="section-card-header">
           <h3>Your Badges</h3>
           <span style="font-size:12px;color:var(--text-muted);">${badges.length} earned</span>
         </div>
-        <div class="section-card-body">${body}</div>
+        <div class="section-card-body" id="home-badges-inner">${body}</div>
       </div>`
   }
 
@@ -500,11 +561,28 @@ const HomeModule = (() => {
         }).catch(() => {})
       }
 
-      // Refresh badges widget if new ones were awarded
+      // Refresh both widgets if new badges were awarded
       if (toAward.length > 0) {
-        const { data: refreshed } = await API.getEmployeeBadges(user.id)
-        const el = document.getElementById('home-badges-widget')
-        if (el) el.outerHTML = _renderMyBadges(refreshed)
+        const [{ data: refreshed }, { data: spotlight }] = await Promise.all([
+          API.getEmployeeBadges(user.id),
+          API.getRecentBadgeAwards(8),
+        ])
+        // Update "Your Badges" inner content (stable wrapper ID)
+        const inner = document.getElementById('home-badges-inner')
+        if (inner) {
+          const tmpDiv = document.createElement('div')
+          tmpDiv.innerHTML = _renderMyBadges(refreshed)
+          const newInner = tmpDiv.querySelector('#home-badges-inner')
+          if (newInner) inner.innerHTML = newInner.innerHTML
+        }
+        // Update spotlight
+        const spotEl = document.getElementById('home-badge-spotlight')
+        if (spotEl) {
+          const tmp = document.createElement('div')
+          tmp.innerHTML = _renderBadgeSpotlight(spotlight)
+          const newSpot = tmp.firstElementChild
+          if (newSpot) spotEl.replaceWith(newSpot)
+        }
       }
     } catch (_) { /* silent — badge check never crashes the home page */ }
   }
@@ -525,6 +603,7 @@ const HomeModule = (() => {
       { data: workAnniversaries },
       { data: allEmployees },
       { data: myBadges },
+      { data: recentAwards },
     ] = await Promise.all([
       API.getTimesheetEntries(user.id, todayISO, todayISO),
       API.getWhoIsOutToday(),
@@ -535,10 +614,14 @@ const HomeModule = (() => {
       API.getWorkAnniversaries(),
       API.getBirthdayEmployees(),
       API.getEmployeeBadges(user.id),
+      API.getRecentBadgeAwards(8),
     ])
 
-    const badgesHtml = _renderMyBadges(myBadges)
-      .replace('<div class="section-card', '<div id="home-badges-widget" class="section-card')
+    // Wrap spotlight with stable ID for DOM refresh
+    const spotlightRaw  = _renderBadgeSpotlight(recentAwards)
+    const spotlightHtml = spotlightRaw
+      ? spotlightRaw.replace('<div class="section-card', '<div id="home-badge-spotlight" class="section-card')
+      : ''
 
     const html = `
       ${_renderHero(user, todayEntries, whoIsOut, pendingLeaveCount, pendingTsCount)}
@@ -548,10 +631,11 @@ const HomeModule = (() => {
       <div class="home-content-row" style="margin-top:14px;">
         <div style="flex:1.5;min-width:0;display:flex;flex-direction:column;gap:14px;">
           ${_renderWhoIsOut(whoIsOut, user.id)}
+          ${spotlightHtml}
           ${_renderAnnouncements(announcements || [])}
         </div>
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px;">
-          ${badgesHtml}
+          ${_renderMyBadges(myBadges)}
           ${_renderBirthdays(allEmployees || [])}
           ${_renderAnniversaries(workAnniversaries || [])}
           ${_renderHolidays(holidays || [])}
