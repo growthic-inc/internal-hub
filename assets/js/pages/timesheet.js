@@ -137,6 +137,15 @@ const Timesheet = (() => {
     const label = document.getElementById('ts-week-label')
     if (label) label.textContent = _weekLabel(_weekStart)
 
+    // Disable the "Next" button when already on the current week
+    const nextBtn = document.getElementById('ts-next')
+    if (nextBtn) {
+      const onCurrentWeek = _toISO(_weekStart) >= _toISO(_getMondayOf(new Date()))
+      nextBtn.disabled = onCurrentWeek
+      nextBtn.style.opacity = onCurrentWeek ? '0.35' : ''
+      nextBtn.style.cursor  = onCurrentWeek ? 'not-allowed' : ''
+    }
+
     const content = document.getElementById('ts-content')
     if (content) content.innerHTML = '<p class="loading-text">Loading…</p>'
 
@@ -213,8 +222,9 @@ const Timesheet = (() => {
     const isToday    = iso === today
     const dayHours   = dayEntries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
 
-    // Hard lock: dates more than 7 days in the past
+    // Hard lock: dates more than 7 days in the past, or any future date
     const diffDays  = Math.floor((new Date(today) - new Date(iso)) / 86400000)
+    const isFuture  = iso > today
     const isLocked  = diffDays > 7
     // Warn: past weekdays in the current week with 0 hours and no entries
     const isPastNoEntry = !isToday && diffDays > 0 && diffDays <= 7 && dayEntries.length === 0
@@ -262,7 +272,7 @@ const Timesheet = (() => {
 
         <div class="ts-col-body">
           ${dayEntries.map(e => _renderCard(e)).join('')}
-          ${_p.can_create && !isLocked ? `
+          ${_p.can_create && !isLocked && !isFuture ? `
             <button class="ts-add-btn" data-date="${iso}">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Entry
@@ -652,6 +662,7 @@ const Timesheet = (() => {
 
       const errs = []
       if (!date)                      errs.push('Date is required.')
+      if (date > todayISO)            errs.push('Cannot log entries for future dates.')
       if (date < minDateISO)          errs.push('Cannot log entries older than 7 days.')
       if (isNaN(hours) || hours <= 0) errs.push('Hours must be greater than 0.')
       if (hours > 12)                 errs.push('Hours cannot exceed 12 per entry.')
