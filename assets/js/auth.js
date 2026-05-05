@@ -42,7 +42,7 @@ const Auth = (() => {
 
     const { data, error } = await supabase
       .from('employees')
-      .select('id, name, email, role, department, status, manager_id, profile_completed, profile_image_url')
+      .select('id, name, email, role, department, status, manager_id, profile_completed, profile_image_url, joining_date, date_of_birth')
       .eq('email', session.user.email)
       .single()
 

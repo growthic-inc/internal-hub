@@ -5795,20 +5795,25 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   gap: 14px;
   padding: 14px 20px;
   border-bottom: 1px solid var(--border-light);
-  transition: background 0.1s;
+  border-left: 3px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
 }
 .bs-row:last-child { border-bottom: none; }
-.bs-row:hover { background: var(--surface); }
+.bs-row:hover {
+  background: var(--surface);
+  border-left-color: var(--bs-accent, var(--primary));
+}
 
 .bs-badge-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  border: 1.5px solid;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
 
 .bs-body { flex: 1; min-width: 0; }

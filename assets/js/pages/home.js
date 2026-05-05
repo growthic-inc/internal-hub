@@ -401,8 +401,8 @@ const HomeModule = (() => {
            </span>`
 
       return `
-        <div class="bs-row">
-          <div class="bs-badge-icon" style="background:${colour}18;border-color:${colour}30;">
+        <div class="bs-row" style="--bs-accent:${colour};">
+          <div class="bs-badge-icon" style="background:${colour}18;border-color:${colour}50;">
             <span style="font-size:22px;line-height:1;">${b.icon || '🏅'}</span>
           </div>
           <div class="bs-body">
@@ -454,13 +454,17 @@ const HomeModule = (() => {
               </div>`
           }).join('')}
         </div>`
-      : `<p class="home-badges-empty">No badges yet — keep showing up!</p>`
+      : `<div style="text-align:center;padding:12px 0 4px;">
+           <div style="font-size:28px;margin-bottom:8px;">🏅</div>
+           <div style="font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">No badges yet</div>
+           <div style="font-size:12px;color:var(--text-muted);">Keep showing up — they're coming.</div>
+         </div>`
 
     return `
       <div class="section-card home-badges-card">
         <div class="section-card-header">
           <h3>Your Badges</h3>
-          <span style="font-size:12px;color:var(--text-muted);">${badges.length} earned</span>
+          ${badges.length ? `<span class="badge" style="background:var(--primary);color:#fff;">${badges.length}</span>` : ''}
         </div>
         <div class="section-card-body" id="home-badges-inner">${body}</div>
       </div>`
