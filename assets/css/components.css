@@ -139,7 +139,36 @@
 .auth-card .form-input:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(15, 71, 153, 0.18);
+  outline: none;
 }
+
+/* Suppress browser autofill purple/yellow tint — keep design-system blue */
+.form-input:-webkit-autofill,
+.form-input:-webkit-autofill:hover,
+.form-input:-webkit-autofill:focus,
+.form-input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px var(--bg) inset, 0 0 0 3px rgba(15, 71, 153, 0.12);
+  -webkit-text-fill-color: var(--text);
+  caret-color: var(--text);
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* Wizard inputs — explicitly use design-system blue, not indigo fallback */
+.profile-wizard-overlay .form-input:focus,
+.profile-wizard-overlay .form-select:focus,
+.profile-wizard-overlay .form-textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(15, 71, 153, 0.12);
+  outline: none;
+}
+
+/* DOB 3-dropdown row */
+.pw-dob-selects {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr 1.2fr;
+  gap: 8px;
+}
+.pw-dob-selects .form-input { height: 38px; }
 
 .form-input::placeholder,
 .form-textarea::placeholder { color: var(--text-muted); }
@@ -4875,7 +4904,7 @@
   border-color: var(--primary);
   background: var(--primary);
   color: #fff;
-  box-shadow: 0 0 0 3px var(--primary-light, rgba(79,70,229,.15));
+  box-shadow: 0 0 0 3px rgba(15, 71, 153, 0.15);
 }
 
 .pw-dot--done {

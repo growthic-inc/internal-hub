@@ -535,7 +535,6 @@ const App = (() => {
     // ── State ──────────────────────────────────────────────────
     let _step = 0
     const TOTAL = 7
-    const SKIPPABLE = [2, 3, 4, 5, 6]
     let _avatarFile = null
     const _kycFiles = { aadhar: null, pan: null, passport: null, passport_photo: null }
     const _d = {
@@ -559,7 +558,10 @@ const App = (() => {
     // ── Capture current step fields into _d ────────────────────
     function _capture() {
       if (_step === 2) {
-        _d.dob            = document.getElementById('pw-dob')?.value || ''
+        const day   = document.getElementById('pw-dob-day')?.value   || ''
+        const month = document.getElementById('pw-dob-month')?.value || ''
+        const year  = document.getElementById('pw-dob-year')?.value  || ''
+        _d.dob            = (day && month && year) ? `${year}-${month}-${day}` : ''
         _d.personal_email = document.getElementById('pw-personal-email')?.value.trim() || ''
         _d.phone          = document.getElementById('pw-phone')?.value.trim() || ''
         _d.blood_group    = document.getElementById('pw-blood-group')?.value || ''
@@ -722,11 +724,33 @@ const App = (() => {
       }
 
       if (_step === 2) {
+        const _dobParts  = _d.dob ? _d.dob.split('-') : ['', '', '']
+        const _dobYear   = _dobParts[0] || ''
+        const _dobMonth  = _dobParts[1] || ''
+        const _dobDay    = _dobParts[2] || ''
+        const _thisYear  = new Date().getFullYear()
+        const _maxYear   = _thisYear - 18   // must be at least 18
+        const _minYear   = _thisYear - 80
+        const _months    = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
         html += `
           <div class="people-field-grid">
-            <div class="form-group">
-              <label class="form-label">Date of Birth</label>
-              <input type="date" id="pw-dob" class="form-input" value="${_d.dob}">
+            <div class="form-group" style="grid-column:1/-1;">
+              <label class="form-label">Date of Birth <span class="required">*</span></label>
+              <div class="pw-dob-selects">
+                <select id="pw-dob-day" class="form-input">
+                  <option value="">Day</option>
+                  ${Array.from({length:31},(_,i)=>{const v=String(i+1).padStart(2,'0');return`<option value="${v}"${_dobDay===v?' selected':''}>${i+1}</option>`}).join('')}
+                </select>
+                <select id="pw-dob-month" class="form-input">
+                  <option value="">Month</option>
+                  ${_months.map((m,i)=>{const v=String(i+1).padStart(2,'0');return`<option value="${v}"${_dobMonth===v?' selected':''}>${m}</option>`}).join('')}
+                </select>
+                <select id="pw-dob-year" class="form-input">
+                  <option value="">Year</option>
+                  ${Array.from({length:_maxYear-_minYear+1},(_,i)=>{const y=_maxYear-i;return`<option value="${y}"${_dobYear===String(y)?' selected':''}>${y}</option>`}).join('')}
+                </select>
+              </div>
             </div>
             <div class="form-group">
               <label class="form-label">Personal Email</label>
@@ -927,31 +951,68 @@ const App = (() => {
         </div>`
     }
 
+    // ── Step completeness check ────────────────────────────────
+    function _isStepComplete() {
+      if (_step === 1) return !!(_avatarFile || user.profile_image_url)
+      if (_step === 2) {
+        const day   = document.getElementById('pw-dob-day')?.value
+        const month = document.getElementById('pw-dob-month')?.value
+        const year  = document.getElementById('pw-dob-year')?.value
+        const email = document.getElementById('pw-personal-email')?.value.trim()
+        const phone = document.getElementById('pw-phone')?.value.trim()
+        const blood = document.getElementById('pw-blood-group')?.value
+        return !!(day && month && year && email && phone && blood)
+      }
+      if (_step === 3) return !!(document.getElementById('pw-address')?.value.trim())
+      if (_step === 4) {
+        const acc  = document.getElementById('pw-bank-account')?.value.trim()
+        const ifsc = document.getElementById('pw-bank-ifsc')?.value.trim()
+        return !!(acc && ifsc)
+      }
+      if (_step === 5) {
+        const name = document.getElementById('pw-ec-name')?.value.trim()
+        const ph   = document.getElementById('pw-ec-phone')?.value.trim()
+        const rel  = document.getElementById('pw-ec-relationship')?.value
+        return !!(name && ph && rel)
+      }
+      if (_step === 6) return !!(_kycFiles.aadhar && _kycFiles.pan)
+      if (_step === 7) {
+        const pep = document.querySelector('input[name="pep"]:checked')?.value
+        const dec = document.getElementById('pw-declaration')?.checked
+        return !!(pep && dec)
+      }
+      return true
+    }
+
+    // Bind all inputs in the current step body to re-evaluate Next button
+    function _bindStepInputs() {
+      const next = document.getElementById('pw-next')
+      if (!next) return
+      const check = () => { next.disabled = !_isStepComplete() }
+      document.querySelectorAll('#pw-step-body input, #pw-step-body select, #pw-step-body textarea')
+        .forEach(el => { el.addEventListener('input', check); el.addEventListener('change', check) })
+    }
+
     // ── Navigation ─────────────────────────────────────────────
     function _renderNav() {
       const nav = document.getElementById('pw-nav')
       if (!nav) return
-      const isLast   = _step === TOTAL
-      const canSkip  = SKIPPABLE.includes(_step)
+      const isLast    = _step === TOTAL
+      const complete  = _isStepComplete()
       nav.innerHTML = `
         <div class="pw-nav-inner">
           ${_step > 1 ? `<button class="btn btn--ghost" id="pw-back">← Back</button>` : '<div></div>'}
           <span class="pw-step-counter">Step ${_step} of ${TOTAL}</span>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
-            <button class="btn btn--primary" id="pw-next">${isLast ? 'Save & Finish ✓' : 'Next →'}</button>
-            ${canSkip ? `<button class="pw-skip-btn" id="pw-skip">Skip for now</button>` : ''}
-          </div>
+          <button class="btn btn--primary" id="pw-next"${complete ? '' : ' disabled'}>${isLast ? 'Save & Finish ✓' : 'Next →'}</button>
         </div>`
+
+      // Re-bind inputs so Next re-enables as the user fills fields
+      _bindStepInputs()
 
       document.getElementById('pw-back')?.addEventListener('click', () => {
         _capture()
         document.getElementById('pw-error').style.display = 'none'
         _step--; _update(-1)
-      })
-
-      document.getElementById('pw-skip')?.addEventListener('click', () => {
-        document.getElementById('pw-error').style.display = 'none'
-        _step++; _update(1)
       })
 
       document.getElementById('pw-next')?.addEventListener('click', async () => {
