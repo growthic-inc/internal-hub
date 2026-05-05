@@ -118,6 +118,17 @@ const Settings = (() => {
           </div>
         </div>
 
+        <!-- KYC Documents -->
+        <div class="section-card mb-4">
+          <div class="section-card-header">
+            <h3>KYC Documents</h3>
+            <span class="text-muted text-sm">Stored securely — visible only to HR</span>
+          </div>
+          <div class="section-card-body" id="kyc-section-body">
+            <p class="loading-text">Loading…</p>
+          </div>
+        </div>
+
         <!-- Notification Preferences -->
         <div class="section-card">
           <div class="section-card-header">
@@ -137,6 +148,7 @@ const Settings = (() => {
   async function init(user) {
     _user = user
     _bindChangePassword()
+    _loadKyc()
     _loadNotifPrefs()
   }
 
@@ -200,6 +212,98 @@ const Settings = (() => {
           document.getElementById('confirm-pw').value = ''
           btn.textContent = 'Done'
           setTimeout(() => Utils.closeModal(), 1500)
+        }
+      })
+    })
+  }
+
+  /* ── KYC Documents ─────────────────────────────────────── */
+
+  const KYC_DOCS = [
+    { key: 'aadhar',         label: 'Aadhaar Card',  icon: '🪪', required: true  },
+    { key: 'pan',            label: 'PAN Card',       icon: '🏷️', required: true  },
+    { key: 'passport',       label: 'Passport',       icon: '📘', required: false },
+    { key: 'passport_photo', label: 'Passport Photo', icon: '🖼️', required: false },
+  ]
+
+  async function _loadKyc() {
+    const body = document.getElementById('kyc-section-body')
+    if (!body) return
+
+    const { data: kyc } = await API.getEmployeeKyc(_user.id)
+
+    const submittedNote = kyc?.kyc_submitted_at
+      ? `<p style="font-size:12px;color:var(--success);margin:0 0 16px;">✓ KYC submitted on ${Utils.formatDate(kyc.kyc_submitted_at)}</p>`
+      : `<p style="font-size:12px;color:var(--text-muted);margin:0 0 16px;">Upload your documents below to complete KYC verification.</p>`
+
+    const slots = KYC_DOCS.map(doc => {
+      const url = kyc?.[`kyc_${doc.key}_url`]
+      return `
+        <div class="kyc-settings-slot" data-doc="${doc.key}"
+             style="display:flex;align-items:center;gap:12px;padding:12px 0;
+                    border-bottom:1px solid var(--border-light);">
+          <span style="font-size:20px;flex-shrink:0;">${doc.icon}</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:600;color:var(--text);">
+              ${doc.label}
+              ${!doc.required ? '<span style="font-size:11px;font-weight:400;color:var(--text-muted);"> (optional)</span>' : ''}
+            </div>
+            <div style="margin-top:2px;">
+              ${url
+                ? `<a href="${Utils.escapeHtml(url)}" target="_blank" rel="noopener noreferrer"
+                      style="font-size:12px;color:var(--primary);text-decoration:none;">
+                     View uploaded file ↗
+                   </a>`
+                : `<span style="font-size:12px;color:var(--text-muted);">Not uploaded yet</span>`}
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
+            <label class="btn btn--ghost btn--sm"
+                   style="cursor:pointer;margin:0;display:inline-flex;align-items:center;gap:6px;">
+              ${url
+                ? `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                   Replace`
+                : `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+                   Upload`}
+              <input type="file" class="kyc-file-input" data-doc="${doc.key}"
+                     accept=".pdf,.jpg,.jpeg,.png" style="display:none;">
+            </label>
+            <span class="kyc-slot-msg" style="display:none;font-size:11px;"></span>
+          </div>
+        </div>`
+    }).join('')
+
+    body.innerHTML = submittedNote + `<div style="margin:-4px 0;">${slots}</div>`
+    _bindKycUploads()
+  }
+
+  function _bindKycUploads() {
+    document.querySelectorAll('.kyc-file-input').forEach(input => {
+      input.addEventListener('change', async function () {
+        const file   = this.files?.[0]
+        const docKey = this.dataset.doc
+        if (!file) return
+
+        const slot  = this.closest('.kyc-settings-slot')
+        const label = slot?.querySelector('label.btn')
+        const msg   = slot?.querySelector('.kyc-slot-msg')
+
+        // Lock UI while uploading
+        if (label) { label.style.opacity = '0.5'; label.style.pointerEvents = 'none' }
+        if (msg)   { msg.textContent = 'Uploading…'; msg.style.color = 'var(--text-muted)'; msg.style.display = 'block' }
+
+        const res = await API.uploadKycDocument(file, _user.id, _user.name, docKey)
+
+        if (res?.drive_url) {
+          await API.updateEmployeeFull(_user.id, {
+            [`kyc_${docKey}_url`]: res.drive_url,
+            kyc_submitted_at: new Date().toISOString(),
+          })
+          // Reload to show updated link + button
+          _loadKyc()
+        } else {
+          if (label) { label.style.opacity = ''; label.style.pointerEvents = '' }
+          if (msg)   { msg.textContent = 'Upload failed. Please try again.'; msg.style.color = 'var(--danger)' }
         }
       })
     })
