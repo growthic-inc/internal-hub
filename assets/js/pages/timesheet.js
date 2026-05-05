@@ -807,7 +807,7 @@ const Timesheet = (() => {
     const to   = _toISO(_weekEnd(_teamWeek))
 
     const reporteeIds = _directReports.map(e => e.id)
-    const { data, error } = await API.getTeamTimesheetEntries(from, to, _teamEmpId || null, reporteeIds.length ? reporteeIds : null)
+    const { data, error } = await API.getTeamTimesheetEntries(from, to, _teamEmpId || null, reporteeIds.length ? reporteeIds : null, _user.id)
     if (error) { Utils.showToast('Failed to load team data.', 'error'); return }
     _teamEntries = data || []
     _renderTeamView()
@@ -931,7 +931,7 @@ const Timesheet = (() => {
           <td style="text-align:right;font-weight:700;white-space:nowrap;">${parseFloat(e.hours).toFixed(1)}h</td>
           <td>${_statusBadge(e.status)}</td>
           <td style="white-space:nowrap;">
-            ${e.status === 'submitted' ? `
+            ${e.status === 'submitted' && e.employee_id !== _user.id ? `
               <button class="btn btn--xs btn--secondary ts-approve-entry" data-id="${e.id}" style="margin-right:4px;">Approve</button>
               <button class="btn btn--xs btn--danger ts-reject-entry"  data-id="${e.id}">Reject</button>
             ` : e.status === 'rejected' && e.rejection_comment ? `
@@ -986,6 +986,10 @@ const Timesheet = (() => {
 
   async function _approveEntry(entryId) {
     const entry = _teamEntries.find(e => e.id === entryId)
+    if (entry?.employee_id === _user.id) {
+      Utils.showToast('You cannot approve your own timesheet entries.', 'error')
+      return
+    }
 
     const { error } = await Config.supabase
       .from('timesheets')
@@ -1012,6 +1016,10 @@ const Timesheet = (() => {
 
   function _openRejectModal(entryId) {
     const entry = _teamEntries.find(e => e.id === entryId)
+    if (entry?.employee_id === _user.id) {
+      Utils.showToast('You cannot reject your own timesheet entries.', 'error')
+      return
+    }
 
     Utils.openModal(`
       <div class="modal-header">
