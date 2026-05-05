@@ -1182,6 +1182,48 @@ const API = (() => {
       .eq('reaction', reaction)
   }
 
+  /* ── Badges ───────────────────────────────────────────────── */
+
+  /** All active badges from the catalogue */
+  async function getBadges() {
+    return supabase
+      .from('badges')
+      .select('*')
+      .eq('active', true)
+      .order('sort_order')
+  }
+
+  /** All badges awarded to a specific employee (with badge details + awarder name) */
+  async function getEmployeeBadges(employeeId) {
+    return supabase
+      .from('employee_badges')
+      .select('*, badge:badges(*), awarder:employees!awarded_by(name)')
+      .eq('employee_id', employeeId)
+      .order('awarded_at', { ascending: false })
+  }
+
+  /**
+   * Award a badge. Returns the inserted row with badge details.
+   * Duplicate tenure/recognition badges are prevented by the DB unique constraint.
+   * Birthday badge (re-awarded yearly) must be handled by caller:
+   * delete the old row first, then call this.
+   */
+  async function awardBadge({ employee_id, badge_id, awarded_by = null, note = null }) {
+    return supabase
+      .from('employee_badges')
+      .insert({ employee_id, badge_id, awarded_by, note })
+      .select('*, badge:badges(*)')
+      .single()
+  }
+
+  /** Remove a specific employee_badges row (used for yearly birthday re-award) */
+  async function revokeEmployeeBadge(employeeBadgeId) {
+    return supabase
+      .from('employee_badges')
+      .delete()
+      .eq('id', employeeBadgeId)
+  }
+
   /* ── Policy Categories (Phase 7) ──────────────────────────── */
   async function getPolicyCategories() {
     return supabase.from('policy_categories').select('*').order('name')
@@ -1361,6 +1403,7 @@ const API = (() => {
     getAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement,
     uploadAnnouncementImage,
     getAnnouncementReactions, addReaction, removeReaction,
+    getBadges, getEmployeeBadges, awardBadge, revokeEmployeeBadge,
     getPolicyCategories, addPolicyCategory, deletePolicyCategory,
     getPolicies, createPolicy, updatePolicy, deletePolicy,
     getInternalProjects, createInternalProject, updateInternalProject, setInternalProjectStatus, updateClientProjectDetails, setClientStatus,

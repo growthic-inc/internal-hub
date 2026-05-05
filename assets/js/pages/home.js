@@ -373,6 +373,142 @@ const HomeModule = (() => {
       </div>`
   }
 
+  /* ── Section: My Badges ─────────────────────────────────── */
+
+  function _renderMyBadges(earnedBadges) {
+    const badges = earnedBadges || []
+
+    const body = badges.length
+      ? `<div class="badge-chip-row">
+          ${badges.map(eb => {
+            const b = eb.badge || {}
+            const colour = b.colour || '#0F4799'
+            // Derive lighter bg and border from badge colour via inline vars
+            return `
+              <div class="badge-chip badge-chip--${b.category || 'recognition'}"
+                   style="--badge-bg:${colour}18;--badge-text:${colour};--badge-border:${colour}40;"
+                   title="${Utils.escapeHtml(b.description || b.name || '')}">
+                <span class="badge-chip-icon">${b.icon || '🏅'}</span>
+                <span class="badge-chip-name">${Utils.escapeHtml(b.name || '')}</span>
+              </div>`
+          }).join('')}
+        </div>`
+      : `<p class="home-badges-empty">No badges yet — keep showing up!</p>`
+
+    return `
+      <div class="section-card home-hover-card home-badges-card">
+        <div class="section-card-header">
+          <h3>Your Badges</h3>
+          <span style="font-size:12px;color:var(--text-muted);">${badges.length} earned</span>
+        </div>
+        <div class="section-card-body">${body}</div>
+      </div>`
+  }
+
+  /* ── Auto-badge check (runs fire-and-forget on login) ────── */
+
+  async function _checkAndAwardAutoBadges(user) {
+    try {
+      const [{ data: allBadges }, { data: existingBadges }] = await Promise.all([
+        API.getBadges(),
+        API.getEmployeeBadges(user.id),
+      ])
+      if (!allBadges) return
+
+      const today         = new Date()
+      const existingMap   = {}    // badge_id → employee_badge row
+      ;(existingBadges || []).forEach(eb => { existingMap[eb.badge_id] = eb })
+
+      const toAward = []
+
+      // ── Tenure badges ──────────────────────────────────────
+      if (user.joining_date) {
+        const joined = new Date(user.joining_date)
+        // Months of service (floor)
+        const months = (today.getFullYear() - joined.getFullYear()) * 12
+          + (today.getMonth() - joined.getMonth())
+          + (today.getDate() >= joined.getDate() ? 0 : -1)
+
+        const tenureBadges = allBadges
+          .filter(b => b.category === 'tenure' && b.criteria_months != null)
+          .sort((a, b) => a.criteria_months - b.criteria_months)
+
+        for (const badge of tenureBadges) {
+          if (months >= badge.criteria_months && !existingMap[badge.id]) {
+            toAward.push({ badge, note: null, isAuto: true })
+          }
+        }
+      }
+
+      // ── Birthday badge ─────────────────────────────────────
+      if (user.date_of_birth) {
+        const birthdayBadge = allBadges.find(b => b.category === 'special' && b.name === 'Birthday Star')
+        if (birthdayBadge) {
+          const dob     = new Date(user.date_of_birth)
+          // Birthday this calendar year
+          const bday    = new Date(today.getFullYear(), dob.getMonth(), dob.getDate())
+          const daysUntil = Math.round((bday - today) / 86400000)
+
+          if (daysUntil >= 0 && daysUntil < 7) {
+            const existing = existingMap[birthdayBadge.id]
+            if (!existing) {
+              toAward.push({ badge: birthdayBadge, note: null, isAuto: true })
+            } else {
+              // Re-award each year: if last awarded in a prior year, revoke + re-award
+              const awardYear = new Date(existing.awarded_at).getFullYear()
+              if (awardYear < today.getFullYear()) {
+                await API.revokeEmployeeBadge(existing.id)
+                toAward.push({ badge: birthdayBadge, note: null, isAuto: true })
+              }
+            }
+          }
+        }
+      }
+
+      // ── Award each new badge ───────────────────────────────
+      for (const { badge, note } of toAward) {
+        const { data: awarded, error } = await API.awardBadge({
+          employee_id: user.id,
+          badge_id:    badge.id,
+          awarded_by:  null,
+          note,
+        })
+        if (error || !awarded) continue
+
+        // In-app notification to self
+        API.createNotification({
+          recipient_employee_id: user.id,
+          type:      'success',
+          message:   `🎉 You earned the "${badge.name}" badge!`,
+          module:    'badges',
+          record_id: awarded.id,
+        }).catch(() => {})
+
+        // Post to announcements feed (published, attributed to system)
+        const annTitle   = `${badge.icon} ${user.name} earned the "${badge.name}" badge!`
+        const annContent = badge.category === 'tenure'
+          ? `Congratulations to ${user.name} on reaching the ${badge.name} milestone at Growthic! 🎉`
+          : badge.category === 'special'
+          ? `It's ${user.name}'s birthday week! Wishing you an amazing celebration 🎂🎉`
+          : `Congratulations to ${user.name} — just earned the "${badge.name}" badge!`
+
+        API.createAnnouncement({
+          title:      annTitle,
+          content:    annContent,
+          published:  true,
+          created_by: user.id,
+        }).catch(() => {})
+      }
+
+      // Refresh badges widget if new ones were awarded
+      if (toAward.length > 0) {
+        const { data: refreshed } = await API.getEmployeeBadges(user.id)
+        const el = document.getElementById('home-badges-widget')
+        if (el) el.outerHTML = _renderMyBadges(refreshed)
+      }
+    } catch (_) { /* silent — badge check never crashes the home page */ }
+  }
+
   /* ── init ────────────────────────────────────────────────── */
 
   async function init(user) {
@@ -388,6 +524,7 @@ const HomeModule = (() => {
       { data: announcements },
       { data: workAnniversaries },
       { data: allEmployees },
+      { data: myBadges },
     ] = await Promise.all([
       API.getTimesheetEntries(user.id, todayISO, todayISO),
       API.getWhoIsOutToday(),
@@ -397,7 +534,11 @@ const HomeModule = (() => {
       API.getRecentAnnouncements(3),
       API.getWorkAnniversaries(),
       API.getBirthdayEmployees(),
+      API.getEmployeeBadges(user.id),
     ])
+
+    const badgesHtml = _renderMyBadges(myBadges)
+      .replace('<div class="section-card', '<div id="home-badges-widget" class="section-card')
 
     const html = `
       ${_renderHero(user, todayEntries, whoIsOut, pendingLeaveCount, pendingTsCount)}
@@ -410,6 +551,7 @@ const HomeModule = (() => {
           ${_renderAnnouncements(announcements || [])}
         </div>
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px;">
+          ${badgesHtml}
           ${_renderBirthdays(allEmployees || [])}
           ${_renderAnniversaries(workAnniversaries || [])}
           ${_renderHolidays(holidays || [])}
@@ -422,6 +564,9 @@ const HomeModule = (() => {
       el.innerHTML = html
       _bindInteractions()
     }
+
+    // Fire-and-forget: check + award tenure / birthday badges without blocking render
+    _checkAndAwardAutoBadges(user)
   }
 
   return { render, init }

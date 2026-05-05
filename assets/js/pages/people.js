@@ -254,7 +254,7 @@ const People = (() => {
     _showProfileView(emp)
   }
 
-  function _showProfileView(emp) {
+  async function _showProfileView(emp) {
     const avatarHtml = emp.profile_image_url
       ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" alt=""
            style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
@@ -263,6 +263,40 @@ const People = (() => {
     const statusBadge = emp.status === 'active'
       ? '<span class="badge badge--success">Active</span>'
       : '<span class="badge badge--danger">Inactive</span>'
+
+    // Can this viewer award badges to this employee?
+    // HR (canManage) or the direct manager of this employee
+    const _canAwardBadge = _canManage || (_user && emp.manager_id === _user.id)
+
+    // Load employee badges (non-blocking — show placeholder first, fill after)
+    const { data: empBadges } = await API.getEmployeeBadges(emp.id)
+    const badgeChips = (empBadges || []).map(eb => {
+      const b = eb.badge || {}
+      const colour = b.colour || '#0F4799'
+      const awardedBy = eb.awarder?.name ? ` · Awarded by ${eb.awarder.name}` : ''
+      const note = eb.note ? ` — "${eb.note}"` : ''
+      return `
+        <div class="badge-chip badge-chip--${b.category || 'recognition'}"
+             style="--badge-bg:${colour}18;--badge-text:${colour};--badge-border:${colour}40;"
+             title="${Utils.escapeHtml((b.description || '') + awardedBy + note)}">
+          <span class="badge-chip-icon">${b.icon || '🏅'}</span>
+          <span class="badge-chip-name">${Utils.escapeHtml(b.name || '')}</span>
+        </div>`
+    }).join('')
+
+    const badgesSection = `
+      <div class="profile-badges-section">
+        <div class="profile-badges-label">Badges ${empBadges?.length ? `<span style="font-weight:400;color:var(--text-muted);">(${empBadges.length})</span>` : ''}</div>
+        ${badgeChips
+          ? `<div class="badge-chip-row">${badgeChips}</div>`
+          : `<p class="profile-badges-empty">No badges yet.</p>`}
+        ${_canAwardBadge ? `
+          <button class="btn btn--ghost btn--sm" id="ppl-award-badge-btn"
+            data-emp-id="${emp.id}" data-emp-name="${Utils.escapeHtml(emp.name)}"
+            style="margin-top:10px;font-size:12px;">
+            🏅 Award a Badge
+          </button>` : ''}
+      </div>`
 
     Utils.openModal(`
       <div class="modal-header">
@@ -295,6 +329,9 @@ const People = (() => {
             </div>
           </div>
         </div>
+
+        <!-- Badges -->
+        ${badgesSection}
 
         <!-- Field Grid -->
         <div style="padding:20px 24px;">
@@ -410,6 +447,128 @@ const People = (() => {
         }
       })
     }
+
+    // Award Badge button — visible to HR or direct manager
+    document.getElementById('ppl-award-badge-btn')?.addEventListener('click', () => {
+      _openAwardBadgeModal(emp)
+    })
+  }
+
+  /* ── Award Badge Modal ──────────────────────────────────── */
+
+  async function _openAwardBadgeModal(emp) {
+    const { data: allBadges } = await API.getBadges()
+    const { data: existing }  = await API.getEmployeeBadges(emp.id)
+    const existingIds = new Set((existing || []).map(eb => eb.badge_id))
+
+    // Only show manual recognition badges; exclude already-earned ones
+    const catalogue = (allBadges || []).filter(b => b.criteria_type === 'manual' && !existingIds.has(b.id))
+
+    const catalogueHtml = catalogue.length
+      ? catalogue.map(b => `
+          <div class="badge-catalogue-item" data-badge-id="${b.id}" data-badge-name="${Utils.escapeHtml(b.name)}" data-badge-icon="${b.icon}">
+            <span class="badge-catalogue-icon">${b.icon}</span>
+            <div class="badge-catalogue-info">
+              <div class="badge-catalogue-name">${Utils.escapeHtml(b.name)}</div>
+              <div class="badge-catalogue-desc">${Utils.escapeHtml(b.description || '')}</div>
+            </div>
+          </div>`).join('')
+      : `<p style="font-size:13px;color:var(--text-muted);grid-column:1/-1;">
+           ${emp.name.split(' ')[0]} already has all available recognition badges!
+         </p>`
+
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">Award a Badge — ${Utils.escapeHtml(emp.name)}</h3>
+        <button class="modal-close" onclick="Utils.closeModal()">${CLOSE_SVG}</button>
+      </div>
+      <div class="modal-body" style="padding:20px 24px;display:flex;flex-direction:column;gap:16px;">
+        <div id="award-badge-error" class="alert alert-danger" style="display:none;"></div>
+
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;
+            letter-spacing:0.05em;margin-bottom:10px;">Pick a badge</div>
+          <div class="badge-catalogue-grid" id="badge-catalogue-grid">
+            ${catalogueHtml}
+          </div>
+        </div>
+
+        <div>
+          <label class="form-label" for="award-badge-note">Add a note <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
+          <textarea class="form-textarea" id="award-badge-note" rows="2"
+            placeholder="e.g. Nailed the Q2 client sprint — real team player."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
+        <button class="btn btn--primary" id="award-badge-submit-btn" disabled>Award Badge</button>
+      </div>
+    `, 'award-badge-modal')
+
+    let selectedBadgeId = null
+    const submitBtn = document.getElementById('award-badge-submit-btn')
+    const errEl     = document.getElementById('award-badge-error')
+
+    // Badge selection
+    document.getElementById('badge-catalogue-grid')?.addEventListener('click', (e) => {
+      const item = e.target.closest('.badge-catalogue-item')
+      if (!item) return
+      document.querySelectorAll('.badge-catalogue-item').forEach(el => el.classList.remove('selected'))
+      item.classList.add('selected')
+      selectedBadgeId = item.dataset.badgeId
+      submitBtn.disabled = false
+      submitBtn.textContent = `Award ${item.dataset.badgeIcon} ${item.dataset.badgeName}`
+    })
+
+    submitBtn.addEventListener('click', async () => {
+      if (!selectedBadgeId) return
+      errEl.style.display = 'none'
+      submitBtn.disabled    = true
+      submitBtn.textContent = 'Awarding…'
+
+      const note = document.getElementById('award-badge-note')?.value.trim() || null
+      const badge = allBadges.find(b => b.id === selectedBadgeId)
+
+      const { data: awarded, error } = await API.awardBadge({
+        employee_id: emp.id,
+        badge_id:    selectedBadgeId,
+        awarded_by:  _user.id,
+        note,
+      })
+
+      if (error) {
+        errEl.textContent   = error.message || 'Failed to award badge. Please try again.'
+        errEl.style.display = 'block'
+        submitBtn.disabled    = false
+        submitBtn.textContent = `Award ${badge?.icon} ${badge?.name}`
+        return
+      }
+
+      // In-app notification to recipient
+      API.createNotification({
+        recipient_employee_id: emp.id,
+        type:      'success',
+        message:   `🎉 You earned the "${badge?.name}" badge!${note ? ` "${note}"` : ''}`,
+        module:    'badges',
+        record_id: awarded?.id || null,
+      }).catch(() => {})
+
+      // Post to announcements feed
+      const firstName  = emp.name.split(' ')[0]
+      const awardedByName = _user?.name || 'Management'
+      const annTitle   = `${badge?.icon || '🏅'} ${emp.name} earned the "${badge?.name}" badge!`
+      const annContent = `${awardedByName} awarded the "${badge?.name}" badge to ${firstName}. ${badge?.description || ''}${note ? `\n\n"${note}"` : ''}`
+
+      API.createAnnouncement({
+        title:      annTitle,
+        content:    annContent,
+        published:  true,
+        created_by: _user.id,
+      }).catch(() => {})
+
+      Utils.closeModal()
+      Utils.showToast(`🎉 Badge awarded to ${emp.name}!`, 'success')
+    })
   }
 
   /* ══════════════════════════════════════════════════════════

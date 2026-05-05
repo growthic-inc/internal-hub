@@ -5781,3 +5781,125 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 
 @media (max-width: 900px) { .ct-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 600px) { .ct-grid { grid-template-columns: 1fr; } }
+
+/* ============================================================
+   BADGE SYSTEM
+   ============================================================ */
+
+/* Individual badge chip — used in profile modal + home */
+.badge-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px 5px 8px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1.5px solid transparent;
+  cursor: default;
+  transition: transform 0.12s, box-shadow 0.12s;
+  position: relative;
+}
+.badge-chip:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,0.12); }
+
+.badge-chip-icon { font-size: 15px; line-height: 1; }
+.badge-chip-name { letter-spacing: 0.01em; }
+
+/* Tenure style — solid colour background */
+.badge-chip--tenure {
+  background: var(--badge-bg, #f0fdf4);
+  color: var(--badge-text, #14532d);
+  border-color: var(--badge-border, #bbf7d0);
+}
+
+/* Special (birthday) — pink gradient */
+.badge-chip--special {
+  background: linear-gradient(135deg, #fdf2f8, #fce7f3);
+  color: #9d174d;
+  border-color: #fbcfe8;
+}
+
+/* Recognition — soft surface */
+.badge-chip--recognition {
+  background: var(--surface);
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+
+/* Row of badge chips */
+.badge-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+/* Profile badge section */
+.profile-badges-section {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.profile-badges-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.profile-badges-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Home "Your Badges" card */
+.home-badges-card { }
+.home-badges-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 4px 0;
+}
+
+/* Award badge modal — catalogue grid */
+.badge-catalogue-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.badge-catalogue-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+  background: var(--bg);
+}
+.badge-catalogue-item:hover { border-color: var(--primary); background: var(--primary-light); }
+.badge-catalogue-item.selected {
+  border-color: var(--primary);
+  background: var(--primary-light);
+  box-shadow: 0 0 0 3px rgba(15,71,153,0.1);
+}
+.badge-catalogue-icon { font-size: 22px; line-height: 1; flex-shrink: 0; }
+.badge-catalogue-info { min-width: 0; }
+.badge-catalogue-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.badge-catalogue-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
