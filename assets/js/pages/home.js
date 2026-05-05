@@ -487,9 +487,10 @@ const HomeModule = (() => {
       const toAward = []
 
       // ── Tenure badges ──────────────────────────────────────
+      // Rule: award ALL missed milestones to the profile (so it looks complete),
+      // but only announce + notify the HIGHEST one to avoid feed spam on rollout.
       if (user.joining_date) {
         const joined = new Date(user.joining_date)
-        // Months of service (floor)
         const months = (today.getFullYear() - joined.getFullYear()) * 12
           + (today.getMonth() - joined.getMonth())
           + (today.getDate() >= joined.getDate() ? 0 : -1)
@@ -498,10 +499,18 @@ const HomeModule = (() => {
           .filter(b => b.category === 'tenure' && b.criteria_months != null)
           .sort((a, b) => a.criteria_months - b.criteria_months)
 
-        for (const badge of tenureBadges) {
-          if (months >= badge.criteria_months && !existingMap[badge.id]) {
-            toAward.push({ badge, note: null, isAuto: true })
+        // Split into: badges to insert silently vs. the one to announce
+        const unearned = tenureBadges.filter(b => months >= b.criteria_months && !existingMap[b.id])
+
+        if (unearned.length > 0) {
+          // Silently insert all lower milestones (no announcement, no notification)
+          const silent = unearned.slice(0, -1)
+          for (const badge of silent) {
+            await API.awardBadge({ employee_id: user.id, badge_id: badge.id, awarded_by: null, note: null })
+              .catch(() => {})
           }
+          // Announce only the highest milestone reached
+          toAward.push({ badge: unearned[unearned.length - 1], note: null })
         }
       }
 
