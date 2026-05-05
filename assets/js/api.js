@@ -842,9 +842,8 @@ const API = (() => {
     form.append('employee_id',   employeeId)
     form.append('employee_name', employeeName)
     form.append('doc_type',      docType)
-    form.append('folder_type',   'kyc_documents')
     const res = await fetch(
-      `${Config.SUPABASE_URL}/functions/v1/upload-to-drive`,
+      `${Config.SUPABASE_URL}/functions/v1/upload-kyc-document`,
       {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${session?.access_token}`, 'apikey': Config.SUPABASE_ANON_KEY },
