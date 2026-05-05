@@ -5994,9 +5994,11 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   box-sizing: border-box;
 }
 
-/* Inside the narrower left column, cap ct-grid at 2 columns */
+/* Inside the narrower left column: auto-fit so cards always
+   stretch to fill the available width (auto-fill would leave
+   empty ghost columns when there are few content types). */
 .db-ww-panel .ct-grid {
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
 @media (max-width: 1024px) {
