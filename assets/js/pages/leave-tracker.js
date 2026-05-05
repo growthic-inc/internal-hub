@@ -19,8 +19,9 @@ const LeaveTracker = (() => {
   let _events          = []
   let _pendingApprovals = []
   let _pendingWfh      = []
-  let _isManager       = false
-  let _isHR            = false
+  let _isManager          = false
+  let _isHR               = false   // can manage settings/holidays/quotas
+  let _canApproveLeave    = false   // can approve team leave/WFH requests
 
   const currentYear = new Date().getFullYear()
 
@@ -130,7 +131,7 @@ const LeaveTracker = (() => {
      RENDER — initial HTML shell
   ══════════════════════════════════════════════════════════ */
   function render(user) {
-    const isHR       = user.role === 'super_admin' || user.department === 'people_culture'
+    const isHR = App.hasAccess('leave_tracker', 'manage_leave_settings', 'can_manage')
     const tabs = [
       { id: 'my-leaves',          label: 'My Leaves' },
       { id: 'my-wfh',             label: 'My WFH' },
@@ -168,8 +169,9 @@ const LeaveTracker = (() => {
      INIT — fetch data, bind tabs
   ══════════════════════════════════════════════════════════ */
   async function init(user) {
-    _user      = user
-    _isHR      = user.role === 'super_admin' || user.department === 'people_culture'
+    _user             = user
+    _isHR             = App.hasAccess('leave_tracker', 'manage_leave_settings', 'can_manage')
+    _canApproveLeave  = App.hasAccess('leave_tracker', 'approve_leave', 'can_approve')
     _calMonth  = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
     _activeTab = 'my-leaves'
 
@@ -178,10 +180,10 @@ const LeaveTracker = (() => {
     _employees = empRes.data || []
     _isManager = _employees.some(e => e.manager_id === _user.id)
 
-    // Show/hide conditional tab
+    // Show/hide conditional tab — visible to direct managers AND anyone with approve_leave access
     const approvalTab = document.getElementById('lt-tab-pending-approvals')
     if (approvalTab) {
-      approvalTab.style.display = (_isManager || _isHR) ? '' : 'none'
+      approvalTab.style.display = (_isManager || _isHR || _canApproveLeave) ? '' : 'none'
     }
 
     // Fetch core data in parallel
@@ -201,8 +203,8 @@ const LeaveTracker = (() => {
     _holidays      = holRes.data || []
     _events        = evtRes.data || []
 
-    // Fetch pending approvals if manager or HR
-    if (_isManager || _isHR) {
+    // Fetch pending approvals if manager, HR, or has approve_leave access
+    if (_isManager || _isHR || _canApproveLeave) {
       const [paRes, pwRes] = await Promise.all([
         API.getPendingLeaveApprovals(_user.id),
         API.getPendingWfhApprovals(_user.id),

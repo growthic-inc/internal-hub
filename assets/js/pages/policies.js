@@ -45,7 +45,7 @@ const PoliciesModule = (() => {
   /* ── render ─────────────────────────────────────────────────── */
   function render(user) {
     _user = user
-    _isHR = user.role === 'super_admin' || user.department === 'people_culture'
+    _isHR = App.hasAccess('policies', 'manage_policies', 'can_manage')
 
     return `
       <div class="page-inner">
@@ -65,7 +65,7 @@ const PoliciesModule = (() => {
   /* ── init ───────────────────────────────────────────────────── */
   async function init(user) {
     _user = user
-    _isHR = user.role === 'super_admin' || user.department === 'people_culture'
+    _isHR = App.hasAccess('policies', 'manage_policies', 'can_manage')
     _activeCategory = null
     _searchQuery    = ''
 

@@ -47,7 +47,7 @@ const People = (() => {
 
   /* ── render ─────────────────────────────────────────────── */
   function render(user) {
-    const canManage = App.hasAccess('people_hrms', 'create_employee', 'can_manage')
+    const canManage = App.hasAccess('people_hrms', 'manage_employees', 'can_manage')
     return `
       <div class="page-inner">
         <div class="page-toolbar">
@@ -66,7 +66,7 @@ const People = (() => {
   /* ── init ───────────────────────────────────────────────── */
   async function init(user) {
     _user      = user
-    _canManage = App.hasAccess('people_hrms', 'create_employee', 'can_manage')
+    _canManage = App.hasAccess('people_hrms', 'manage_employees', 'can_manage')
 
     const [empRes, deptRes, badgeRes] = await Promise.all([
       API.getEmployeesFull(),

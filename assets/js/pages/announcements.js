@@ -54,7 +54,7 @@ const Announcements = (() => {
   /* ── render ─────────────────────────────────────────────────── */
   function render(user) {
     _user = user
-    _isHR = user.role === 'super_admin' || user.department === 'people_culture'
+    _isHR = App.hasAccess('announcements', 'post_announcement', 'can_manage')
 
     const avatarHtml = user.profile_image_url
       ? `<img src="${Utils.escapeHtml(user.profile_image_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
@@ -87,7 +87,7 @@ const Announcements = (() => {
   /* ── init ───────────────────────────────────────────────────── */
   async function init(user) {
     _user = user
-    _isHR = user.role === 'super_admin' || user.department === 'people_culture'
+    _isHR = App.hasAccess('announcements', 'post_announcement', 'can_manage')
 
     if (_isHR) {
       document.getElementById('ann-compose-btn')?.addEventListener('click', () => _openModal(null))
