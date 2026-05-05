@@ -160,6 +160,10 @@ const API = (() => {
     return supabase.from('assets').update(data).eq('id', id)
   }
 
+  async function deleteAsset(id) {
+    return supabase.from('assets').delete().eq('id', id)
+  }
+
   async function getAssetHistory(assetId) {
     return supabase
       .from('asset_history')
@@ -1281,7 +1285,7 @@ const API = (() => {
     insertMasterFolderFile, softDeleteMasterFolderFile,
     getMyReimbursements, getReimbursementInbox, getApprovedClaims,
     insertReimbursement, getMyPreApprovals,
-    getAssets, createAsset, updateAsset,
+    getAssets, createAsset, updateAsset, deleteAsset,
     getAssetHistory, addAssetHistory,
     getAllAssetRepairs, getAssetRepairsForAsset, createAssetRepair, updateAssetRepair,
     getAssetTypes, createAssetType, updateAssetType, deleteAssetType, getMyAssetRepairs,

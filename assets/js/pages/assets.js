@@ -1,20 +1,20 @@
 /* ============================================================
-   ASSET MANAGEMENT v2 — Phase 10
-   Ownership · Lifecycle · Repairs · Photo history
+   ASSET MANAGEMENT v3 — Revamped Flow
+   Self-service return · HR-only approval with auto-assign
+   Inventories tab · Retire & Delete lifecycle · Detail redesign
    ============================================================ */
 
 const Assets = (() => {
 
-  let _user         = null
-  let _assets       = []
-  let _employees    = []
-  let _types        = []
-  let _repairs      = []
-  let _requests     = []   // asset requests visible to this user
-  let _locations    = []
-  let _isManager    = false
-  let _activeTab    = 'all'
-  let _p            = null
+  let _user      = null
+  let _assets    = []
+  let _employees = []
+  let _types     = []
+  let _repairs   = []
+  let _requests  = []
+  let _isManager = false
+  let _activeTab = 'all'
+  let _p         = null
   let _filterType   = ''
   let _filterStatus = ''
   let _filterSearch = ''
@@ -76,7 +76,6 @@ const Assets = (() => {
       chair:    `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20v-8a6 6 0 0 1 12 0v8"/><path d="M4 20h16"/><path d="M6 14h12"/></svg>`,
       other:    `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3h-8l-2 4h12z"/></svg>`,
     }
-    // fuzzy match: if any key is contained in the type name
     const match = Object.keys(icons).find(k => t.includes(k))
     return `<span class="ast-type-icon" style="color:var(--primary);opacity:0.8;display:inline-flex;align-items:center;flex-shrink:0;">${icons[match] || icons.other}</span>`
   }
@@ -103,6 +102,15 @@ const Assets = (() => {
     }
   }
 
+  function _modalCloseBtn() {
+    return `<button class="modal-close" onclick="Utils.closeModal()">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" stroke-width="2.5">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>`
+  }
+
   function _filteredAssets() {
     return _assets.filter(a => {
       if (!_p.can_view_available && a.status === 'available') return false
@@ -116,15 +124,6 @@ const Assets = (() => {
       }
       return true
     })
-  }
-
-  function _modalCloseBtn() {
-    return `<button class="modal-close" onclick="Utils.closeModal()">
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-        fill="none" stroke="currentColor" stroke-width="2.5">
-        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-      </svg>
-    </button>`
   }
 
   /* ── render / init ─────────────────────────────────────────── */
@@ -147,42 +146,38 @@ const Assets = (() => {
       can_view_available:  App.hasAccess('asset_management', 'view_available_assets', 'view_only'),
       can_request:         App.hasAccess('asset_management', 'request_asset',         'view_only'),
       can_manage:          App.hasAccess('asset_management', 'manage_assets',         'can_manage'),
-      can_return:          App.hasAccess('asset_management', 'return_asset',          'can_manage'),
-      can_report:          App.hasAccess('asset_management', 'report_issue',          'view_only'),
+      can_inventories:     App.hasAccess('asset_management', 'view_inventories',      'can_manage'),
+      can_retire_delete:   App.hasAccess('asset_management', 'retire_delete_asset',   'can_manage'),
       can_resolve:         App.hasAccess('asset_management', 'resolve_repair',        'can_manage'),
       can_manage_types:    App.hasAccess('asset_management', 'manage_asset_types',    'can_manage'),
     }
     const canManage = _p.can_manage
 
-    // Parallel data loads
-    const [assetsRes, typesRes, locationsRes, managerCheckRes] = await Promise.all([
+    // Check if this user is a reporting manager
+    const [assetsRes, typesRes, managerCheckRes] = await Promise.all([
       API.getAssets(),
       API.getAssetTypes(),
-      API.getAssetLocations(),
-      // Check if this user is a reporting manager for anyone
       Config.supabase.from('employees').select('id', { count: 'exact', head: true }).eq('manager_id', user.id).eq('status', 'active'),
     ])
-    _assets    = assetsRes.data    || []
-    _types     = typesRes.data     || []
-    _locations = locationsRes.data || []
+    _assets    = assetsRes.data  || []
+    _types     = typesRes.data   || []
     _isManager = (managerCheckRes.count || 0) > 0
 
-    // Load repairs
+    // HR/managers load employees + all repairs; everyone else loads their own repairs
     if (canManage || _p.can_resolve) {
       const [empRes, repairRes] = await Promise.all([API.getEmployees(true), API.getAllAssetRepairs()])
       _employees = empRes.data   || []
       _repairs   = repairRes.data || []
-    } else if (_p.can_report) {
+    } else {
       const { data } = await API.getMyAssetRepairs(user.id)
       _repairs = data || []
     }
 
-    // Load asset requests
+    // Load requests
     if (canManage) {
       const { data } = await API.getAllAssetRequests()
       _requests = data || []
     } else {
-      // Own submitted + pending manager approval if manager
       const fetches = [API.getMySubmittedAssetRequests(user.id)]
       if (_isManager) fetches.push(API.getPendingManagerAssetRequests(user.id))
       const results = await Promise.all(fetches)
@@ -191,12 +186,14 @@ const Assets = (() => {
         .filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true })
     }
 
-    // Build tabs now that we know manager status
+    // Build tabs
+    const pendingCount = _requests.filter(r => r.status === 'pending_hr' && canManage).length
     const tabs = []
-    if (canManage) tabs.push({ id: 'all',      label: 'All Assets'       })
-    tabs.push(              { id: 'mine',     label: 'My Assets'        })
-    if (canManage || _p.can_request || _isManager) tabs.push({ id: 'requests', label: `Requests${_requests.filter(r => (r.status === 'pending_manager' && r.manager_id === user.id) || (r.status === 'pending_hr' && canManage)).length ? ` (${_requests.filter(r => (r.status === 'pending_manager' && r.manager_id === user.id) || (r.status === 'pending_hr' && canManage)).length})` : ''}` })
-    if (canManage || _p.can_resolve || _p.can_report) tabs.push({ id: 'repairs',  label: 'Repairs & Issues' })
+    if (canManage) tabs.push({ id: 'all',         label: 'All Assets' })
+    tabs.push(              { id: 'mine',        label: 'My Assets' })
+    tabs.push(              { id: 'requests',    label: `Requests${pendingCount ? ` (${pendingCount})` : ''}` })
+    tabs.push(              { id: 'repairs',     label: 'Repairs & Issues' })
+    if (_p.can_inventories) tabs.push({ id: 'inventories', label: 'Inventories' })
     if (canManage || _p.can_manage_types) tabs.push({ id: 'settings', label: 'Settings' })
 
     const tabsEl = document.getElementById('ast-tabs')
@@ -238,12 +235,14 @@ const Assets = (() => {
       document.getElementById('ast-request-btn')?.addEventListener('click', _openRequestModal)
       document.getElementById('ast-add-btn')?.addEventListener('click', _openAddModal)
     }
+
     switch (tab) {
-      case 'all':      return _renderAllTab()
-      case 'mine':     return _renderMineTab()
-      case 'requests': return _renderRequestsTab()
-      case 'repairs':  return _renderRepairsTab()
-      case 'settings': return _renderSettingsTab()
+      case 'all':          return _renderAllTab()
+      case 'mine':         return _renderMineTab()
+      case 'requests':     return _renderRequestsTab()
+      case 'repairs':      return _renderRepairsTab()
+      case 'inventories':  return _renderInventoriesTab()
+      case 'settings':     return _renderSettingsTab()
     }
   }
 
@@ -321,7 +320,7 @@ const Assets = (() => {
       <div style="overflow-x:auto;">
         <table class="data-table">
           <thead><tr>
-            <th>Name</th><th>Type</th><th>Serial / Tag</th>
+            <th>Name</th><th>Type</th><th>Tag</th>
             <th>Condition</th><th>Assigned To</th><th>Status</th><th></th>
           </tr></thead>
           <tbody>
@@ -329,20 +328,23 @@ const Assets = (() => {
               <tr>
                 <td><strong>${Utils.escapeHtml(a.name)}</strong></td>
                 <td><span style="display:inline-flex;align-items:center;gap:6px;">${_typeIcon(a.type, 14)}<span class="text-muted">${Utils.escapeHtml(a.type || '—')}</span></span></td>
-                <td class="text-sm text-muted">${Utils.escapeHtml(a.serial_number || a.asset_tag || '—')}</td>
+                <td class="text-sm text-muted">${Utils.escapeHtml(a.asset_tag || a.serial_number || '—')}</td>
                 <td>${_conditionBadge(a.condition)}</td>
                 <td>${a.employees ? Utils.escapeHtml(a.employees.name) : '<span class="text-muted">—</span>'}</td>
                 <td>${_statusBadge(a.status)}</td>
                 <td style="white-space:nowrap;text-align:right;">
                   <button class="btn btn--xs btn--ghost ast-view" data-id="${a.id}">View</button>
-                  ${a.status === 'available' && _p.can_manage
+                  ${_p.can_manage && a.status === 'available'
                     ? `<button class="btn btn--xs btn--secondary ast-assign" data-id="${a.id}">Assign</button>`
-                    : a.status === 'in_use' && (_p.can_return || _p.can_manage)
-                    ? `<button class="btn btn--xs btn--ghost ast-return" data-id="${a.id}">Return</button>`
                     : ''}
-                  ${a.status !== 'retired' && a.status !== 'lost' && _p.can_manage
-                    ? `<button class="btn btn--xs btn--ghost ast-lost" data-id="${a.id}"
-                        style="color:var(--danger);" title="Mark Lost">✕</button>`
+                  ${_p.can_manage && a.status !== 'retired'
+                    ? `<button class="btn btn--xs btn--ghost ast-status" data-id="${a.id}" title="Update status">Status</button>`
+                    : ''}
+                  ${_p.can_retire_delete && a.status !== 'retired'
+                    ? `<button class="btn btn--xs btn--ghost ast-retire" data-id="${a.id}" style="color:var(--warning);">Retire</button>`
+                    : ''}
+                  ${_p.can_retire_delete
+                    ? `<button class="btn btn--xs btn--ghost ast-delete" data-id="${a.id}" style="color:var(--danger);">Delete</button>`
                     : ''}
                 </td>
               </tr>`).join('')}
@@ -361,16 +363,22 @@ const Assets = (() => {
         if (a) _openAssignModal(a)
       })
     )
-    document.querySelectorAll('.ast-return').forEach(btn =>
+    document.querySelectorAll('.ast-status').forEach(btn =>
       btn.addEventListener('click', () => {
         const a = _assets.find(x => x.id === btn.dataset.id)
-        if (a) _openReturnModal(a)
+        if (a) _openStatusModal(a)
       })
     )
-    document.querySelectorAll('.ast-lost').forEach(btn =>
+    document.querySelectorAll('.ast-retire').forEach(btn =>
       btn.addEventListener('click', () => {
         const a = _assets.find(x => x.id === btn.dataset.id)
-        if (a) _openLostModal(a)
+        if (a) _openRetireModal(a)
+      })
+    )
+    document.querySelectorAll('.ast-delete').forEach(btn =>
+      btn.addEventListener('click', () => {
+        const a = _assets.find(x => x.id === btn.dataset.id)
+        if (a) _confirmDeleteAsset(a)
       })
     )
   }
@@ -404,14 +412,13 @@ const Assets = (() => {
           ${_statusBadge(a.status)}
         </div>
         <div class="ast-card-meta">
-          <div><span class="text-muted">Serial</span><br>${Utils.escapeHtml(a.serial_number || '—')}</div>
           <div><span class="text-muted">Condition</span><br>${a.condition || '—'}</div>
           <div><span class="text-muted">Assigned Since</span><br>${a.assigned_date ? Utils.formatDate(a.assigned_date) : '—'}</div>
-          <div><span class="text-muted">Location</span><br>${Utils.escapeHtml(a.location || '—')}</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
           <button class="btn btn--xs btn--ghost ast-view" data-id="${a.id}">View Details</button>
           <button class="btn btn--xs btn--danger ast-report" data-id="${a.id}">Report Issue</button>
+          ${a.status === 'in_use' ? `<button class="btn btn--xs btn--ghost ast-return-mine" data-id="${a.id}" style="color:var(--text-muted);">Return Asset</button>` : ''}
         </div>
       </div>`).join('')}</div>`
 
@@ -424,6 +431,12 @@ const Assets = (() => {
         if (a) _openReportModal(a)
       })
     )
+    content.querySelectorAll('.ast-return-mine').forEach(btn =>
+      btn.addEventListener('click', () => {
+        const a = _assets.find(x => x.id === btn.dataset.id)
+        if (a) _openReturnModal(a)
+      })
+    )
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -431,52 +444,38 @@ const Assets = (() => {
   ══════════════════════════════════════════════════════════ */
 
   const REQ_STATUS = {
-    pending_manager: { label: 'Awaiting Manager',  cls: 'badge--warning'  },
-    pending_hr:      { label: 'Awaiting HR',        cls: 'badge--primary'  },
-    approved:        { label: 'Approved',            cls: 'badge--success'  },
-    rejected:        { label: 'Rejected',            cls: 'badge--danger'   },
+    pending_hr:  { label: 'Awaiting HR',  cls: 'badge--warning' },
+    approved:    { label: 'Approved',     cls: 'badge--success' },
+    rejected:    { label: 'Rejected',     cls: 'badge--danger'  },
   }
 
   function _renderRequestsTab() {
     const content = document.getElementById('ast-content')
     if (!content) return
 
-    // Split into sections
-    const pendingMyApproval = _requests.filter(r =>
-      r.status === 'pending_manager' && r.manager_id === _user.id
-    )
-    const pendingHRApproval = _p.can_manage ? _requests.filter(r => r.status === 'pending_hr') : []
-    const mySubmitted       = _requests.filter(r => r.requested_by === _user.id)
-    const allLog            = _p.can_manage ? _requests : []
+    const pendingHR  = _p.can_manage ? _requests.filter(r => r.status === 'pending_hr') : []
+    const myRequests = _requests.filter(r => r.requested_by === _user.id)
+    const allLog     = _p.can_manage ? _requests : []
 
     function _reqRow(r, showActions) {
-      const asset    = r.asset || {}
-      const reqBy    = r.requester?.name || '—'
+      const asset     = r.asset || {}
+      const reqBy     = r.requester?.name || '—'
       const statusCfg = REQ_STATUS[r.status] || { label: r.status, cls: 'badge--muted' }
-      const stage = r.status === 'pending_manager'
-        ? `<div class="ast-req-stage"><span class="ast-req-stage-dot ast-req-stage-dot--active"></span>Manager<span class="ast-req-stage-dot"></span>HR</div>`
-        : r.status === 'pending_hr'
-        ? `<div class="ast-req-stage"><span class="ast-req-stage-dot ast-req-stage-dot--done"></span>Manager<span class="ast-req-stage-dot ast-req-stage-dot--active"></span>HR</div>`
-        : r.status === 'approved'
-        ? `<div class="ast-req-stage"><span class="ast-req-stage-dot ast-req-stage-dot--done"></span>Manager<span class="ast-req-stage-dot ast-req-stage-dot--done"></span>HR</div>`
-        : `<div class="ast-req-stage ast-req-stage--rejected"><span class="ast-req-stage-dot ast-req-stage-dot--danger"></span>Rejected</div>`
 
       return `
         <tr>
-          <td><strong>${Utils.escapeHtml(asset.name || '—')}</strong><br><span class="text-muted" style="font-size:11px;">${Utils.escapeHtml(asset.type || '')}</span></td>
+          <td>
+            <strong>${Utils.escapeHtml(asset.name || '—')}</strong>
+            <br><span class="text-muted" style="font-size:11px;">${Utils.escapeHtml(asset.type || '')}</span>
+          </td>
           <td>${Utils.escapeHtml(reqBy)}</td>
-          <td>${Utils.escapeHtml(r.reason || '—')}</td>
-          <td>${stage}</td>
+          <td style="max-width:200px;font-size:12px;">${Utils.escapeHtml(r.reason || '—')}</td>
           <td><span class="badge ${statusCfg.cls}">${statusCfg.label}</span></td>
           <td class="text-sm text-muted">${Utils.formatDate(r.created_at)}</td>
           <td style="white-space:nowrap;">
-            ${showActions && r.status === 'pending_manager' && r.manager_id === _user.id ? `
-              <button class="btn btn--xs btn--primary ast-req-approve" data-id="${r.id}" data-stage="manager">Approve</button>
-              <button class="btn btn--xs btn--ghost ast-req-reject" data-id="${r.id}" data-stage="manager" style="color:var(--danger);">Reject</button>
-            ` : ''}
             ${showActions && r.status === 'pending_hr' && _p.can_manage ? `
-              <button class="btn btn--xs btn--primary ast-req-approve" data-id="${r.id}" data-stage="hr">Approve</button>
-              <button class="btn btn--xs btn--ghost ast-req-reject" data-id="${r.id}" data-stage="hr" style="color:var(--danger);">Reject</button>
+              <button class="btn btn--xs btn--primary ast-req-approve" data-id="${r.id}">Approve & Assign</button>
+              <button class="btn btn--xs btn--ghost ast-req-reject" data-id="${r.id}" style="color:var(--danger);">Reject</button>
             ` : ''}
           </td>
         </tr>`
@@ -485,26 +484,18 @@ const Assets = (() => {
     function _reqTable(rows, showActions = false) {
       if (!rows.length) return '<p class="empty-state-text" style="padding:16px;">No requests.</p>'
       return `<div style="overflow-x:auto;"><table class="data-table">
-        <thead><tr><th>Asset</th><th>Requested By</th><th>Reason</th><th>Stage</th><th>Status</th><th>Date</th><th></th></tr></thead>
+        <thead><tr><th>Asset</th><th>Requested By</th><th>Reason</th><th>Status</th><th>Date</th><th></th></tr></thead>
         <tbody>${rows.map(r => _reqRow(r, showActions)).join('')}</tbody>
       </table></div>`
     }
 
     const sections = []
 
-    if (pendingMyApproval.length) {
+    if (pendingHR.length) {
       sections.push(`
         <div class="section-card" style="border-left:3px solid var(--warning);">
-          <div class="section-card-header"><h3>Pending Your Approval <span class="badge badge--warning" style="margin-left:8px;">${pendingMyApproval.length}</span></h3></div>
-          <div class="section-card-body" style="padding:0;">${_reqTable(pendingMyApproval, true)}</div>
-        </div>`)
-    }
-
-    if (pendingHRApproval.length) {
-      sections.push(`
-        <div class="section-card" style="border-left:3px solid var(--primary);">
-          <div class="section-card-header"><h3>Pending HR Approval <span class="badge badge--primary" style="margin-left:8px;">${pendingHRApproval.length}</span></h3></div>
-          <div class="section-card-body" style="padding:0;">${_reqTable(pendingHRApproval, true)}</div>
+          <div class="section-card-header"><h3>Pending HR Approval <span class="badge badge--warning" style="margin-left:8px;">${pendingHR.length}</span></h3></div>
+          <div class="section-card-body" style="padding:0;">${_reqTable(pendingHR, true)}</div>
         </div>`)
     }
 
@@ -514,11 +505,11 @@ const Assets = (() => {
           <div class="section-card-header"><h3>All Requests</h3></div>
           <div class="section-card-body" style="padding:0;">${_reqTable(allLog, true)}</div>
         </div>`)
-    } else if (mySubmitted.length || _p.can_request) {
+    } else if (myRequests.length || _p.can_request) {
       sections.push(`
         <div class="section-card">
           <div class="section-card-header"><h3>My Requests</h3></div>
-          <div class="section-card-body" style="padding:0;">${_reqTable(mySubmitted)}</div>
+          <div class="section-card-body" style="padding:0;">${_reqTable(myRequests)}</div>
         </div>`)
     }
 
@@ -526,129 +517,122 @@ const Assets = (() => {
       ? `<div style="display:flex;flex-direction:column;gap:16px;">${sections.join('')}</div>`
       : '<p class="empty-state-text">No asset requests to show.</p>'
 
-    // Approve
-    content.querySelectorAll('.ast-req-approve').forEach(btn => {
-      btn.addEventListener('click', () => _openRequestActionModal(btn.dataset.id, btn.dataset.stage, 'approve'))
-    })
-    // Reject
-    content.querySelectorAll('.ast-req-reject').forEach(btn => {
-      btn.addEventListener('click', () => _openRequestActionModal(btn.dataset.id, btn.dataset.stage, 'reject'))
-    })
+    content.querySelectorAll('.ast-req-approve').forEach(btn =>
+      btn.addEventListener('click', () => _approveRequest(btn.dataset.id))
+    )
+    content.querySelectorAll('.ast-req-reject').forEach(btn =>
+      btn.addEventListener('click', () => _openRejectRequestModal(btn.dataset.id))
+    )
   }
 
-  async function _openRequestActionModal(reqId, stage, action) {
-    const req    = _requests.find(r => r.id === reqId)
+  async function _approveRequest(reqId) {
+    const req = _requests.find(r => r.id === reqId)
     if (!req) return
-    const isApprove = action === 'approve'
-    const label     = isApprove ? 'Approve' : 'Reject'
+
+    const assetName = req.asset?.name || 'the asset'
+    const reqByName = req.requester?.name || 'the employee'
+
+    if (!confirm(`Approve and assign "${assetName}" to ${reqByName}?`)) return
+
+    try {
+      const now     = new Date().toISOString()
+      const today   = now.split('T')[0]
+
+      // 1. Mark request approved
+      const { error: reqErr } = await API.updateAssetRequest(reqId, {
+        status:      'approved',
+        hr_status:   'approved',
+        hr_acted_by: _user.id,
+        hr_acted_at: now,
+      })
+      if (reqErr) throw reqErr
+
+      // 2. Auto-assign the asset
+      const { error: assetErr } = await API.updateAsset(req.asset_id, {
+        assigned_to:   req.requested_by,
+        assigned_date: today,
+        status:        'in_use',
+        updated_at:    now,
+      })
+      if (assetErr) throw assetErr
+
+      // 3. History record
+      await API.addAssetHistory({
+        asset_id:       req.asset_id,
+        action:         'assigned',
+        to_employee_id: req.requested_by,
+        notes:          `Auto-assigned via approved request (approved by ${_user.name})`,
+        performed_by:   _user.id,
+      })
+
+      // 4. Notify the employee
+      await Config.supabase.from('notifications').insert({
+        recipient_employee_id: req.requested_by,
+        type:      'success',
+        message:   `Your request for "${assetName}" has been approved and assigned to you!`,
+        module:    'assets',
+        record_id: req.asset_id,
+      })
+
+      await _refreshAll()
+      Utils.showToast('Request approved — asset assigned.', 'success')
+      _renderRequestsTab()
+
+    } catch (err) {
+      Utils.showToast(err.message || 'Failed to approve request.', 'error')
+    }
+  }
+
+  function _openRejectRequestModal(reqId) {
+    const req = _requests.find(r => r.id === reqId)
+    if (!req) return
     const assetName = req.asset?.name || 'this asset'
-    const reqBy     = req.requester?.name || 'employee'
 
     Utils.openModal(`
       <div class="modal-header">
-        <h3 class="modal-title">${label} Request</h3>
-        <button class="modal-close" onclick="Utils.closeModal()">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
+        <h3 class="modal-title">Reject Request</h3>${_modalCloseBtn()}
       </div>
       <div class="modal-body">
-        <p style="font-size:14px;margin:0 0 16px;">
-          ${isApprove ? `Approve <strong>${reqBy}</strong>'s request for <strong>${Utils.escapeHtml(assetName)}</strong>?` : `Reject <strong>${reqBy}</strong>'s request for <strong>${Utils.escapeHtml(assetName)}</strong>?`}
-        </p>
+        <p style="font-size:14px;margin:0 0 16px;">Reject <strong>${Utils.escapeHtml(req.requester?.name || '—')}</strong>'s request for <strong>${Utils.escapeHtml(assetName)}</strong>?</p>
         <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">Note <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
-          <textarea class="form-input" id="ast-req-action-note" rows="2" placeholder="${isApprove ? 'Any notes for HR…' : 'Reason for rejection…'}" style="resize:vertical;"></textarea>
+          <label class="form-label">Reason <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+          <textarea class="form-input" id="ast-reject-note" rows="2" style="resize:vertical;" placeholder="Reason for rejection…"></textarea>
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
-        <button class="btn ${isApprove ? 'btn-primary' : 'btn-danger'}" id="ast-req-action-save">${label}</button>
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
+        <button class="btn btn--danger" id="ast-reject-confirm">Reject</button>
       </div>
-    `, '')
+    `)
 
-    document.getElementById('ast-req-action-save').addEventListener('click', async () => {
-      const saveBtn = document.getElementById('ast-req-action-save')
-      const note    = document.getElementById('ast-req-action-note')?.value.trim() || null
-      saveBtn.disabled = true; saveBtn.textContent = 'Saving…'
+    document.getElementById('ast-reject-confirm').addEventListener('click', async () => {
+      const btn  = document.getElementById('ast-reject-confirm')
+      const note = document.getElementById('ast-reject-note').value.trim() || null
+      btn.disabled = true; btn.textContent = 'Rejecting…'
 
-      try {
-        const now = new Date().toISOString()
-        let update = {}
+      const now = new Date().toISOString()
+      const { error } = await API.updateAssetRequest(reqId, {
+        status:      'rejected',
+        hr_status:   'rejected',
+        hr_note:     note,
+        hr_acted_by: _user.id,
+        hr_acted_at: now,
+      })
 
-        if (stage === 'manager') {
-          update = {
-            manager_status:   action === 'approve' ? 'approved' : 'rejected',
-            manager_note:     note,
-            manager_acted_at: now,
-            status:           action === 'approve' ? 'pending_hr' : 'rejected',
-          }
-        } else {
-          update = {
-            hr_status:   action === 'approve' ? 'approved' : 'rejected',
-            hr_note:     note,
-            hr_acted_at: now,
-            hr_acted_by: _user.id,
-            status:      action === 'approve' ? 'approved' : 'rejected',
-          }
-        }
+      if (error) { Utils.showToast(error.message, 'error'); btn.disabled = false; btn.textContent = 'Reject'; return }
 
-        const { error } = await API.updateAssetRequest(reqId, update)
-        if (error) throw error
+      await Config.supabase.from('notifications').insert({
+        recipient_employee_id: req.requested_by,
+        type:      'warning',
+        message:   `Your request for "${assetName}" was not approved.${note ? ' Note: ' + note : ''}`,
+        module:    'assets',
+        record_id: reqId,
+      })
 
-        // Notify employee
-        const recipientMsg = action === 'approve' && stage === 'manager'
-          ? `Your asset request for "${assetName}" has been approved by your manager and is now with HR.`
-          : action === 'approve' && stage === 'hr'
-          ? `Your asset request for "${assetName}" has been fully approved! HR will assign it to you shortly.`
-          : `Your asset request for "${assetName}" has been rejected.${note ? ' Note: ' + note : ''}`
-
-        await Config.supabase.from('notifications').insert({
-          recipient_employee_id: req.requested_by,
-          type:      action === 'approve' ? 'success' : 'warning',
-          message:   recipientMsg,
-          module:    'assets',
-          record_id: reqId,
-        })
-
-        // If manager approved → notify HR
-        if (action === 'approve' && stage === 'manager') {
-          const { data: hrs } = await Config.supabase
-            .from('employees').select('id').in('role', ['super_admin', 'hr'])
-          if (hrs?.length) {
-            await Config.supabase.from('notifications').insert(
-              hrs.map(e => ({
-                recipient_employee_id: e.id,
-                type:      'info',
-                message:   `${reqBy}'s request for "${assetName}" has been approved by their manager. Awaiting your final approval.`,
-                module:    'assets',
-                record_id: reqId,
-              }))
-            )
-          }
-        }
-
-        // Refresh requests
-        if (_p.can_manage) {
-          const { data } = await API.getAllAssetRequests()
-          _requests = data || []
-        } else {
-          const [myRes, mgrRes] = await Promise.all([
-            API.getMySubmittedAssetRequests(_user.id),
-            _isManager ? API.getPendingManagerAssetRequests(_user.id) : Promise.resolve({ data: [] }),
-          ])
-          const seen = new Set()
-          _requests = [...(myRes.data || []), ...(mgrRes.data || [])]
-            .filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true })
-        }
-
-        Utils.closeModal()
-        Utils.showToast(`Request ${action === 'approve' ? 'approved' : 'rejected'}.`, 'success')
-        _renderRequestsTab()
-
-      } catch (err) {
-        saveBtn.disabled = false; saveBtn.textContent = label
-        Utils.showToast(err.message || 'Failed to update request.', 'error')
-      }
+      await _refreshAll()
+      Utils.closeModal()
+      Utils.showToast('Request rejected.', 'success')
+      _renderRequestsTab()
     })
   }
 
@@ -660,6 +644,7 @@ const Assets = (() => {
     const content = document.getElementById('ast-content')
     if (!content) return
 
+    // HR sees all; everyone else sees only their own reports
     const repairs    = _p.can_manage ? _repairs : _repairs.filter(r => r.reported_by === _user.id)
     const open       = repairs.filter(r => r.status === 'open').length
     const inProgress = repairs.filter(r => r.status === 'in_progress').length
@@ -679,7 +664,9 @@ const Assets = (() => {
             : `<div style="overflow-x:auto;"><table class="data-table">
                 <thead><tr>
                   <th>Asset</th><th>Type</th><th>Description</th>
-                  <th>Reported By</th><th>Status</th><th>Date</th><th></th>
+                  <th>Reported By</th><th>Status</th>
+                  ${_p.can_manage ? '<th>HR Notes</th>' : '<th>Update</th>'}
+                  <th>Date</th><th></th>
                 </tr></thead>
                 <tbody>
                   ${repairs.map(r => {
@@ -687,9 +674,12 @@ const Assets = (() => {
                     return `<tr>
                       <td><strong>${Utils.escapeHtml(asset?.name || '—')}</strong></td>
                       <td><span class="badge badge--muted">${r.type === 'repair' ? 'Repair' : 'Issue'}</span></td>
-                      <td class="text-sm">${Utils.escapeHtml(Utils.truncate(r.description, 60))}</td>
+                      <td class="text-sm">${Utils.escapeHtml(Utils.truncate(r.description, 55))}</td>
                       <td class="text-sm text-muted">${Utils.escapeHtml(r.reported_by_emp?.name || '—')}</td>
                       <td>${_repairBadge(r.status)}</td>
+                      <td class="text-sm text-muted" style="max-width:160px;">
+                        ${Utils.escapeHtml(Utils.truncate(r.resolution_notes || '—', 50))}
+                      </td>
                       <td class="text-sm text-muted">${Utils.formatDate(r.created_at)}</td>
                       <td style="white-space:nowrap;">
                         ${r.photo_url ? `<a href="${Utils.escapeHtml(r.photo_url)}" target="_blank" rel="noopener" class="btn btn--xs btn--ghost">📷</a>` : ''}
@@ -713,42 +703,199 @@ const Assets = (() => {
   }
 
   /* ══════════════════════════════════════════════════════════
-     SETTINGS TAB
+     INVENTORIES TAB
+  ══════════════════════════════════════════════════════════ */
+
+  function _renderInventoriesTab() {
+    const content = document.getElementById('ast-content')
+    if (!content) return
+
+    // Aggregate repair costs + last repair date per asset from _repairs
+    const repairCostMap = {}
+    const lastRepairMap = {}
+    _repairs.forEach(r => {
+      if (r.cost) repairCostMap[r.asset_id] = (repairCostMap[r.asset_id] || 0) + Number(r.cost)
+      const date = r.resolved_at || r.updated_at || r.created_at
+      if (!lastRepairMap[r.asset_id] || date > lastRepairMap[r.asset_id]) lastRepairMap[r.asset_id] = date
+    })
+
+    const rows = _assets.map(a => ({
+      ...a,
+      totalRepairCost: repairCostMap[a.id] || 0,
+      lastRepairDate:  lastRepairMap[a.id]  || null,
+    }))
+
+    content.innerHTML = `
+      <div class="section-card">
+        <div class="section-card-header">
+          <h3>Inventories <span class="text-muted" style="font-weight:400;font-size:13px;">(${rows.length} assets)</span></h3>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="data-table">
+            <thead><tr>
+              <th>Item Name</th>
+              <th>Type</th>
+              <th>Purchase Date</th>
+              <th>Purchase Price</th>
+              <th>Vendor</th>
+              <th>Total Repair Cost</th>
+              <th>Last Repair</th>
+              <th></th>
+            </tr></thead>
+            <tbody>
+              ${rows.map(a => `
+                <tr>
+                  <td>
+                    <strong>${Utils.escapeHtml(a.name)}</strong>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${Utils.escapeHtml(a.asset_tag || a.serial_number || '')}</div>
+                  </td>
+                  <td>${Utils.escapeHtml(a.type || '—')}</td>
+                  <td class="text-sm text-muted">${a.purchase_date ? Utils.formatDate(a.purchase_date) : '—'}</td>
+                  <td class="text-sm">${a.purchase_price ? '₹' + Number(a.purchase_price).toLocaleString('en-IN') : '—'}</td>
+                  <td class="text-sm text-muted">${Utils.escapeHtml(a.vendor || '—')}</td>
+                  <td class="text-sm" style="${a.totalRepairCost > 0 ? 'color:var(--danger);font-weight:600;' : 'color:var(--text-muted);'}">
+                    ${a.totalRepairCost > 0 ? '₹' + a.totalRepairCost.toLocaleString('en-IN') : '—'}
+                  </td>
+                  <td class="text-sm text-muted">${a.lastRepairDate ? Utils.formatDate(a.lastRepairDate) : '—'}</td>
+                  <td>
+                    <button class="btn btn--xs btn--ghost ast-inv-view" data-id="${a.id}">History</button>
+                    <button class="btn btn--xs btn--ghost ast-inv-edit" data-id="${a.id}">Edit</button>
+                  </td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`
+
+    content.querySelectorAll('.ast-inv-view').forEach(btn =>
+      btn.addEventListener('click', () => _openRepairHistoryModal(btn.dataset.id))
+    )
+    content.querySelectorAll('.ast-inv-edit').forEach(btn =>
+      btn.addEventListener('click', () => {
+        const a = _assets.find(x => x.id === btn.dataset.id)
+        if (a) _openInventoryEditModal(a)
+      })
+    )
+  }
+
+  async function _openRepairHistoryModal(assetId) {
+    const asset = _assets.find(a => a.id === assetId)
+    if (!asset) return
+
+    const { data: repairs } = await API.getAssetRepairsForAsset(assetId)
+    const reps = repairs || []
+
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">Repair History — ${Utils.escapeHtml(asset.name)}</h3>
+        ${_modalCloseBtn()}
+      </div>
+      <div class="modal-body" style="max-height:60vh;overflow-y:auto;">
+        ${!reps.length
+          ? '<p class="empty-state-text">No repairs logged for this asset.</p>'
+          : reps.map(r => `
+              <div style="padding:12px 0;border-bottom:1px solid var(--border);">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                  ${_repairBadge(r.status)}
+                  <span class="badge badge--muted">${r.type === 'repair' ? 'Repair' : 'Issue'}</span>
+                  <span class="text-muted text-sm">${Utils.formatDate(r.created_at)}</span>
+                </div>
+                <div style="font-size:13px;margin-bottom:4px;">${Utils.escapeHtml(r.description)}</div>
+                ${r.resolution_notes ? `<div style="font-size:12px;color:var(--text-muted);">Notes: ${Utils.escapeHtml(r.resolution_notes)}</div>` : ''}
+                <div style="display:flex;gap:16px;margin-top:6px;font-size:12px;color:var(--text-muted);">
+                  ${r.cost ? `<span>Cost: <strong style="color:var(--danger);">₹${Number(r.cost).toLocaleString('en-IN')}</strong></span>` : ''}
+                  ${r.vendor ? `<span>Vendor: ${Utils.escapeHtml(r.vendor)}</span>` : ''}
+                  ${r.resolved_at ? `<span>Resolved: ${Utils.formatDate(r.resolved_at)}</span>` : ''}
+                </div>
+              </div>`).join('')}
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Close</button>
+      </div>
+    `)
+  }
+
+  function _openInventoryEditModal(asset) {
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">Edit Financial Details — ${Utils.escapeHtml(asset.name)}</h3>
+        ${_modalCloseBtn()}
+      </div>
+      <div class="modal-body">
+        <div id="ast-inv-err" class="alert alert--danger" style="display:none;"></div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Purchase Date</label>
+            <input class="form-input" type="date" id="ast-inv-date" value="${asset.purchase_date || ''}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Purchase Price (₹)</label>
+            <input class="form-input" type="number" id="ast-inv-price" value="${asset.purchase_price || ''}" placeholder="0">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Vendor</label>
+          <input class="form-input" id="ast-inv-vendor" value="${Utils.escapeHtml(asset.vendor || '')}" placeholder="Supplier name">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
+        <button class="btn btn--primary" id="ast-inv-save">Save</button>
+      </div>
+    `)
+
+    document.getElementById('ast-inv-save').addEventListener('click', async () => {
+      const btn = document.getElementById('ast-inv-save')
+      btn.disabled = true; btn.textContent = 'Saving…'
+
+      const { error } = await API.updateAsset(asset.id, {
+        purchase_date:  document.getElementById('ast-inv-date').value  || null,
+        purchase_price: document.getElementById('ast-inv-price').value ? Number(document.getElementById('ast-inv-price').value) : null,
+        vendor:         document.getElementById('ast-inv-vendor').value.trim() || null,
+        updated_at:     new Date().toISOString(),
+      })
+
+      btn.disabled = false; btn.textContent = 'Save'
+      if (error) { document.getElementById('ast-inv-err').textContent = error.message; document.getElementById('ast-inv-err').style.display = 'block'; return }
+
+      Utils.closeModal()
+      Utils.showToast('Financial details updated.', 'success')
+      const { data } = await API.getAssets(); _assets = data || []
+      _renderInventoriesTab()
+    })
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     SETTINGS TAB (asset types only — locations removed)
   ══════════════════════════════════════════════════════════ */
 
   function _renderSettingsTab() {
     const content = document.getElementById('ast-content')
     if (!content) return
 
-    // Stats per type / location
     const typeCount = {}
-    const locCount  = {}
-    _assets.forEach(a => {
-      if (a.type)     typeCount[a.type]     = (typeCount[a.type]     || 0) + 1
-      if (a.location) locCount[a.location]  = (locCount[a.location]  || 0) + 1
-    })
+    _assets.forEach(a => { if (a.type) typeCount[a.type] = (typeCount[a.type] || 0) + 1 })
 
-    function _managedList(items, idAttr, countMap, isType = false) {
+    function _managedList(items, countMap) {
       if (!items.length) return '<p class="empty-state-text" style="padding:12px 0;">None added yet.</p>'
       return items.map(item => `
         <div class="ast-setting-row" data-row-id="${item.id}">
           <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
-            ${isType ? _typeIcon(item.name, 15) : ''}
+            ${_typeIcon(item.name, 15)}
             <span class="ast-setting-name">${Utils.escapeHtml(item.name)}</span>
             <span class="ast-setting-count">${countMap[item.name] || 0} asset${(countMap[item.name] || 0) !== 1 ? 's' : ''}</span>
           </div>
           <div class="ast-setting-actions">
-              <button class="ast-setting-btn ast-setting-edit" data-id="${item.id}" data-name="${Utils.escapeHtml(item.name)}" title="Rename">
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              </button>
-              <button class="ast-setting-btn ast-setting-del" data-id="${item.id}" data-name="${Utils.escapeHtml(item.name)}" title="Remove" style="color:var(--danger);">
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-              </button>
-            </div>
+            <button class="ast-setting-btn ast-setting-edit" data-id="${item.id}" data-name="${Utils.escapeHtml(item.name)}" title="Rename">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button class="ast-setting-btn ast-setting-del" data-id="${item.id}" data-name="${Utils.escapeHtml(item.name)}" title="Remove" style="color:var(--danger);">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+            </button>
+          </div>
         </div>`).join('')
     }
 
-    // Summary stats
     const totalAssets    = _assets.length
     const activeAssigned = _assets.filter(a => a.status === 'in_use').length
     const available      = _assets.filter(a => a.status === 'available').length
@@ -756,50 +903,26 @@ const Assets = (() => {
 
     content.innerHTML = `
       <div class="ast-settings-wrap">
-
-        <!-- Summary strip -->
         <div class="ast-settings-summary">
           <div class="ast-settings-stat"><div class="ast-settings-stat-val">${totalAssets}</div><div class="ast-settings-stat-lbl">Total Assets</div></div>
           <div class="ast-settings-stat"><div class="ast-settings-stat-val" style="color:var(--primary)">${activeAssigned}</div><div class="ast-settings-stat-lbl">Assigned</div></div>
           <div class="ast-settings-stat"><div class="ast-settings-stat-val" style="color:var(--success)">${available}</div><div class="ast-settings-stat-lbl">Available</div></div>
           <div class="ast-settings-stat"><div class="ast-settings-stat-val" style="color:var(--warning)">${underRepair}</div><div class="ast-settings-stat-lbl">Under Repair</div></div>
           <div class="ast-settings-stat"><div class="ast-settings-stat-val">${_types.length}</div><div class="ast-settings-stat-lbl">Asset Types</div></div>
-          <div class="ast-settings-stat"><div class="ast-settings-stat-val">${_locations.length}</div><div class="ast-settings-stat-lbl">Locations</div></div>
         </div>
 
-        <!-- Two-column managed lists -->
-        <div class="ast-settings-grid">
-
-          <!-- Asset Types -->
-          <div class="section-card">
-            <div class="section-card-header">
-              <h3>Asset Types</h3>
-              <span class="text-muted" style="font-size:12px;">${_types.length} types</span>
-            </div>
-            <div class="section-card-body">
-              <div style="display:flex;gap:8px;margin-bottom:14px;">
-                <input class="form-input" id="ast-type-input" placeholder="New type name…" style="flex:1;">
-                <button class="btn btn--primary btn--sm" id="ast-type-add">Add</button>
-              </div>
-              <div id="ast-type-list">${_managedList(_types, 'type', typeCount, true)}</div>
-            </div>
+        <div class="section-card" style="max-width:520px;">
+          <div class="section-card-header">
+            <h3>Asset Types</h3>
+            <span class="text-muted" style="font-size:12px;">${_types.length} types</span>
           </div>
-
-          <!-- Asset Locations -->
-          <div class="section-card">
-            <div class="section-card-header">
-              <h3>Locations</h3>
-              <span class="text-muted" style="font-size:12px;">${_locations.length} locations</span>
+          <div class="section-card-body">
+            <div style="display:flex;gap:8px;margin-bottom:14px;">
+              <input class="form-input" id="ast-type-input" placeholder="New type name…" style="flex:1;">
+              <button class="btn btn--primary btn--sm" id="ast-type-add">Add</button>
             </div>
-            <div class="section-card-body">
-              <div style="display:flex;gap:8px;margin-bottom:14px;">
-                <input class="form-input" id="ast-loc-input" placeholder="New location name…" style="flex:1;">
-                <button class="btn btn--primary btn--sm" id="ast-loc-add">Add</button>
-              </div>
-              <div id="ast-loc-list">${_managedList(_locations, 'loc', locCount)}</div>
-            </div>
+            <div id="ast-type-list">${_managedList(_types, typeCount)}</div>
           </div>
-
         </div>
       </div>`
 
@@ -807,7 +930,6 @@ const Assets = (() => {
   }
 
   function _bindSettingsEvents(content) {
-    // ── Types ──
     content.querySelector('#ast-type-add')?.addEventListener('click', async () => {
       const input = content.querySelector('#ast-type-input')
       const name  = input.value.trim(); if (!name) return
@@ -818,20 +940,7 @@ const Assets = (() => {
       _renderSettingsTab(); Utils.showToast('Type added.', 'success')
     })
 
-    // ── Locations ──
-    content.querySelector('#ast-loc-add')?.addEventListener('click', async () => {
-      const input = content.querySelector('#ast-loc-input')
-      const name  = input.value.trim(); if (!name) return
-      const { error } = await API.createAssetLocation(name)
-      if (error) { Utils.showToast(error.message, 'error'); return }
-      input.value = ''
-      const { data } = await API.getAssetLocations(); _locations = data || []
-      _renderSettingsTab(); Utils.showToast('Location added.', 'success')
-    })
-
-    // ── Inline edit (both lists) ──
     content.querySelectorAll('.ast-setting-edit').forEach(btn => {
-      const isType = !!btn.closest('#ast-type-list')
       btn.addEventListener('click', () => {
         const row      = btn.closest('.ast-setting-row')
         const nameSpan = row.querySelector('.ast-setting-name')
@@ -849,33 +958,27 @@ const Assets = (() => {
         row.querySelector('.ast-inline-cancel').addEventListener('click', _renderSettingsTab)
         row.querySelector('.ast-inline-save').addEventListener('click', async () => {
           const newName = input.value.trim(); if (!newName) return
-          const fn = isType ? API.updateAssetType : API.updateAssetLocation
-          const { error } = await fn(btn.dataset.id, newName)
+          const { error } = await API.updateAssetType(btn.dataset.id, newName)
           if (error) { Utils.showToast(error.message, 'error'); return }
-          if (isType) { const { data } = await API.getAssetTypes();     _types     = data || [] }
-          else        { const { data } = await API.getAssetLocations(); _locations = data || [] }
+          const { data } = await API.getAssetTypes(); _types = data || []
           _renderSettingsTab(); Utils.showToast('Renamed.', 'success')
         })
       })
     })
 
-    // ── Delete (both lists) ──
     content.querySelectorAll('.ast-setting-del').forEach(btn => {
-      const isType = !!btn.closest('#ast-type-list')
       btn.addEventListener('click', async () => {
         if (!confirm(`Remove "${btn.dataset.name}"?`)) return
-        const fn = isType ? API.deleteAssetType : API.deleteAssetLocation
-        const { error } = await fn(btn.dataset.id)
+        const { error } = await API.deleteAssetType(btn.dataset.id)
         if (error) { Utils.showToast(error.message, 'error'); return }
-        if (isType) { const { data } = await API.getAssetTypes();     _types     = data || [] }
-        else        { const { data } = await API.getAssetLocations(); _locations = data || [] }
+        const { data } = await API.getAssetTypes(); _types = data || []
         _renderSettingsTab(); Utils.showToast('Removed.', 'success')
       })
     })
   }
 
   /* ══════════════════════════════════════════════════════════
-     ASSET DETAIL MODAL
+     ASSET DETAIL MODAL — actionable redesign
   ══════════════════════════════════════════════════════════ */
 
   async function _openDetailModal(assetId) {
@@ -887,42 +990,69 @@ const Assets = (() => {
       API.getAssetRepairsForAsset(assetId),
     ])
 
-    const canManage     = _p.can_manage
-    const openRepairs   = (repairs || []).filter(r => r.status !== 'resolved').length
-    const latestPhoto   = (history || []).find(h => h.photo_url)
+    const canManage      = _p.can_manage
+    const isAssignedToMe = asset.assigned_to === _user.id
+    const isSuperAdmin   = _user.role === 'super_admin'
+    const openRepairs    = (repairs || []).filter(r => r.status !== 'resolved').length
+    const latestPhoto    = (history || []).find(h => h.photo_url)
+
+    // Determine available actions for this user
+    const canReturn  = isAssignedToMe || isSuperAdmin
+    const canReport  = isAssignedToMe
+    const canAssign  = canManage && asset.status === 'available'
+    const canEdit    = canManage
+    const canRetire  = _p.can_retire_delete && asset.status !== 'retired'
+    const canDelete  = _p.can_retire_delete
 
     Utils.openModal(`
       <div class="modal-header">
         <div>
           <h3 class="modal-title">${Utils.escapeHtml(asset.name)}</h3>
           <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">
-            ${Utils.escapeHtml(asset.type || '')}${asset.serial_number ? ' · ' + Utils.escapeHtml(asset.serial_number) : ''}
-            ${asset.asset_tag ? ' · Tag: ' + Utils.escapeHtml(asset.asset_tag) : ''}
+            ${Utils.escapeHtml(asset.type || '')}
+            ${asset.asset_tag ? ' · ' + Utils.escapeHtml(asset.asset_tag) : ''}
+            ${asset.serial_number ? ' · S/N: ' + Utils.escapeHtml(asset.serial_number) : ''}
           </div>
         </div>
         ${_modalCloseBtn()}
       </div>
       <div class="modal-body" style="max-height:65vh;overflow-y:auto;">
 
+        <!-- Status + condition badges -->
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
           ${_statusBadge(asset.status)}
           ${_conditionBadge(asset.condition)}
-          ${latestPhoto ? `<a href="${Utils.escapeHtml(latestPhoto.photo_url)}" target="_blank" rel="noopener" class="btn btn--xs btn--ghost">📷 Latest Photo</a>` : ''}
           ${openRepairs ? `<span class="badge badge--danger">${openRepairs} open issue${openRepairs > 1 ? 's' : ''}</span>` : ''}
+          ${latestPhoto ? `<a href="${Utils.escapeHtml(latestPhoto.photo_url)}" target="_blank" rel="noopener" class="btn btn--xs btn--ghost">📷 Latest Photo</a>` : ''}
         </div>
 
+        <!-- Action strip -->
+        ${canReturn || canReport || canAssign || canEdit || canRetire || canDelete ? `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;padding:12px;background:var(--surface);border-radius:var(--radius);margin-bottom:20px;">
+          ${canReport  ? `<button class="btn btn--sm btn--primary" id="ast-detail-report">🔧 Report Issue</button>` : ''}
+          ${canReturn  ? `<button class="btn btn--sm btn--ghost" id="ast-detail-return" style="color:var(--text-muted);">↩ Return Asset</button>` : ''}
+          ${canAssign  ? `<button class="btn btn--sm btn--secondary" id="ast-detail-assign">Assign</button>` : ''}
+          ${canEdit    ? `<button class="btn btn--sm btn--ghost" id="ast-detail-edit">Edit</button>` : ''}
+          ${canManage  ? `<button class="btn btn--sm btn--ghost" id="ast-detail-status">Status</button>` : ''}
+          ${canRetire  ? `<button class="btn btn--sm btn--ghost" id="ast-detail-retire" style="color:var(--warning);">Retire</button>` : ''}
+          ${canDelete  ? `<button class="btn btn--sm btn--ghost" id="ast-detail-delete" style="color:var(--danger);">Delete</button>` : ''}
+        </div>` : ''}
+
+        <!-- Details -->
         <div class="ast-detail-grid" style="margin-bottom:20px;">
-          <div><div class="ast-detail-label">Assigned To</div>
+          <div>
+            <div class="ast-detail-label">Assigned To</div>
             ${asset.employees ? Utils.escapeHtml(asset.employees.name) : '<span class="text-muted">Unassigned</span>'}
           </div>
-          <div><div class="ast-detail-label">Since</div>${asset.assigned_date ? Utils.formatDate(asset.assigned_date) : '—'}</div>
-          <div><div class="ast-detail-label">Location</div>${Utils.escapeHtml(asset.location || '—')}</div>
-          <div><div class="ast-detail-label">Purchase Date</div>${asset.purchase_date ? Utils.formatDate(asset.purchase_date) : '—'}</div>
+          <div>
+            <div class="ast-detail-label">Assigned Since</div>
+            ${asset.assigned_date ? Utils.formatDate(asset.assigned_date) : '—'}
+          </div>
+          <div><div class="ast-detail-label">Condition</div>${asset.condition || '—'}</div>
           ${canManage ? `
           <div><div class="ast-detail-label">Vendor</div>${Utils.escapeHtml(asset.vendor || '—')}</div>
-          <div><div class="ast-detail-label">Purchase Price</div>
-            ${asset.purchase_price ? '₹' + Number(asset.purchase_price).toLocaleString('en-IN') : '—'}
-          </div>` : ''}
+          <div><div class="ast-detail-label">Purchase Price</div>${asset.purchase_price ? '₹' + Number(asset.purchase_price).toLocaleString('en-IN') : '—'}</div>
+          ` : ''}
         </div>
 
         ${asset.notes ? `
@@ -931,6 +1061,21 @@ const Assets = (() => {
             ${Utils.escapeHtml(asset.notes)}
           </div>` : ''}
 
+        <!-- Repair summary (open issues) -->
+        ${openRepairs > 0 ? `
+          <div style="margin-bottom:20px;">
+            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;font-weight:600;">Open Issues</div>
+            ${(repairs || []).filter(r => r.status !== 'resolved').map(r => `
+              <div style="display:flex;gap:10px;padding:8px 12px;background:var(--surface);border-radius:6px;margin-bottom:6px;">
+                <div style="flex:1;">
+                  <div style="font-size:13px;font-weight:500;">${Utils.escapeHtml(Utils.truncate(r.description, 80))}</div>
+                  ${r.resolution_notes ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Update: ${Utils.escapeHtml(r.resolution_notes)}</div>` : ''}
+                </div>
+                ${_repairBadge(r.status)}
+              </div>`).join('')}
+          </div>` : ''}
+
+        <!-- History timeline -->
         <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;font-weight:600;">History</div>
         ${!(history || []).length
           ? '<p class="empty-state-text">No history recorded yet.</p>'
@@ -949,27 +1094,18 @@ const Assets = (() => {
               </div>`).join('')}
       </div>
 
-      <div class="modal-footer" style="flex-wrap:wrap;gap:8px;">
+      <div class="modal-footer">
         <button class="btn btn--ghost" onclick="Utils.closeModal()">Close</button>
-        ${canManage ? `<button class="btn btn--ghost btn--sm" id="ast-detail-edit">Edit</button>` : ''}
-        ${canManage && asset.status === 'available' ? `<button class="btn btn--secondary btn--sm" id="ast-detail-assign">Assign</button>` : ''}
-        ${(canManage || _p.can_return) && asset.status === 'in_use' ? `<button class="btn btn--ghost btn--sm" id="ast-detail-return">Return</button>` : ''}
-        ${_p.can_report || canManage ? `<button class="btn btn--primary btn--sm" id="ast-detail-report">Report Issue</button>` : ''}
       </div>
     `)
 
-    document.getElementById('ast-detail-edit')?.addEventListener('click', () => {
-      Utils.closeModal(); _openEditModal(asset)
-    })
-    document.getElementById('ast-detail-assign')?.addEventListener('click', () => {
-      Utils.closeModal(); _openAssignModal(asset)
-    })
-    document.getElementById('ast-detail-return')?.addEventListener('click', () => {
-      Utils.closeModal(); _openReturnModal(asset)
-    })
-    document.getElementById('ast-detail-report')?.addEventListener('click', () => {
-      Utils.closeModal(); _openReportModal(asset)
-    })
+    document.getElementById('ast-detail-report')?.addEventListener('click', () => { Utils.closeModal(); _openReportModal(asset) })
+    document.getElementById('ast-detail-return')?.addEventListener('click', () => { Utils.closeModal(); _openReturnModal(asset) })
+    document.getElementById('ast-detail-assign')?.addEventListener('click', () => { Utils.closeModal(); _openAssignModal(asset) })
+    document.getElementById('ast-detail-edit')?.addEventListener('click',   () => { Utils.closeModal(); _openEditModal(asset) })
+    document.getElementById('ast-detail-status')?.addEventListener('click', () => { Utils.closeModal(); _openStatusModal(asset) })
+    document.getElementById('ast-detail-retire')?.addEventListener('click', () => { Utils.closeModal(); _openRetireModal(asset) })
+    document.getElementById('ast-detail-delete')?.addEventListener('click', () => { Utils.closeModal(); _confirmDeleteAsset(asset) })
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -1008,7 +1144,10 @@ const Assets = (() => {
           </div>
           <div class="form-group">
             <label class="form-label">Type <span class="required">*</span></label>
-            <select class="form-select" id="ast-f-type">${typeOptions}</select>
+            <select class="form-select" id="ast-f-type">
+              <option value="">— Select type —</option>
+              ${typeOptions}
+            </select>
           </div>
         </div>
         <div class="form-row">
@@ -1026,14 +1165,6 @@ const Assets = (() => {
             <label class="form-label">Condition</label>
             <select class="form-select" id="ast-f-condition">
               ${CONDITIONS.map(c => `<option value="${c}"${(asset?.condition || 'Good') === c ? ' selected' : ''}>${c}</option>`).join('')}
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Location</label>
-            <select class="form-select" id="ast-f-location">
-              <option value="">— Select location —</option>
-              ${_locations.map(l => `<option value="${Utils.escapeHtml(l.name)}"${asset?.location === l.name ? ' selected' : ''}>${Utils.escapeHtml(l.name)}</option>`).join('')}
-              ${asset?.location && !_locations.find(l => l.name === asset.location) ? `<option value="${Utils.escapeHtml(asset.location)}" selected>${Utils.escapeHtml(asset.location)}</option>` : ''}
             </select>
           </div>
         </div>
@@ -1063,7 +1194,7 @@ const Assets = (() => {
       </div>
     `)
 
-    // ── Asset name typeahead (suggestions from existing asset names) ──
+    // Asset name typeahead from existing names
     const _existingNames = [...new Set(_assets.map(a => a.name).filter(Boolean))].sort()
     const _nameInput     = document.getElementById('ast-f-name')
     const _nameDropdown  = document.getElementById('ast-name-dropdown')
@@ -1076,28 +1207,18 @@ const Assets = (() => {
         `<div class="custom-select-item" data-name="${Utils.escapeHtml(n)}">${Utils.escapeHtml(n)}</div>`
       ).join('')
       _nameList.querySelectorAll('.custom-select-item').forEach(el => {
-        el.addEventListener('mousedown', ev => {
-          ev.preventDefault()
-          _nameInput.value = el.dataset.name
-          _nameDropdown.style.display = 'none'
-        })
+        el.addEventListener('mousedown', ev => { ev.preventDefault(); _nameInput.value = el.dataset.name; _nameDropdown.style.display = 'none' })
       })
       _nameDropdown.style.display = 'block'
     }
 
     _nameInput?.addEventListener('input', () => _renderNameSuggestions(_nameInput.value.trim()))
     _nameInput?.addEventListener('blur',  () => setTimeout(() => { _nameDropdown.style.display = 'none' }, 150))
-    document.addEventListener('click', function _closeNameDrop(e) {
-      if (!document.getElementById('ast-name-wrap')?.contains(e.target)) {
-        _nameDropdown.style.display = 'none'
-        document.removeEventListener('click', _closeNameDrop)
-      }
-    })
 
     document.getElementById('ast-form-save').addEventListener('click', async () => {
       const errEl = document.getElementById('ast-form-err')
       const btn   = document.getElementById('ast-form-save')
-      const name  = document.getElementById('ast-f-name').value.trim()
+      const name  = _nameInput.value.trim()
 
       errEl.style.display = 'none'
       if (!name) { errEl.textContent = 'Asset name is required.'; errEl.style.display = 'block'; return }
@@ -1106,16 +1227,15 @@ const Assets = (() => {
 
       const payload = {
         name,
-        type:           document.getElementById('ast-f-type').value,
-        serial_number:  document.getElementById('ast-f-serial').value.trim()          || null,
-        asset_tag:      document.getElementById('ast-f-tag').value.trim()             || null,
+        type:           document.getElementById('ast-f-type').value          || null,
+        serial_number:  document.getElementById('ast-f-serial').value.trim() || null,
+        asset_tag:      document.getElementById('ast-f-tag').value.trim()    || null,
         condition:      document.getElementById('ast-f-condition').value,
-        location:       document.getElementById('ast-f-location').value.trim()        || null,
-        purchase_date:  document.getElementById('ast-f-purchase-date').value          || null,
+        purchase_date:  document.getElementById('ast-f-purchase-date').value || null,
         purchase_price: document.getElementById('ast-f-price').value
                           ? Number(document.getElementById('ast-f-price').value) : null,
-        vendor:         document.getElementById('ast-f-vendor').value.trim()          || null,
-        notes:          document.getElementById('ast-f-notes').value.trim()           || null,
+        vendor:         document.getElementById('ast-f-vendor').value.trim() || null,
+        notes:          document.getElementById('ast-f-notes').value.trim()  || null,
         updated_at:     new Date().toISOString(),
       }
 
@@ -1127,16 +1247,13 @@ const Assets = (() => {
         error = res.error
         if (!error && res.data) {
           await API.addAssetHistory({
-            asset_id:     res.data.id,
-            action:       'created',
-            notes:        'Added to inventory',
-            performed_by: _user.id,
+            asset_id: res.data.id, action: 'created',
+            notes: 'Added to inventory', performed_by: _user.id,
           })
         }
       }
 
       btn.disabled = false; btn.textContent = isEdit ? 'Save Changes' : 'Add Asset'
-
       if (error) { errEl.textContent = error.message; errEl.style.display = 'block'; return }
 
       Utils.closeModal()
@@ -1153,14 +1270,14 @@ const Assets = (() => {
     const file = document.getElementById(fileInputId)?.files[0]
     if (!file) return null
     const statusEl = document.getElementById(statusElId)
-    if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = 'Uploading photo to Drive…' }
+    if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = 'Uploading photo…' }
     const result = await API.uploadAssetPhoto(file, assetId, context)
     if (statusEl) statusEl.textContent = result.drive_url ? 'Photo uploaded.' : 'Photo upload failed — continuing without photo.'
     return result.drive_url || null
   }
 
   /* ══════════════════════════════════════════════════════════
-     ASSIGN MODAL
+     ASSIGN MODAL (HR / Super Admin only)
   ══════════════════════════════════════════════════════════ */
 
   function _openAssignModal(asset) {
@@ -1195,7 +1312,7 @@ const Assets = (() => {
             placeholder="Any notes about this assignment…"></textarea>
         </div>
         <div class="form-group">
-          <label class="form-label">Photo <span style="font-weight:400;color:var(--text-muted);">(recommended — saved to Drive)</span></label>
+          <label class="form-label">Photo <span style="font-weight:400;color:var(--text-muted);">(recommended)</span></label>
           <input type="file" class="form-input" id="ast-assign-photo" accept="image/*" style="padding:6px;">
           <div id="ast-assign-photo-status" style="font-size:12px;color:var(--primary);margin-top:4px;display:none;"></div>
         </div>
@@ -1207,11 +1324,11 @@ const Assets = (() => {
     `)
 
     document.getElementById('ast-assign-save').addEventListener('click', async () => {
-      const errEl  = document.getElementById('ast-assign-err')
-      const btn    = document.getElementById('ast-assign-save')
-      const empId  = document.getElementById('ast-assign-emp').value
-      const cond   = document.getElementById('ast-assign-cond').value
-      const notes  = document.getElementById('ast-assign-notes').value.trim()
+      const errEl = document.getElementById('ast-assign-err')
+      const btn   = document.getElementById('ast-assign-save')
+      const empId = document.getElementById('ast-assign-emp').value
+      const cond  = document.getElementById('ast-assign-cond').value
+      const notes = document.getElementById('ast-assign-notes').value.trim()
 
       errEl.style.display = 'none'
       if (!empId) { errEl.textContent = 'Please select an employee.'; errEl.style.display = 'block'; return }
@@ -1230,14 +1347,9 @@ const Assets = (() => {
 
       if (!error) {
         await API.addAssetHistory({
-          asset_id:         asset.id,
-          action:           'assigned',
-          to_employee_id:   empId,
-          condition_before: asset.condition,
-          condition_after:  cond,
-          notes:            notes || null,
-          photo_url:        photoUrl,
-          performed_by:     _user.id,
+          asset_id: asset.id, action: 'assigned', to_employee_id: empId,
+          condition_before: asset.condition, condition_after: cond,
+          notes: notes || null, photo_url: photoUrl, performed_by: _user.id,
         })
       }
 
@@ -1248,9 +1360,8 @@ const Assets = (() => {
         API.createNotification({
           recipient_employee_id: empId,
           type: 'info',
-          message: `Asset "${Utils.escapeHtml(asset.name)}" has been assigned to you.`,
-          module: 'assets',
-          record_id: asset.id,
+          message: `Asset "${asset.name}" has been assigned to you.`,
+          module: 'assets', record_id: asset.id,
         })
       }
       Utils.closeModal()
@@ -1260,7 +1371,7 @@ const Assets = (() => {
   }
 
   /* ══════════════════════════════════════════════════════════
-     RETURN MODAL
+     RETURN MODAL (assigned user only)
   ══════════════════════════════════════════════════════════ */
 
   function _openReturnModal(asset) {
@@ -1272,7 +1383,6 @@ const Assets = (() => {
         <div id="ast-return-err" class="alert alert--danger" style="display:none;"></div>
         <div style="font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:16px;">
           ${Utils.escapeHtml(asset.name)}
-          ${asset.employees ? ` — returning from ${Utils.escapeHtml(asset.employees.name)}` : ''}
         </div>
         <div class="form-group">
           <label class="form-label">Condition on Return <span class="required">*</span></label>
@@ -1286,7 +1396,7 @@ const Assets = (() => {
             placeholder="Any observations on return…"></textarea>
         </div>
         <div class="form-group">
-          <label class="form-label">Photo <span style="font-weight:400;color:var(--text-muted);">(recommended — saved to Drive)</span></label>
+          <label class="form-label">Photo <span style="font-weight:400;color:var(--text-muted);">(recommended)</span></label>
           <input type="file" class="form-input" id="ast-return-photo" accept="image/*" style="padding:6px;">
           <div id="ast-return-photo-status" style="font-size:12px;color:var(--primary);margin-top:4px;display:none;"></div>
         </div>
@@ -1308,28 +1418,21 @@ const Assets = (() => {
       const photoUrl = await _uploadPhoto('ast-return-photo', 'ast-return-photo-status', asset.id, 'return')
 
       const { error } = await API.updateAsset(asset.id, {
-        assigned_to:   null,
-        assigned_date: null,
-        status:        'available',
-        condition:     cond,
-        updated_at:    new Date().toISOString(),
+        assigned_to: null, assigned_date: null,
+        status: 'available', condition: cond, updated_at: new Date().toISOString(),
       })
 
       if (!error) {
         await API.addAssetHistory({
-          asset_id:         asset.id,
-          action:           'returned',
+          asset_id: asset.id, action: 'returned',
           from_employee_id: asset.assigned_to,
-          condition_before: asset.condition,
-          condition_after:  cond,
-          notes:            notes || null,
-          photo_url:        photoUrl,
-          performed_by:     _user.id,
+          condition_before: asset.condition, condition_after: cond,
+          notes: notes || null, photo_url: photoUrl, performed_by: _user.id,
         })
       }
 
       btn.disabled = false; btn.textContent = 'Confirm Return'
-      if (error) { document.getElementById('ast-return-err').textContent = error.message; document.getElementById('ast-return-err').style.display = 'block'; return }
+      if (error) { errEl.textContent = error.message; errEl.style.display = 'block'; return }
 
       Utils.closeModal()
       Utils.showToast('Asset returned.', 'success')
@@ -1338,60 +1441,180 @@ const Assets = (() => {
   }
 
   /* ══════════════════════════════════════════════════════════
-     MARK LOST MODAL
+     STATUS UPDATE MODAL (HR / Super Admin)
   ══════════════════════════════════════════════════════════ */
 
-  function _openLostModal(asset) {
+  function _openStatusModal(asset) {
     Utils.openModal(`
       <div class="modal-header">
-        <h3 class="modal-title" style="color:var(--danger);">Mark as Lost</h3>${_modalCloseBtn()}
+        <h3 class="modal-title">Update Status — ${Utils.escapeHtml(asset.name)}</h3>${_modalCloseBtn()}
       </div>
       <div class="modal-body">
-        <div id="ast-lost-err" class="alert alert--danger" style="display:none;"></div>
-        <p style="font-size:14px;margin-bottom:16px;">
-          You are marking <strong>${Utils.escapeHtml(asset.name)}</strong> as lost.
-          ${asset.employees
-            ? ` The assigned employee <strong>${Utils.escapeHtml(asset.employees.name)}</strong> remains accountable per company policy.`
-            : ''}
-        </p>
+        <div id="ast-status-err" class="alert alert--danger" style="display:none;"></div>
         <div class="form-group">
-          <label class="form-label">Notes <span class="required">*</span></label>
-          <textarea class="form-input" id="ast-lost-notes" rows="3" style="resize:vertical;"
-            placeholder="Describe the circumstances…"></textarea>
+          <label class="form-label">New Status <span class="required">*</span></label>
+          <select class="form-select" id="ast-status-val">
+            ${Object.entries(STATUSES).map(([v, s]) =>
+              `<option value="${v}"${asset.status === v ? ' selected' : ''}>${s.label}</option>`
+            ).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea class="form-input" id="ast-status-notes" rows="2" style="resize:vertical;"
+            placeholder="Reason for status change…"></textarea>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
-        <button class="btn btn--danger" id="ast-lost-save">Mark as Lost</button>
+        <button class="btn btn--primary" id="ast-status-save">Update</button>
       </div>
     `)
 
-    document.getElementById('ast-lost-save').addEventListener('click', async () => {
-      const errEl = document.getElementById('ast-lost-err')
-      const btn   = document.getElementById('ast-lost-save')
-      const notes = document.getElementById('ast-lost-notes').value.trim()
-
-      if (!notes) { errEl.textContent = 'Please describe the circumstances.'; errEl.style.display = 'block'; return }
+    document.getElementById('ast-status-save').addEventListener('click', async () => {
+      const btn    = document.getElementById('ast-status-save')
+      const status = document.getElementById('ast-status-val').value
+      const notes  = document.getElementById('ast-status-notes').value.trim()
 
       btn.disabled = true; btn.textContent = 'Saving…'
 
-      const { error } = await API.updateAsset(asset.id, { status: 'lost', updated_at: new Date().toISOString() })
+      const update = { status, updated_at: new Date().toISOString() }
+      // If moving back to available, clear assignment
+      if (status === 'available') { update.assigned_to = null; update.assigned_date = null }
 
-      if (!error) {
-        await API.addAssetHistory({ asset_id: asset.id, action: 'lost', notes, performed_by: _user.id })
+      const { error } = await API.updateAsset(asset.id, update)
+
+      btn.disabled = false; btn.textContent = 'Update'
+      if (error) { document.getElementById('ast-status-err').textContent = error.message; document.getElementById('ast-status-err').style.display = 'block'; return }
+
+      if (notes) {
+        await API.addAssetHistory({
+          asset_id: asset.id, action: 'condition_updated',
+          notes: `Status updated to ${STATUSES[status]?.label || status}. ${notes}`,
+          performed_by: _user.id,
+        })
       }
 
-      btn.disabled = false; btn.textContent = 'Mark as Lost'
-      if (error) { errEl.textContent = error.message; errEl.style.display = 'block'; return }
-
       Utils.closeModal()
-      Utils.showToast('Asset marked as lost.', 'error')
+      Utils.showToast('Status updated.', 'success')
       await _refresh()
     })
   }
 
   /* ══════════════════════════════════════════════════════════
-     REPORT ISSUE / REPAIR MODAL
+     RETIRE MODAL
+  ══════════════════════════════════════════════════════════ */
+
+  function _openRetireModal(asset) {
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title" style="color:var(--warning);">Retire Asset</h3>${_modalCloseBtn()}
+      </div>
+      <div class="modal-body">
+        <div id="ast-retire-err" class="alert alert--danger" style="display:none;"></div>
+        <p style="font-size:14px;margin-bottom:16px;">
+          Retire <strong>${Utils.escapeHtml(asset.name)}</strong>? The asset will remain in the system for records but cannot be assigned.
+        </p>
+        <div class="form-group">
+          <label class="form-label">Reason <span class="required">*</span></label>
+          <textarea class="form-input" id="ast-retire-notes" rows="3" style="resize:vertical;"
+            placeholder="e.g. End of lifecycle, replaced by newer model…"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
+        <button class="btn btn--warning" id="ast-retire-save" style="background:var(--warning);color:#fff;border:none;">Retire Asset</button>
+      </div>
+    `)
+
+    document.getElementById('ast-retire-save').addEventListener('click', async () => {
+      const errEl = document.getElementById('ast-retire-err')
+      const btn   = document.getElementById('ast-retire-save')
+      const notes = document.getElementById('ast-retire-notes').value.trim()
+
+      if (!notes) { errEl.textContent = 'Please provide a reason.'; errEl.style.display = 'block'; return }
+
+      btn.disabled = true; btn.textContent = 'Retiring…'
+
+      const { error } = await API.updateAsset(asset.id, {
+        status:        'retired',
+        assigned_to:   null,
+        assigned_date: null,
+        updated_at:    new Date().toISOString(),
+      })
+
+      if (!error) {
+        await API.addAssetHistory({
+          asset_id: asset.id, action: 'retired',
+          notes, performed_by: _user.id,
+        })
+        // Notify if someone had it assigned
+        if (asset.assigned_to && asset.assigned_to !== _user.id) {
+          API.createNotification({
+            recipient_employee_id: asset.assigned_to,
+            type: 'info',
+            message: `"${asset.name}" assigned to you has been retired and reclaimed.`,
+            module: 'assets',
+          })
+        }
+      }
+
+      btn.disabled = false; btn.textContent = 'Retire Asset'
+      if (error) { errEl.textContent = error.message; errEl.style.display = 'block'; return }
+
+      Utils.closeModal()
+      Utils.showToast('Asset retired.', 'success')
+      await _refresh()
+    })
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     DELETE ASSET
+  ══════════════════════════════════════════════════════════ */
+
+  async function _confirmDeleteAsset(asset) {
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title" style="color:var(--danger);">Delete Asset</h3>${_modalCloseBtn()}
+      </div>
+      <div class="modal-body">
+        <p style="font-size:14px;margin-bottom:8px;">
+          Permanently delete <strong>${Utils.escapeHtml(asset.name)}</strong>?
+        </p>
+        <p style="font-size:13px;color:var(--text-muted);">
+          This action is irreversible. Use this only if the asset was created by mistake. All history will be lost.
+        </p>
+        <div style="margin-top:16px;padding:12px;background:#FEF2F2;border-radius:var(--radius);font-size:13px;color:var(--danger);">
+          Type <strong>DELETE</strong> to confirm:
+        </div>
+        <input class="form-input" id="ast-delete-confirm-input" placeholder="Type DELETE" style="margin-top:8px;">
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
+        <button class="btn btn--danger" id="ast-delete-confirm">Delete Permanently</button>
+      </div>
+    `)
+
+    document.getElementById('ast-delete-confirm').addEventListener('click', async () => {
+      const val = document.getElementById('ast-delete-confirm-input').value.trim()
+      if (val !== 'DELETE') { Utils.showToast('Type DELETE to confirm.', 'error'); return }
+
+      const btn = document.getElementById('ast-delete-confirm')
+      btn.disabled = true; btn.textContent = 'Deleting…'
+
+      const { error } = await API.deleteAsset(asset.id)
+
+      btn.disabled = false; btn.textContent = 'Delete Permanently'
+      if (error) { Utils.showToast(error.message, 'error'); return }
+
+      Utils.closeModal()
+      Utils.showToast('Asset deleted.', 'success')
+      await _refresh()
+    })
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     REPORT ISSUE MODAL (any employee with assigned asset)
   ══════════════════════════════════════════════════════════ */
 
   function _openReportModal(asset) {
@@ -1415,7 +1638,7 @@ const Assets = (() => {
             placeholder="Describe the issue or repair needed…"></textarea>
         </div>
         <div class="form-group">
-          <label class="form-label">Photo <span style="font-weight:400;color:var(--text-muted);">(optional — saved to Drive)</span></label>
+          <label class="form-label">Photo <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
           <input type="file" class="form-input" id="ast-report-photo" accept="image/*" style="padding:6px;">
           <div id="ast-report-photo-status" style="font-size:12px;color:var(--primary);margin-top:4px;display:none;"></div>
         </div>
@@ -1439,38 +1662,50 @@ const Assets = (() => {
       const photoUrl = await _uploadPhoto('ast-report-photo', 'ast-report-photo-status', asset.id, 'issue')
 
       const { error } = await API.createAssetRepair({
-        asset_id:    asset.id,
-        reported_by: _user.id,
-        type,
-        description: desc,
-        photo_url:   photoUrl,
-        status:      'open',
+        asset_id: asset.id, reported_by: _user.id,
+        type, description: desc, photo_url: photoUrl, status: 'open',
       })
 
       if (!error) {
         await API.addAssetHistory({
-          asset_id:     asset.id,
-          action:       'repair_logged',
-          notes:        `${type === 'repair' ? 'Repair request' : 'Issue'}: ${desc}`,
+          asset_id: asset.id, action: 'repair_logged',
+          notes: `${type === 'repair' ? 'Repair request' : 'Issue'}: ${desc}`,
           performed_by: _user.id,
         })
+
+        // Notify all HR/Super Admin
+        const { data: hrs } = await Config.supabase
+          .from('employees').select('id').in('role', ['super_admin', 'hr'])
+        if (hrs?.length) {
+          await Config.supabase.from('notifications').insert(
+            hrs.map(e => ({
+              recipient_employee_id: e.id,
+              type:    'warning',
+              message: `${_user.name} reported a ${type} on "${asset.name}": ${Utils.truncate(desc, 80)}`,
+              module:  'assets',
+            }))
+          )
+        }
       }
 
       btn.disabled = false; btn.textContent = 'Submit Report'
       if (error) { errEl.textContent = error.message; errEl.style.display = 'block'; return }
 
       Utils.closeModal()
-      Utils.showToast('Issue reported.', 'success')
+      Utils.showToast('Issue reported — HR has been notified.', 'success')
 
-      if (_p.can_manage) {
+      if (_p.can_manage || _p.can_resolve) {
         const { data } = await API.getAllAssetRepairs()
+        _repairs = data || []
+      } else {
+        const { data } = await API.getMyAssetRepairs(_user.id)
         _repairs = data || []
       }
     })
   }
 
   /* ══════════════════════════════════════════════════════════
-     RESOLVE REPAIR MODAL
+     RESOLVE / UPDATE REPAIR MODAL (HR only)
   ══════════════════════════════════════════════════════════ */
 
   function _openResolveModal(repair) {
@@ -1488,16 +1723,16 @@ const Assets = (() => {
           <br><span class="text-muted">${Utils.escapeHtml(repair.description)}</span>
         </div>
         <div class="form-group">
-          <label class="form-label">Update Status <span class="required">*</span></label>
+          <label class="form-label">Status <span class="required">*</span></label>
           <select class="form-select" id="ast-resolve-status">
             <option value="in_progress"${repair.status === 'in_progress' ? ' selected' : ''}>In Progress</option>
             <option value="resolved">Resolved</option>
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Resolution Notes</label>
+          <label class="form-label">Notes / Update for Employee</label>
           <textarea class="form-input" id="ast-resolve-notes" rows="2" style="resize:vertical;"
-            placeholder="What was done?"></textarea>
+            placeholder="What is being done? Visible to the employee."></textarea>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -1542,10 +1777,8 @@ const Assets = (() => {
 
       if (!error && status === 'resolved') {
         await API.addAssetHistory({
-          asset_id:     repair.asset_id,
-          action:       'repair_resolved',
-          notes:        notes || 'Issue resolved',
-          performed_by: _user.id,
+          asset_id: repair.asset_id, action: 'repair_resolved',
+          notes: notes || 'Issue resolved', performed_by: _user.id,
         })
         const a = _assets.find(x => x.id === repair.asset_id)
         if (a?.status === 'under_repair') {
@@ -1556,13 +1789,38 @@ const Assets = (() => {
       btn.disabled = false; btn.textContent = 'Update'
       if (error) { errEl.textContent = error.message; errEl.style.display = 'block'; return }
 
+      // Notify the reporter
+      const notifMsg = status === 'resolved'
+        ? `Your reported issue on "${asset?.name}" has been resolved.${notes ? ' Note: ' + notes : ''}`
+        : `Update on your reported issue for "${asset?.name}": ${notes || 'Status updated to In Progress.'}`
+
+      await Config.supabase.from('notifications').insert({
+        recipient_employee_id: repair.reported_by,
+        type:    status === 'resolved' ? 'success' : 'info',
+        message: notifMsg,
+        module:  'assets',
+      })
+
+      // Also notify the reporter's manager
+      const reporter = _employees.find(e => e.id === repair.reported_by)
+      if (reporter?.manager_id && reporter.manager_id !== repair.reported_by) {
+        await Config.supabase.from('notifications').insert({
+          recipient_employee_id: reporter.manager_id,
+          type:    'info',
+          message: `FYI: Issue on "${asset?.name}" (reported by ${reporter.name}) — status updated to ${status === 'resolved' ? 'Resolved' : 'In Progress'}.`,
+          module:  'assets',
+        })
+      }
+
       Utils.closeModal()
       Utils.showToast('Issue updated.', 'success')
       await _refresh()
     })
   }
 
-  /* ── Request Asset Modal ────────────────────────────────────── */
+  /* ══════════════════════════════════════════════════════════
+     REQUEST ASSET MODAL
+  ══════════════════════════════════════════════════════════ */
 
   function _openRequestModal() {
     const available = _assets.filter(a => a.status === 'available')
@@ -1570,96 +1828,96 @@ const Assets = (() => {
     Utils.openModal(`
       <div class="modal-header">
         <h3 class="modal-title">Request an Asset</h3>
-        <button class="modal-close" onclick="Utils.closeModal()">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
+        ${_modalCloseBtn()}
       </div>
       <div class="modal-body">
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--text-muted);">
-          Your request goes to your reporting manager first, then to HR for final approval.
+          Your request will go to HR for approval. Your reporting manager will also be notified.
+        </div>
+        <div class="form-group">
+          <label class="form-label">Reason for Request <span class="required">*</span></label>
+          <textarea class="form-input" id="ast-req-reason" rows="2" style="resize:vertical;"
+            placeholder="Why do you need this asset?"></textarea>
         </div>
         ${!available.length
           ? '<p class="empty-state-text">No assets are currently available.</p>'
-          : `<div style="display:flex;flex-direction:column;gap:8px;">
+          : `<div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+              <label class="form-label">Select Asset <span class="required">*</span></label>
               ${available.map(a => `
                 <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);gap:12px;">
                   <div>
                     <div style="font-weight:600;font-size:14px;">${Utils.escapeHtml(a.name)}</div>
-                    <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${Utils.escapeHtml(a.type || '')}${a.serial_number ? ' · ' + Utils.escapeHtml(a.serial_number) : ''}</div>
+                    <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${Utils.escapeHtml(a.type || '')}${a.asset_tag ? ' · ' + Utils.escapeHtml(a.asset_tag) : ''}</div>
                   </div>
                   <button class="btn btn--sm btn--primary ast-req-btn" data-id="${a.id}" data-name="${Utils.escapeHtml(a.name)}">Request</button>
                 </div>`).join('')}
             </div>`}
-        <div class="form-group" style="margin-top:16px;margin-bottom:0;">
-          <label class="form-label">Reason <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
-          <textarea class="form-input" id="ast-req-reason" rows="2" placeholder="Why do you need this asset?" style="resize:vertical;"></textarea>
-        </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
       </div>
-    `, '')
+    `)
 
     document.querySelectorAll('.ast-req-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
-        btn.disabled = true; btn.textContent = 'Submitting…'
-        const reason = document.getElementById('ast-req-reason')?.value.trim() || null
-        try {
-          // Look up reporting manager
-          const { data: emp } = await Config.supabase
-            .from('employees').select('manager_id').eq('id', _user.id).single()
-          const managerId = emp?.manager_id || null
+        const reason = document.getElementById('ast-req-reason')?.value.trim()
+        if (!reason) {
+          Utils.showToast('Please provide a reason for your request.', 'error')
+          document.getElementById('ast-req-reason')?.focus()
+          return
+        }
 
-          // Create request record
+        btn.disabled = true; btn.textContent = 'Submitting…'
+
+        try {
+          // Create request directly at pending_hr — manager gets FYI only
           const { data: req, error } = await API.createAssetRequest({
             asset_id:     btn.dataset.id,
             requested_by: _user.id,
-            manager_id:   managerId,
+            manager_id:   _user.manager_id || null,
             reason,
-            status:       managerId ? 'pending_manager' : 'pending_hr',
+            status:       'pending_hr',
           })
           if (error) throw error
 
-          // Notify manager (or HR directly if no manager)
-          if (managerId) {
-            await Config.supabase.from('notifications').insert({
-              recipient_employee_id: managerId,
-              type:      'info',
-              message:   `${_user.name} has requested an asset: "${btn.dataset.name}". Awaiting your approval.`,
-              module:    'assets',
-              record_id: req?.id || null,
-            })
-          } else {
-            const { data: admins } = await Config.supabase
-              .from('employees').select('id').in('role', ['super_admin', 'hr'])
-            if (admins?.length) {
-              await Config.supabase.from('notifications').insert(
-                admins.map(e => ({
-                  recipient_employee_id: e.id,
-                  type: 'info',
-                  message: `${_user.name} has requested asset: "${btn.dataset.name}" (no manager set — direct HR approval needed).`,
-                  module: 'assets', record_id: req?.id || null,
-                }))
-              )
-            }
+          // Notify all HR / Super Admin
+          const { data: hrs } = await Config.supabase
+            .from('employees').select('id').in('role', ['super_admin', 'hr'])
+          if (hrs?.length) {
+            await Config.supabase.from('notifications').insert(
+              hrs.map(e => ({
+                recipient_employee_id: e.id,
+                type:    'info',
+                message: `${_user.name} has requested asset "${btn.dataset.name}". Awaiting your approval.`,
+                module:  'assets',
+                record_id: req?.id || null,
+              }))
+            )
           }
 
-          // Refresh request list
+          // FYI notification to reporting manager (no action needed)
+          if (_user.manager_id) {
+            await Config.supabase.from('notifications').insert({
+              recipient_employee_id: _user.manager_id,
+              type:    'info',
+              message: `FYI: ${_user.name} has requested asset "${btn.dataset.name}". HR will handle the approval.`,
+              module:  'assets',
+              record_id: req?.id || null,
+            })
+          }
+
+          // Refresh requests list
           if (_p.can_manage) {
             const { data } = await API.getAllAssetRequests()
             _requests = data || []
           } else {
-            const [myRes, mgrRes] = await Promise.all([
-              API.getMySubmittedAssetRequests(_user.id),
-              _isManager ? API.getPendingManagerAssetRequests(_user.id) : Promise.resolve({ data: [] }),
-            ])
-            const seen = new Set()
-            _requests = [...(myRes.data || []), ...(mgrRes.data || [])]
-              .filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true })
+            const { data } = await API.getMySubmittedAssetRequests(_user.id)
+            _requests = data || []
           }
 
           Utils.closeModal()
-          Utils.showToast(managerId ? 'Request submitted — your manager has been notified.' : 'Request submitted — HR has been notified.', 'success')
+          Utils.showToast('Request submitted — HR has been notified.', 'success')
+
         } catch (err) {
           btn.disabled = false; btn.textContent = 'Request'
           Utils.showToast(err.message || 'Failed to submit request.', 'error')
@@ -1671,13 +1929,18 @@ const Assets = (() => {
   /* ── Refresh ───────────────────────────────────────────────── */
 
   async function _refresh() {
+    const { data } = await API.getAssets()
+    _assets = data || []
+    _loadTab(_activeTab)
+  }
+
+  async function _refreshAll() {
     const [assetsRes, repairsRes] = await Promise.all([
       API.getAssets(),
-      _p.can_manage ? API.getAllAssetRepairs() : Promise.resolve({ data: [] }),
+      _p.can_manage || _p.can_resolve ? API.getAllAssetRepairs() : API.getMyAssetRepairs(_user.id),
     ])
     _assets  = assetsRes.data  || []
     _repairs = repairsRes.data || []
-    _loadTab(_activeTab)
   }
 
   return { render, init }
@@ -1696,9 +1959,9 @@ ModuleRegistry.register({
     view_available_assets: 'View Available Assets',
     request_asset:         'Request Asset',
     manage_assets:         'Manage Assets (assign / add / edit)',
-    return_asset:          'Return Asset',
-    report_issue:          'Report Repair / Issue',
-    resolve_repair:        'Resolve / Close Repairs',
-    manage_asset_types:    'Manage Asset Types & Locations',
+    view_inventories:      'View Inventories Tab',
+    retire_delete_asset:   'Retire & Delete Assets',
+    resolve_repair:        'Update & Resolve Repairs (HR)',
+    manage_asset_types:    'Manage Asset Types',
   },
 })
