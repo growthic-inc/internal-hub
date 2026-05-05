@@ -430,11 +430,26 @@ const API = (() => {
   async function getReimbursementInbox(type = null) {
     let q = supabase
       .from('reimbursements')
-      .select('*, submitter:employees!employee_id(name, role), clients(client_name, project_code)')
+      .select('*, submitter:employees!employee_id(name, role, department), clients(client_name, project_code)')
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
     if (type) q = q.eq('type', type)
     return q
+  }
+
+  async function getAllReimbursementsAdmin() {
+    return supabase
+      .from('reimbursements')
+      .select('*, submitter:employees!employee_id(name, role, department), clients(client_name, project_code), approver:employees!approved_by(name)')
+      .order('created_at', { ascending: false })
+  }
+
+  async function getEmployeesByDepartment(department) {
+    return supabase
+      .from('employees')
+      .select('id, name')
+      .eq('department', department)
+      .eq('status', 'active')
   }
 
   async function getApprovedClaims() {
@@ -1416,8 +1431,8 @@ const API = (() => {
     getEmployees, getEmployee, getTeamLeads, getAllEmployees,
     getTimesheetEntries, getTeamTimesheetEntries, getDirectReports, upsertTimesheetEntry,
     insertMasterFolderFile, softDeleteMasterFolderFile,
-    getMyReimbursements, getReimbursementInbox, getApprovedClaims,
-    insertReimbursement, getMyPreApprovals,
+    getMyReimbursements, getReimbursementInbox, getAllReimbursementsAdmin, getApprovedClaims,
+    insertReimbursement, getMyPreApprovals, getEmployeesByDepartment,
     getAssets, createAsset, updateAsset, deleteAsset,
     getAssetHistory, addAssetHistory,
     getAllAssetRepairs, getAssetRepairsForAsset, createAssetRepair, updateAssetRepair,

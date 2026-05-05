@@ -85,18 +85,24 @@ const Reimbursements = (() => {
   let _selectedPreApproval = null   // PA object linked to current claim
   let _receiptUrl          = null   // Drive URL after receipt upload
   let _p                   = null   // department permissions
+  let _isHR                = false  // true when user is from People & Culture dept
 
   /* ── render ──────────────────────────────────────────────── */
   function render(user) {
-    const isFinance    = user.role === 'finance'
+    // HR is identified by department (people_culture) regardless of stored role value
+    const isHR         = user.department === 'people_culture'
     const isSuperAdmin = user.role === 'super_admin'
-    const canApprove   = CAN_APPROVE.includes(user.role) && App.hasAccess('reimbursements', 'approve_requests', 'can_approve')
-    const canPayment   = (isFinance || isSuperAdmin) && App.hasAccess('reimbursements', 'process_payment', 'can_approve')
+    const isFinance    = user.department === 'finance' || user.role === 'finance'
+
+    // HR and Super Admin always see the approval Inbox — no access_matrix gate needed
+    const canApprove = isHR || isSuperAdmin
+    const canPayment = (isFinance || isSuperAdmin) && App.hasAccess('reimbursements', 'process_payment', 'can_approve')
 
     const tabs = [{ id: 'mine', label: 'My Requests' }]
-    if (canApprove)  tabs.push({ id: 'inbox',        label: 'Inbox' })
-    if (isSuperAdmin) tabs.push({ id: 'hr-requests', label: 'HR Requests' })
-    if (canPayment)  tabs.push({ id: 'payment',      label: 'For Payment' })
+    if (canApprove)            tabs.push({ id: 'inbox',        label: 'Inbox' })
+    if (isSuperAdmin)          tabs.push({ id: 'hr-requests',  label: 'HR Requests' })
+    if (isHR || isSuperAdmin)  tabs.push({ id: 'all-requests', label: 'All Requests' })
+    if (canPayment)            tabs.push({ id: 'payment',      label: 'For Payment' })
 
     return `
       <div class="page-inner">
@@ -117,9 +123,10 @@ const Reimbursements = (() => {
   /* ── init ────────────────────────────────────────────────── */
   async function init(user) {
     _user                = user
+    _isHR                = user.department === 'people_culture'
     _p                   = {
       can_create:  App.hasAccess('reimbursements', 'raise_pre_approval',  'can_upload'),
-      can_approve: App.hasAccess('reimbursements', 'approve_requests',    'can_approve'),
+      can_approve: _isHR || user.role === 'super_admin',  // role-based for HR/SA, not access_matrix
     }
     _activeTab           = 'mine'
     _selectedPreApproval = null
@@ -147,10 +154,11 @@ const Reimbursements = (() => {
     const toolbar = document.getElementById('reimb-toolbar-actions')
     if (toolbar) toolbar.innerHTML = ''
     switch (tab) {
-      case 'mine':        return _loadMineTab()
-      case 'inbox':       return _loadInboxTab()
-      case 'hr-requests': return _loadHRRequestsTab()
-      case 'payment':     return _loadPaymentTab()
+      case 'mine':         return _loadMineTab()
+      case 'inbox':        return _loadInboxTab()
+      case 'hr-requests':  return _loadHRRequestsTab()
+      case 'all-requests': return _loadAllRequestsTab()
+      case 'payment':      return _loadPaymentTab()
     }
   }
 
@@ -193,31 +201,31 @@ const Reimbursements = (() => {
     `
   }
 
-  function _renderPreApprovalTable(rows, showEmployee) {
+  function _renderPreApprovalTable(rows, showEmployee, showActions = false) {
     if (!rows.length) return '<p class="empty-state">No pre-approval requests yet.</p>'
     return `
       <table class="data-table">
         <thead><tr>
-          ${showEmployee ? '<th>Employee</th>' : ''}
+          ${showEmployee  ? '<th>Employee</th>' : ''}
           <th>Expense Type</th>
           <th>Client</th>
           <th>Est. Amount</th>
           <th>Expected Date</th>
           <th>Status</th>
           <th>Reason</th>
-          ${showEmployee ? '<th>Action</th>' : ''}
+          ${showActions ? '<th>Action</th>' : ''}
         </tr></thead>
         <tbody>
           ${rows.map(r => `
             <tr>
-              ${showEmployee ? `<td>${Utils.escapeHtml(r.submitter?.name || '—')}</td>` : ''}
+              ${showEmployee  ? `<td>${Utils.escapeHtml(r.submitter?.name || '—')}</td>` : ''}
               <td>${Utils.getExpenseLabel(r.expense_type)}</td>
               <td>${Utils.escapeHtml(r.clients?.client_name || '—')}</td>
               <td>${Utils.formatCurrency(r.estimated_amount)}</td>
               <td>${Utils.formatDate(r.expected_date)}</td>
               <td>${STATUS_BADGE[r.status] || r.status}</td>
               <td class="text-muted">${Utils.escapeHtml(Utils.truncate(r.reason || '—', 50))}</td>
-              ${showEmployee ? `<td><button class="btn btn--xs btn--primary" data-approve="${r.id}">Review</button></td>` : ''}
+              ${showActions ? `<td><button class="btn btn--xs btn--primary" data-approve="${r.id}">Review</button></td>` : ''}
             </tr>
           `).join('')}
         </tbody>
@@ -318,7 +326,8 @@ const Reimbursements = (() => {
       API.getReimbursementInbox('claim'),
     ])
 
-    const filterFn     = _user.role === 'hr' ? r => r.submitter?.role !== 'hr' : () => true
+    // Exclude People & Culture (HR) submissions — those are handled via Super Admin's "HR Requests" tab
+    const filterFn     = r => r.submitter?.department !== 'people_culture'
     const preApprovals = (paRes.data || []).filter(filterFn)
     const claims       = (clRes.data || []).filter(filterFn)
 
@@ -326,7 +335,7 @@ const Reimbursements = (() => {
       <div class="section-card mb-4">
         <div class="section-card-header"><h3>Pending Pre-Approval Requests</h3></div>
         <div class="section-card-body" id="inbox-preapprovals">
-          ${_renderPreApprovalTable(preApprovals, true)}
+          ${_renderPreApprovalTable(preApprovals, true, true)}
         </div>
       </div>
       <div class="section-card">
@@ -360,14 +369,14 @@ const Reimbursements = (() => {
       API.getReimbursementInbox('claim'),
     ])
 
-    const hrOnly       = r => r.submitter?.role === 'hr'
+    const hrOnly       = r => r.submitter?.department === 'people_culture'
     const preApprovals = (paRes.data || []).filter(hrOnly)
     const claims       = (clRes.data || []).filter(hrOnly)
 
     content.innerHTML = `
       <div class="section-card mb-4">
         <div class="section-card-header"><h3>HR Pre-Approval Requests</h3></div>
-        <div class="section-card-body">${_renderPreApprovalTable(preApprovals, true)}</div>
+        <div class="section-card-body">${_renderPreApprovalTable(preApprovals, true, true)}</div>
       </div>
       <div class="section-card">
         <div class="section-card-header"><h3>HR Expense Claims</h3></div>
@@ -376,6 +385,96 @@ const Reimbursements = (() => {
     `
 
     _bindInboxApproveButtons(preApprovals, claims)
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     ALL REQUESTS TAB (HR / Super Admin — full org view)
+  ══════════════════════════════════════════════════════════ */
+  async function _loadAllRequestsTab() {
+    const content = document.getElementById('reimb-content')
+    content.innerHTML = '<p class="loading-text">Loading…</p>'
+
+    const { data, error } = await API.getAllReimbursementsAdmin()
+    if (error) { content.innerHTML = '<p class="empty-state">Failed to load requests.</p>'; return }
+
+    const all = data || []
+    let _statusFilter = 'all'
+
+    const STATUS_FILTERS = [
+      { key: 'all',      label: 'All' },
+      { key: 'pending',  label: 'Pending' },
+      { key: 'approved', label: 'Approved' },
+      { key: 'rejected', label: 'Rejected' },
+      { key: 'paid',     label: 'Paid' },
+    ]
+
+    function _render() {
+      const filtered     = _statusFilter === 'all' ? all : all.filter(r => r.status === _statusFilter)
+      const preApprovals = filtered.filter(r => r.type === 'pre_approval')
+      const claims       = filtered.filter(r => r.type === 'claim')
+
+      const totalPending  = all.filter(r => r.status === 'pending').length
+      const totalApproved = all.filter(r => r.status === 'approved').length
+      const totalPaid     = all.filter(r => r.status === 'paid').length
+      const totalAmount   = all.filter(r => ['approved','paid'].includes(r.status))
+                               .reduce((s, r) => s + parseFloat(r.hr_approved_amount || r.amount || 0), 0)
+
+      content.innerHTML = `
+        <div class="grid-4 mb-4">
+          <div class="stat-card">
+            <div class="stat-label">Total Requests</div>
+            <div class="stat-value">${all.length}</div>
+            <div class="stat-delta">${preApprovals.length + claims.length === all.length ? `${all.filter(r=>r.type==='pre_approval').length} pre-approvals · ${all.filter(r=>r.type==='claim').length} claims` : ''}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Pending Review</div>
+            <div class="stat-value stat-value--warning">${totalPending}</div>
+            <div class="stat-delta">awaiting action</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Approved</div>
+            <div class="stat-value stat-value--success">${totalApproved}</div>
+            <div class="stat-delta">${totalPaid} paid</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total Approved Amount</div>
+            <div class="stat-value">${Utils.formatCurrency(totalAmount)}</div>
+            <div class="stat-delta">approved + paid</div>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+            <h3>All Reimbursement Requests</h3>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;" id="ar-filter-btns">
+              ${STATUS_FILTERS.map(f => `
+                <button class="btn btn--xs ${_statusFilter === f.key ? 'btn--primary' : 'btn--ghost'}" data-filter="${f.key}">
+                  ${f.label}${f.key !== 'all' ? ` <span style="opacity:.7;">(${all.filter(r => r.status === f.key).length})</span>` : ` <span style="opacity:.7;">(${all.length})</span>`}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+          <div class="section-card-body">
+            ${preApprovals.length ? `
+              <p style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Stage 1 — Pre-Approval Requests</p>
+              ${_renderPreApprovalTable(preApprovals, true, false)}
+              <div style="margin-top:20px;"></div>
+            ` : ''}
+            <p style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Stage 2 — Expense Claims</p>
+            ${_renderClaimTable(claims, true, false, false)}
+          </div>
+        </div>
+      `
+
+      content.querySelectorAll('[data-filter]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          _statusFilter = btn.dataset.filter
+          _render()
+        })
+      })
+    }
+
+    _render()
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -526,7 +625,7 @@ const Reimbursements = (() => {
 
     const client = clientId ? _clients.find(c => c.id === clientId) : null
 
-    const { error } = await API.insertReimbursement({
+    const { data: inserted, error } = await API.insertReimbursement({
       employee_id:      _user.id,
       type:             'pre_approval',
       expense_type:     expenseType,
@@ -544,6 +643,17 @@ const Reimbursements = (() => {
       btn.disabled    = false
       btn.textContent = 'Submit Request'
       return
+    }
+
+    // Notify reporting manager that a pre-approval has been filed
+    if (_user.manager_id) {
+      API.createNotification({
+        recipient_employee_id: _user.manager_id,
+        type:    'submitted',
+        message: `${_user.name} has submitted a pre-approval reimbursement request (${Utils.getExpenseLabel(expenseType)}, est. ${Utils.formatCurrency(amount)}).`,
+        module:  'reimbursements',
+        record_id: inserted?.id || null,
+      })
     }
 
     Utils.closeModal()
@@ -958,7 +1068,7 @@ const Reimbursements = (() => {
 
     const client = clientId ? _clients.find(c => c.id === clientId) : null
 
-    const { error } = await API.insertReimbursement({
+    const { data: inserted, error } = await API.insertReimbursement({
       employee_id:       _user.id,
       type:              'claim',
       pre_approval_id:   _selectedPreApproval?.id || null,
@@ -978,6 +1088,17 @@ const Reimbursements = (() => {
       btn.disabled    = false
       btn.textContent = 'Submit Claim'
       return
+    }
+
+    // Notify reporting manager that an expense claim has been filed
+    if (_user.manager_id) {
+      API.createNotification({
+        recipient_employee_id: _user.manager_id,
+        type:    'submitted',
+        message: `${_user.name} has filed an expense claim (${Utils.getExpenseLabel(expenseType)}, ${Utils.formatCurrency(amount)}).`,
+        module:  'reimbursements',
+        record_id: inserted?.id || null,
+      })
     }
 
     Utils.closeModal()
@@ -1073,6 +1194,21 @@ const Reimbursements = (() => {
         record_id: record.id,
       })
     }
+
+    // After a claim is approved, notify Finance team to initiate payment processing
+    if (decision === 'approved' && isClaim) {
+      const { data: financeTeam } = await API.getEmployeesByDepartment('finance')
+      ;(financeTeam || []).forEach(emp => {
+        API.createNotification({
+          recipient_employee_id: emp.id,
+          type:    'approval',
+          message: `A reimbursement claim by ${record.submitter?.name || 'an employee'} has been approved (${Utils.formatCurrency(updates.hr_approved_amount || record.amount)}) and is ready for payment processing.`,
+          module:  'reimbursements',
+          record_id: record.id,
+        })
+      })
+    }
+
     Utils.closeModal()
     Utils.showToast(`${decision === 'approved' ? 'Approved' : 'Rejected'} successfully.`, 'success')
     _loadTab(_activeTab)
