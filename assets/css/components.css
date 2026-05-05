@@ -5994,11 +5994,18 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   box-sizing: border-box;
 }
 
-/* Inside the narrower left column: auto-fit so cards always
-   stretch to fill the available width (auto-fill would leave
-   empty ghost columns when there are few content types). */
+/* Switch to flex inside the What's Working panel so cards
+   reliably fill the full available width regardless of count.
+   flex: 1 1 160px  → each card grows to fill remaining space,
+   base of 160 px, wraps when container is too narrow. */
 .db-ww-panel .ct-grid {
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.db-ww-panel .ct-card {
+  flex: 1 1 160px;
+  min-width: 0;
 }
 
 @media (max-width: 1024px) {
