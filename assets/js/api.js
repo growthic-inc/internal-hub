@@ -655,7 +655,16 @@ const API = (() => {
         body: JSON.stringify(data),
       }
     )
-    return res.json()
+    const json = await res.json().catch(() => ({}))
+    // Normalise error so callers always get { error: { message: '...' } }
+    if (!res.ok) {
+      const raw = json?.error
+      const msg = typeof raw === 'string'
+        ? raw
+        : (raw?.message || json?.message || `Request failed (HTTP ${res.status})`)
+      return { error: { message: msg } }
+    }
+    return json
   }
 
   /* ── Own profile update (Phase 8 — profile completion wizard) ── */
@@ -921,11 +930,27 @@ const API = (() => {
   }
 
   async function getBirthdayEmployees() {
+    // Returns all active employees — used for both birthday AND anniversary computation
     return supabase
       .from('employees')
-      .select('id, name, date_of_birth, profile_image_url, designation')
+      .select('id, name, date_of_birth, joining_date, profile_image_url, designation')
       .eq('status', 'active')
-      .not('date_of_birth', 'is', null)
+  }
+
+  async function getUpcomingEventsData(days = 30) {
+    const today   = new Date()
+    const fromISO = today.toISOString().split('T')[0]
+    const toISO   = new Date(today.getTime() + days * 86400000).toISOString().split('T')[0]
+    const [holRes, evtRes] = await Promise.all([
+      supabase.from('company_holidays').select('id, name, date')
+        .gte('date', fromISO).lte('date', toISO).order('date'),
+      supabase.from('company_events').select('id, title, start_date')
+        .gte('start_date', fromISO).lte('start_date', toISO).order('start_date'),
+    ])
+    return {
+      data: { holidays: holRes.data || [], events: evtRes.data || [] },
+      error: holRes.error || evtRes.error,
+    }
   }
 
   async function updateEmployeeFull(employeeId, data) {
@@ -1401,7 +1426,7 @@ const API = (() => {
     getSocialFollowers, getSocialVisitors, getSocialDemographics, uploadAnalyticsToDrive,
     // Phase 8
     createEmployee, updateOwnProfile, uploadAvatar,
-    getHomeLeaveData, getUpcomingHolidays, getRecentAnnouncements,
+    getHomeLeaveData, getUpcomingHolidays, getUpcomingEventsData, getRecentAnnouncements,
     getPendingApprovalsCount, getWorkAnniversaries,
     getWhoIsOutToday, getPendingTimesheetApprovalsCount, getBirthdayEmployees,
     // Phase 7

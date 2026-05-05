@@ -214,83 +214,109 @@ const HomeModule = (() => {
 
   /* ── Section: Birthdays this week ────────────────────────── */
 
-  function _renderBirthdays(employees) {
-    const celebrants = _birthdaysInRange(employees, 7)
-    if (!celebrants.length) return ''
+  /* ── Section: Upcoming Events (merged) ─────────────────────── */
 
-    const rows = celebrants.map(emp => {
-      const label    = emp.isToday ? '🎂 Today!' : emp.birthdayDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
-      const badgeCls = emp.isToday ? 'badge--danger' : 'badge--muted'
-      return `
-        <div class="home-person-row">
-          ${_avatarHtml(emp)}
-          <div style="flex:1;min-width:0;">
-            <div style="font-weight:600;font-size:13px;">${Utils.escapeHtml(emp.name)}</div>
-            ${emp.designation ? `<div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(emp.designation)}</div>` : ''}
-          </div>
-          <span class="badge ${badgeCls}">${label}</span>
-        </div>`
-    }).join('')
-
-    return `
-      <div class="section-card home-hover-card" style="margin-bottom:14px;">
-        <div class="section-card-header"><h3>🎂 Birthdays This Week</h3></div>
-        <div class="section-card-body">${rows}</div>
-      </div>`
+  function _getUpcomingAnniversaries(employees, days = 30) {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const results = []
+    for (const emp of (employees || [])) {
+      if (!emp.joining_date) continue
+      const joined = new Date(emp.joining_date)
+      // Skip employees in their first year (no "anniversary" yet)
+      if (joined.getFullYear() >= today.getFullYear()) continue
+      // Find anniversary date this year; if already past, use next year
+      const anniv = new Date(today.getFullYear(), joined.getMonth(), joined.getDate())
+      if (anniv < today) anniv.setFullYear(today.getFullYear() + 1)
+      const daysUntil = Math.round((anniv - today) / 86400000)
+      if (daysUntil <= days) {
+        results.push({
+          type:      'anniversary',
+          label:     emp.name,
+          subLabel:  emp.designation || '',
+          date:      anniv,
+          daysUntil,
+          employee:  emp,
+          years:     anniv.getFullYear() - joined.getFullYear(),
+        })
+      }
+    }
+    return results
   }
 
-  /* ── Section: Work Anniversaries ────────────────────────── */
+  function _renderUpcomingEvents(employees, eventsData) {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const DAYS  = 30
+    const all   = []
 
-  function _renderAnniversaries(workAnniversaries) {
-    const today   = new Date()
-    const todayMM = today.getMonth() + 1
-    const todayDD = today.getDate()
-
-    const celebrants = (workAnniversaries || []).filter(emp => {
-      if (!emp.joining_date) return false
-      const joined = new Date(emp.joining_date)
-      if (joined.getFullYear() >= currentYear) return false
-      return (joined.getMonth() + 1) === todayMM && joined.getDate() === todayDD
+    // Birthdays in next 30 days
+    _birthdaysInRange(employees, DAYS).forEach(emp => {
+      const daysUntil = Math.round((emp.birthdayDate - today) / 86400000)
+      all.push({ type: 'birthday', label: emp.name, subLabel: emp.designation || '', date: emp.birthdayDate, daysUntil, employee: emp })
     })
 
-    if (!celebrants.length) return ''
+    // Work anniversaries in next 30 days
+    _getUpcomingAnniversaries(employees, DAYS).forEach(e => all.push(e))
 
-    const rows = celebrants.map(emp => {
-      const years = currentYear - new Date(emp.joining_date).getFullYear()
-      return `
-        <div class="home-person-row">
-          ${_avatarHtml(emp)}
-          <div style="flex:1;min-width:0;">
-            <div style="font-weight:600;font-size:13px;">${Utils.escapeHtml(emp.name)}</div>
-            ${emp.designation ? `<div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(emp.designation)}</div>` : ''}
-          </div>
-          <span class="badge badge--primary">${years} yr${years !== 1 ? 's' : ''} 🎉</span>
-        </div>`
-    }).join('')
+    // Upcoming holidays
+    ;(eventsData.holidays || []).forEach(h => {
+      const date      = new Date(h.date + 'T00:00:00')
+      const daysUntil = Math.round((date - today) / 86400000)
+      all.push({ type: 'holiday', label: h.name, date, daysUntil })
+    })
+
+    // Company events
+    ;(eventsData.events || []).forEach(ev => {
+      const date      = new Date(ev.start_date + 'T00:00:00')
+      const daysUntil = Math.round((date - today) / 86400000)
+      all.push({ type: 'event', label: ev.title, date, daysUntil })
+    })
+
+    // Sort chronologically; ties broken alphabetically
+    all.sort((a, b) => a.daysUntil - b.daysUntil || a.label.localeCompare(b.label))
+
+    const ICON = { birthday: '🎂', anniversary: '🎉', holiday: '🏖️', event: '📅' }
+
+    const rows = all.length
+      ? all.slice(0, 8).map((ev, i) => {
+          const icon     = ICON[ev.type] || '📅'
+          const dateText = ev.daysUntil === 0 ? 'Today!'
+                         : ev.daysUntil === 1 ? 'Tomorrow'
+                         : ev.date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+          const badgeCls = ev.daysUntil === 0 ? 'badge--danger'
+                         : ev.daysUntil <= 3  ? 'badge--warning'
+                         : 'badge--muted'
+          const borderStyle = i === 0 ? ' style="border-top:none;"' : ''
+
+          if (ev.employee) {
+            const extra = ev.type === 'anniversary' ? ` · ${ev.years} yr${ev.years !== 1 ? 's' : ''}` : ''
+            return `
+              <div class="home-holiday-row"${borderStyle}>
+                <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;overflow:hidden;">
+                  ${_avatarHtml(ev.employee)}
+                  <div style="min-width:0;">
+                    <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${icon} ${Utils.escapeHtml(ev.label)}</div>
+                    ${ev.subLabel ? `<div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(ev.subLabel)}${extra}</div>` : ''}
+                  </div>
+                </div>
+                <span class="badge ${badgeCls}" style="margin-left:8px;flex-shrink:0;">${dateText}</span>
+              </div>`
+          }
+          return `
+            <div class="home-holiday-row"${borderStyle}>
+              <div style="font-size:13px;font-weight:500;">${icon} ${Utils.escapeHtml(ev.label)}</div>
+              <span class="badge ${badgeCls}" style="margin-left:8px;flex-shrink:0;white-space:nowrap;">${dateText}</span>
+            </div>`
+        }).join('')
+      : `<p class="empty-state-text" style="margin:0;padding:16px 20px;">Nothing coming up in the next 30 days.</p>`
 
     return `
-      <div class="section-card home-hover-card" style="margin-bottom:14px;">
-        <div class="section-card-header"><h3>🎉 Work Anniversaries</h3></div>
-        <div class="section-card-body">${rows}</div>
-      </div>`
-  }
-
-  /* ── Section: Upcoming Holidays ──────────────────────────── */
-
-  function _renderHolidays(holidays) {
-    const rows = (holidays || []).length
-      ? holidays.slice(0, 5).map((h, i) => `
-          <div class="home-holiday-row" ${i === 0 ? 'style="border-top:none;"' : ''}>
-            <div>
-              <div style="font-size:13px;font-weight:500;">${Utils.escapeHtml(h.name)}</div>
-            </div>
-            <span style="font-size:12px;color:var(--text-muted);white-space:nowrap;">${Utils.formatDate(h.date)}</span>
-          </div>`).join('')
-      : `<p class="empty-state-text" style="margin:0;">No upcoming holidays.</p>`
-
-    return `
-      <div class="section-card home-hover-card" style="margin-bottom:14px;">
-        <div class="section-card-header"><h3>Upcoming Holidays</h3></div>
+      <div class="section-card home-hover-card">
+        <div class="section-card-header">
+          <h3>Upcoming Events</h3>
+          <a href="#leave-tracker" style="font-size:12px;color:var(--primary);font-weight:500;">Manage →</a>
+        </div>
         <div class="section-card-body" style="padding:0;">${rows}</div>
       </div>`
   }
@@ -544,9 +570,8 @@ const HomeModule = (() => {
       { data: whoIsOut },
       pendingLeaveCount,
       pendingTsCount,
-      { data: holidays },
+      { data: upcomingEventsData },
       { data: announcements },
-      { data: workAnniversaries },
       { data: allEmployees },
       { data: myBadges },
     ] = await Promise.all([
@@ -554,9 +579,8 @@ const HomeModule = (() => {
       API.getWhoIsOutToday(),
       API.getPendingApprovalsCount(user.id),
       API.getPendingTimesheetApprovalsCount(user.id),
-      API.getUpcomingHolidays(5),
+      API.getUpcomingEventsData(30),
       API.getRecentAnnouncements(3),
-      API.getWorkAnniversaries(),
       API.getBirthdayEmployees(),
       API.getEmployeeBadges(user.id),
     ])
@@ -573,9 +597,7 @@ const HomeModule = (() => {
         </div>
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px;">
           ${_renderMyBadges(myBadges)}
-          ${_renderBirthdays(allEmployees || [])}
-          ${_renderAnniversaries(workAnniversaries || [])}
-          ${_renderHolidays(holidays || [])}
+          ${_renderUpcomingEvents(allEmployees || [], upcomingEventsData || { holidays: [], events: [] })}
         </div>
       </div>
     `
