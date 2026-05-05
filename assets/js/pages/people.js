@@ -279,6 +279,31 @@ const People = (() => {
     _showProfileView(emp)
   }
 
+  function _kycDocRow(icon, label, url) {
+    if (url) {
+      return `
+        <a href="${Utils.escapeHtml(url)}" target="_blank" rel="noopener noreferrer"
+           style="display:flex;align-items:center;gap:8px;padding:9px 12px;
+                  border:1px solid var(--border);border-radius:7px;
+                  font-size:12px;color:var(--primary);text-decoration:none;
+                  transition:background 0.12s;"
+           onmouseover="this.style.background='var(--surface)'"
+           onmouseout="this.style.background=''">
+          <span style="font-size:15px;">${icon}</span>
+          <span style="font-weight:500;flex:1;">${label}</span>
+          <span style="font-size:10px;color:var(--text-muted);">View ↗</span>
+        </a>`
+    }
+    return `
+      <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;
+                  border:1px dashed var(--border);border-radius:7px;
+                  font-size:12px;color:var(--text-muted);">
+        <span style="font-size:15px;">${icon}</span>
+        <span style="flex:1;">${label}</span>
+        <span style="font-size:10px;">Not uploaded</span>
+      </div>`
+  }
+
   async function _showProfileView(emp) {
     const avatarHtml = emp.profile_image_url
       ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" alt=""
@@ -293,8 +318,12 @@ const People = (() => {
     // HR (canManage) or the direct manager of this employee
     const _canAwardBadge = _canManage || (_user && emp.manager_id === _user.id)
 
-    // Load employee badges (non-blocking — show placeholder first, fill after)
-    const { data: empBadges } = await API.getEmployeeBadges(emp.id)
+    // Fetch badges + KYC in parallel (KYC only for HR / super_admin)
+    const [{ data: empBadges }, kycRes] = await Promise.all([
+      API.getEmployeeBadges(emp.id),
+      _canManage ? API.getEmployeeKyc(emp.id) : Promise.resolve({ data: null }),
+    ])
+    const kyc = kycRes?.data || {}
     const badgeChips = (empBadges || []).map(eb => {
       const b = eb.badge || {}
       const colour = b.colour || '#0F4799'
@@ -434,6 +463,27 @@ const People = (() => {
               </div>
             </div>
           </div>
+
+          ${_canManage ? `
+          <!-- KYC Documents (HR / Super Admin only) -->
+          <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);">
+                KYC Documents
+              </div>
+              ${kyc.kyc_submitted_at
+                ? `<span style="font-size:11px;color:var(--success);font-weight:500;">
+                     ✓ Submitted ${Utils.formatDate(kyc.kyc_submitted_at)}
+                   </span>`
+                : `<span style="font-size:11px;color:var(--text-muted);">Not yet submitted</span>`}
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              ${_kycDocRow('🪪', 'Aadhaar Card',    kyc.kyc_aadhar_url)}
+              ${_kycDocRow('🏷️', 'PAN Card',        kyc.kyc_pan_url)}
+              ${_kycDocRow('📘', 'Passport',         kyc.kyc_passport_url)}
+              ${_kycDocRow('🖼️', 'Passport Photo',   kyc.kyc_passport_photo_url)}
+            </div>
+          </div>` : ''}
         </div>
 
       </div>

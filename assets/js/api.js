@@ -957,6 +957,15 @@ const API = (() => {
     return supabase.from('employees').update(data).eq('id', employeeId)
   }
 
+  /* Returns KYC document URLs for one employee — HR / super_admin only. */
+  async function getEmployeeKyc(employeeId) {
+    return supabase
+      .from('employees')
+      .select('kyc_aadhar_url, kyc_pan_url, kyc_passport_url, kyc_passport_photo_url, kyc_submitted_at')
+      .eq('id', employeeId)
+      .single()
+  }
+
   /* ── Org Chart (Phase 7) ──────────────────────────────────── */
   async function getOrgChart() {
     return supabase.rpc('get_org_chart')
@@ -1431,7 +1440,7 @@ const API = (() => {
     getWhoIsOutToday, getPendingTimesheetApprovalsCount, getBirthdayEmployees,
     // Phase 7
     getDepartments, addDepartment, deleteDepartment,
-    getEmployeesFull, updateEmployeeFull,
+    getEmployeesFull, updateEmployeeFull, getEmployeeKyc,
     getOrgChart,
     getLeaveTypes, createLeaveType, updateLeaveType, deleteLeaveType,
     getLeaveCredits, getAllLeaveCredits, addLeaveCredit, deleteLeaveCredit,
