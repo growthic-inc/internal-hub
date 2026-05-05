@@ -248,10 +248,12 @@ const ClientDashboard = (() => {
     const isIG = _currentPlatform === 'Instagram'
     const organicNote = !isIG ? `<span style="font-size:11px;color:var(--text-muted);background:var(--surface);padding:2px 8px;border-radius:99px;border:1px solid var(--border);">Organic only</span>` : ''
 
+    // Pre-compute What's Working so we can decide layout
+    const _wwHtml = _renderContentTypeBreakdown(posts)
+
     body.innerHTML = `
       ${_renderContextBar(uploadLog, dateFrom, dateTo)}
       <div class="kpi-grid" style="margin-bottom:16px;">${_renderKPICards(kpis)}</div>
-      ${_renderContentTypeBreakdown(posts)}
       <div class="chart-card mb-4">
         <div class="chart-card-header">
           <div style="display:flex;align-items:center;gap:8px;">
@@ -264,10 +266,21 @@ const ClientDashboard = (() => {
         </div>
         <div class="chart-canvas-wrap" style="height:260px;"><canvas id="trend-chart"></canvas></div>
       </div>
-      <div class="chart-card mb-4">
-        <div class="chart-card-header"><span class="chart-card-title">Weekly Publishing Activity</span></div>
-        <div class="chart-canvas-wrap"><canvas id="pub-chart"></canvas></div>
-      </div>
+
+      ${_wwHtml
+        ? `<div class="db-pub-row mb-4">
+             ${_wwHtml}
+             <div class="chart-card db-pub-chart-panel">
+               <div class="chart-card-header"><span class="chart-card-title">Weekly Publishing Activity</span></div>
+               <div class="chart-canvas-wrap"><canvas id="pub-chart"></canvas></div>
+             </div>
+           </div>`
+        : `<div class="chart-card mb-4">
+             <div class="chart-card-header"><span class="chart-card-title">Weekly Publishing Activity</span></div>
+             <div class="chart-canvas-wrap"><canvas id="pub-chart"></canvas></div>
+           </div>`
+      }
+
       <div class="section-card mb-4">
         <div class="section-card-header"><h3>Top Performing Content</h3></div>
         <div class="section-card-body" style="padding:0;" data-tc="1">${_renderTopContent(posts)}</div>
@@ -747,7 +760,7 @@ const ClientDashboard = (() => {
       </div>`
     }).join('')
 
-    return `<div class="section-card mb-4">
+    return `<div class="section-card db-ww-panel">
       <div class="section-card-header">
         <h3>What's Working</h3>
         <span style="font-size:12px;color:var(--text-muted);">Performance by content format</span>

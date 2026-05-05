@@ -5972,6 +5972,43 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 @media (max-width: 900px) { .ct-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 600px) { .ct-grid { grid-template-columns: 1fr; } }
 
+/* ── What's Working + Weekly Publishing — 2-column row ────── */
+.db-pub-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+/* What's Working panel — fills row height, no bottom margin
+   (the row wrapper handles spacing) */
+.db-ww-panel {
+  margin-bottom: 0;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* Pub chart panel — matches section-card visual weight */
+.db-pub-chart-panel {
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* Inside the narrower left column, cap ct-grid at 2 columns */
+.db-ww-panel .ct-grid {
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+
+@media (max-width: 1024px) {
+  .db-pub-row {
+    grid-template-columns: 1fr;
+  }
+  .db-ww-panel,
+  .db-pub-chart-panel {
+    height: auto;
+  }
+}
+
 /* ============================================================
    BADGE SYSTEM
    ============================================================ */
