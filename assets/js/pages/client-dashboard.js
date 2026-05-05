@@ -601,7 +601,7 @@ const ClientDashboard = (() => {
             <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;padding-bottom:3px;border-bottom:1px solid var(--border);">${dim.label}</div>
             ${shown.map(r => {
               const pct = Math.round((_num(r.value) / maxVal) * 100)
-              return `<div style="display:grid;grid-template-columns:1fr 48px 34px;align-items:center;gap:5px;padding:2px 0;">
+              return `<div style="display:grid;grid-template-columns:1fr 52px 44px;align-items:center;gap:5px;padding:2px 0;">
                 <span style="font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${Utils.escapeHtml(r.label)}">${Utils.escapeHtml(r.label)}</span>
                 <div style="height:3px;background:var(--border);border-radius:2px;"><div style="width:${pct}%;height:100%;background:var(--primary,#0F4799);border-radius:2px;"></div></div>
                 <span style="font-size:11px;color:var(--text-muted);text-align:right;white-space:nowrap;">${_num(r.value).toLocaleString('en-IN')}</span>
@@ -609,7 +609,7 @@ const ClientDashboard = (() => {
             }).join('')}
           </div>`
         }).filter(Boolean)
-        return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px 20px;">${blocks.join('')}</div>`
+        return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px 24px;">${blocks.join('')}</div>`
       }
 
       const tabs = [
