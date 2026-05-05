@@ -282,10 +282,38 @@ const App = (() => {
     return `${Math.floor(diff / 86400)}d ago`
   }
 
-  function _notifIcon(type) {
-    if (type === 'approval')  return `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`
-    if (type === 'rejection') return `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
+  function _notifMeta(n) {
+    // Returns { emoji, cls, label } based on type + module
+    if (n.module === 'badge' || n.type === 'badge')
+      return { emoji: '🏅', cls: 'badge',      label: 'Badge'          }
+    if (n.type === 'approval')
+      return { emoji: '✅', cls: 'approval',   label: _notifModuleLabel(n.module) }
+    if (n.type === 'rejection')
+      return { emoji: '❌', cls: 'rejection',  label: _notifModuleLabel(n.module) }
+    if (n.module === 'timesheet')
+      return { emoji: '⏱️', cls: 'timesheet',  label: 'Timesheet'      }
+    if (n.module === 'leave')
+      return { emoji: '🌿', cls: 'leave',      label: 'Leave'          }
+    if (n.module === 'wfh')
+      return { emoji: '🏠', cls: 'wfh',        label: 'WFH'            }
+    if (n.module === 'reimbursements')
+      return { emoji: '💳', cls: 'reimburse',  label: 'Reimbursement'  }
+    if (n.module === 'assets')
+      return { emoji: '📦', cls: 'asset',      label: 'Assets'         }
+    if (n.module === 'tools')
+      return { emoji: '🔧', cls: 'tools',      label: 'Tools'          }
+    if (n.module === 'people')
+      return { emoji: '👤', cls: 'people',     label: 'People'         }
+    return   { emoji: '💬', cls: 'default',    label: 'Update'         }
+  }
+
+  function _notifModuleLabel(module) {
+    const map = {
+      timesheet: 'Timesheet', leave: 'Leave', wfh: 'WFH',
+      badge: 'Badge', reimbursements: 'Reimbursement',
+      assets: 'Assets', tools: 'Tools', people: 'People',
+    }
+    return map[module] || 'Update'
   }
 
   async function _openNotifPanel() {
@@ -316,17 +344,22 @@ const App = (() => {
       </div>
       <div class="notif-panel-body" id="notif-panel-body">
         ${items.length === 0
-          ? `<div class="notif-empty">You're all caught up!</div>`
-          : items.map(n => `
-            <div class="notif-item${n.read ? '' : ' notif-item--unread'}" data-id="${n.id}" data-module="${n.module || ''}" style="cursor:pointer;">
-              <div class="notif-item-icon">${_notifIcon(n.type)}</div>
-              <div class="notif-item-body">
-                <div class="notif-item-msg">${Utils.escapeHtml(n.message)}</div>
-                <div class="notif-item-time">${_timeAgo(n.created_at)}</div>
-              </div>
-              ${!n.read ? `<div class="notif-item-dot"></div>` : ''}
-            </div>
-          `).join('')}
+          ? `<div class="notif-empty">You're all caught up! 🎉</div>`
+          : items.map(n => {
+              const meta = _notifMeta(n)
+              return `
+                <div class="notif-item${n.read ? '' : ' notif-item--unread'}" data-id="${n.id}" data-module="${n.module || ''}" style="cursor:pointer;">
+                  <div class="notif-item-icon notif-item-icon--${meta.cls}">${meta.emoji}</div>
+                  <div class="notif-item-body">
+                    <div class="notif-item-meta">
+                      <span class="notif-item-tag notif-item-tag--${meta.cls}">${meta.label}</span>
+                      <span class="notif-item-time">${_timeAgo(n.created_at)}</span>
+                    </div>
+                    <div class="notif-item-msg">${Utils.escapeHtml(n.message)}</div>
+                  </div>
+                  ${!n.read ? `<div class="notif-item-dot"></div>` : ''}
+                </div>`
+            }).join('')}
       </div>
     `
 
