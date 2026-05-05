@@ -608,9 +608,17 @@ const API = (() => {
 
   async function saveAccessMatrix(rows) {
     // rows: [{ department, module, feature, access_level }]
-    return supabase
+    // Delete-then-insert so stale rows (renamed/removed features) are
+    // cleaned up on every save. Upsert is unreliable without a guaranteed
+    // unique DB constraint; this approach requires none.
+    if (!rows.length) return { error: null }
+    const dept = rows[0].department
+    const { error: delErr } = await supabase
       .from('access_matrix')
-      .upsert(rows, { onConflict: 'department,module,feature' })
+      .delete()
+      .eq('department', dept)
+    if (delErr) return { error: delErr }
+    return supabase.from('access_matrix').insert(rows)
   }
 
   /* ── Departments (Phase 7 — dynamic registry) ────────────── */

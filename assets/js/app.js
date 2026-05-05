@@ -67,9 +67,21 @@ const App = (() => {
       _matrix = {}    // no dept → deny all
       return
     }
+
+    // Build a lookup of known features per module from the live registry.
+    // Any row in the DB whose module/feature is no longer registered is
+    // silently ignored — this prevents stale rows (renamed or removed features)
+    // from granting phantom access.
+    const knownFeatures = {}
+    ModuleRegistry.getAll().forEach(m => {
+      knownFeatures[m.key] = new Set(Object.keys(m.features || {}))
+    })
+
     const { data } = await API.getAccessMatrix(currentUser.department)
     _matrix = {}
     ;(data || []).forEach(row => {
+      if (!knownFeatures[row.module])                      return  // unknown module
+      if (!knownFeatures[row.module].has(row.feature))    return  // stale feature
       if (!_matrix[row.module]) _matrix[row.module] = {}
       _matrix[row.module][row.feature] = row.access_level
     })
