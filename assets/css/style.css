@@ -42,6 +42,36 @@
   --shadow-lg:        0 10px 15px rgba(0,0,0,0.1), 0 4px 6px rgba(0,0,0,0.05);
 }
 
+/* ── Dark Mode ──────────────────────────────────────────────── */
+[data-theme="dark"] {
+  --bg:               #1E293B;
+  --surface:          #0F172A;
+  --border:           #334155;
+  --border-light:     #1E293B;
+
+  --text:             #F1F5F9;
+  --text-secondary:   #94A3B8;
+  --text-muted:       #64748B;
+
+  --primary-light:    rgba(15, 71, 153, 0.3);
+  --secondary-light:  rgba(69, 187, 240, 0.15);
+  --success-light:    rgba(29, 158, 117, 0.2);
+  --warning-light:    rgba(245, 158, 11, 0.2);
+  --danger-light:     rgba(239, 68, 68, 0.2);
+
+  --shadow-sm:        0 1px 2px rgba(0,0,0,0.4);
+  --shadow:           0 1px 3px rgba(0,0,0,0.5), 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md:        0 4px 6px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.3);
+  --shadow-lg:        0 10px 15px rgba(0,0,0,0.5), 0 4px 6px rgba(0,0,0,0.3);
+}
+
+/* Active nav item: white bg is too jarring against dark content area */
+[data-theme="dark"] .nav-item--active,
+[data-theme="dark"] .nav-item--active:hover {
+  background: rgba(255,255,255,0.18);
+  color: #fff;
+}
+
 /* ── Reset ──────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 

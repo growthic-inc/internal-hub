@@ -170,9 +170,57 @@ const App = (() => {
     _checkAnnouncementDot()
     _initNotificationPanel()
     _initMobileNav()
+    _initThemeToggle()
+    _initAccessMatrixLiveSync()
 
     router()
     window.addEventListener('hashchange', router)
+  }
+
+  // ── Dark mode toggle ─────────────────────────────────────────
+  function _initThemeToggle() {
+    const btn  = document.getElementById('theme-toggle-btn')
+    const sun  = document.getElementById('theme-icon-sun')
+    const moon = document.getElementById('theme-icon-moon')
+    if (!btn) return
+
+    function _apply(isDark) {
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light')
+      localStorage.setItem('theme', isDark ? 'dark' : 'light')
+      if (sun)  sun.style.display  = isDark ? 'block' : 'none'
+      if (moon) moon.style.display = isDark ? 'none'  : 'block'
+    }
+
+    // Sync icon with whatever the flash-prevention script already set
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+    _apply(isDark)
+
+    btn.addEventListener('click', () => {
+      const nowDark = document.documentElement.getAttribute('data-theme') === 'dark'
+      _apply(!nowDark)
+    })
+  }
+
+  // ── Access matrix live sync (Supabase Realtime) ──────────────
+  function _initAccessMatrixLiveSync() {
+    if (!currentUser || currentUser.role === 'super_admin') return
+    let _refreshTimer = null
+    Config.supabase
+      .channel('access_matrix_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'access_matrix' }, (payload) => {
+        const dept = payload.new?.department || payload.old?.department
+        // Only react to changes that affect this user's department
+        if (dept && dept !== currentUser.department) return
+        clearTimeout(_refreshTimer)
+        // Debounce 800 ms — delete-then-insert fires many events in rapid succession
+        _refreshTimer = setTimeout(async () => {
+          await _loadAccessMatrix()
+          _renderSidebar()
+          router()
+          Utils.showToast('Your permissions have been updated.', 'info')
+        }, 800)
+      })
+      .subscribe()
   }
 
   function _renderSidebar() {
