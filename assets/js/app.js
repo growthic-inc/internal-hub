@@ -536,7 +536,7 @@ const App = (() => {
     let _step = 0
     const TOTAL = 7
     let _avatarFile = null
-    const _kycFiles = { aadhar: null, pan: null, passport: null, passport_photo: null }
+    const _kycFiles = { aadhar: null, pan: null }
     const _d = {
       dob: '', personal_email: '', phone: '', blood_group: '',
       address: '', linkedin_url: '',
@@ -821,10 +821,8 @@ const App = (() => {
 
       if (_step === 6) {
         const DOCS = [
-          { key: 'aadhar',         label: 'Aadhar Card',         icon: '🪪', optional: false },
-          { key: 'pan',            label: 'PAN Card',            icon: '📋', optional: false },
-          { key: 'passport',       label: 'Passport',            icon: '📔', optional: true  },
-          { key: 'passport_photo', label: 'Passport-size Photo', icon: '🤳', optional: true  },
+          { key: 'aadhar', label: 'Aadhar Card', icon: '🪪', optional: false },
+          { key: 'pan',    label: 'PAN Card',    icon: '📋', optional: false },
         ]
         html += `
           <div class="pw-kyc-grid">
