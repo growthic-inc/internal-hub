@@ -18,7 +18,7 @@ const API = (() => {
   }
 
   async function getClient(clientId) {
-    return supabase
+    const result = await supabase
       .from('clients')
       .select(`
         *,
@@ -33,6 +33,18 @@ const API = (() => {
       `)
       .eq('id', clientId)
       .single()
+    // PostgREST returns duplicate entity rows when an entity has multiple
+    // platforms or services (one row per combination). Deduplicate by ID here
+    // so every consumer gets clean data without per-module workarounds.
+    if (result.data?.client_entities) {
+      const seen = new Set()
+      result.data.client_entities = result.data.client_entities.filter(e => {
+        if (seen.has(e.id)) return false
+        seen.add(e.id)
+        return true
+      })
+    }
+    return result
   }
 
   async function getClientByProjectCode(projectCode) {
