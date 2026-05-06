@@ -404,7 +404,7 @@ const People = (() => {
             ${_stat('📅', 'Joined', Utils.formatDate(emp.joining_date))}
           </div>
           <div>
-            ${_stat('👤', 'Manager', emp.manager ? Utils.escapeHtml(emp.manager.name) : '—')}
+            ${_stat('👤', 'Manager', emp._managerName ? Utils.escapeHtml(emp._managerName) : '—')}
           </div>
         </div>
 
