@@ -92,10 +92,10 @@ const Reimbursements = (() => {
     const isSuperAdmin = user.role === 'super_admin'
     const isFinance    = user.department === 'finance' || user.role === 'finance'
 
-    // Approval access is purely driven by Access Control (super_admin always passes).
-    // HR dept gets can_approve via the Access Control module — no hardcoded role bypass.
-    const canApprove = isSuperAdmin || App.hasAccess('reimbursements', 'approve_requests', 'can_approve')
-    const canPayment = (isFinance || isSuperAdmin) && App.hasAccess('reimbursements', 'process_payment', 'can_approve')
+    // Approval access driven by Access Control. Minimum level is 'can_manage' so that
+    // setting "Approve Requests" to either Manage or Approve in the AC module grants access.
+    const canApprove = isSuperAdmin || App.hasAccess('reimbursements', 'approve_requests', 'can_manage')
+    const canPayment = (isFinance || isSuperAdmin) && App.hasAccess('reimbursements', 'process_payment', 'can_manage')
 
     const tabs = [{ id: 'mine', label: 'My Requests' }]
     if (canApprove)    tabs.push({ id: 'inbox',        label: 'Inbox' })
@@ -125,7 +125,7 @@ const Reimbursements = (() => {
     _isHR                = user.department === 'people_culture'
     _p                   = {
       can_create:  App.hasAccess('reimbursements', 'raise_pre_approval',  'can_upload'),
-      can_approve: user.role === 'super_admin' || App.hasAccess('reimbursements', 'approve_requests', 'can_approve'),
+      can_approve: user.role === 'super_admin' || App.hasAccess('reimbursements', 'approve_requests', 'can_manage'),
     }
     _activeTab           = 'mine'
     _selectedPreApproval = null
