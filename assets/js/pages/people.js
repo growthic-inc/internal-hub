@@ -209,7 +209,7 @@ const People = (() => {
       <table class="data-table">
         <thead>
           <tr>
-            <th>Employee ID</th>
+            <!-- <th>Employee ID</th> TODO: unhide once ID generation is fixed -->
             <th>Name</th>
             <th>Designation</th>
             <th>Department</th>
@@ -221,7 +221,7 @@ const People = (() => {
         <tbody>
           ${list.map(e => `
             <tr class="row-clickable" data-id="${e.id}" style="cursor:pointer;">
-              <td class="text-sm text-muted">${Utils.escapeHtml(e.employee_id || '—')}</td>
+              <!-- <td class="text-sm text-muted">${Utils.escapeHtml(e.employee_id || '—')}</td> TODO: unhide once ID generation is fixed -->
               <td>
                 <div style="display:flex;align-items:center;gap:10px;">
                   <div class="people-avatar-sm" style="width:32px;height:32px;border-radius:50%;
@@ -376,9 +376,7 @@ const People = (() => {
               ${emp.department ? ` · <span class="dept-badge">${Utils.getDeptLabel(emp.department)}</span>` : ''}
             </div>
             <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
-              <span style="font-size:12px;font-weight:600;color:var(--text-muted);">
-                ${Utils.escapeHtml(emp.employee_id || '—')}
-              </span>
+              <!-- <span style="font-size:12px;font-weight:600;color:var(--text-muted);">${Utils.escapeHtml(emp.employee_id || '—')}</span> TODO: unhide once ID generation is fixed -->
               ${statusBadge}
             </div>
           </div>
