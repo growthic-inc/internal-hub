@@ -230,7 +230,7 @@ const API = (() => {
   }
 
   async function updateAssetType(id, name) {
-    return supabase.from('asset_types').update({ name }).eq('id', id)
+    return supabase.from('asset_types').update({ name }).eq('id', id).select().single()
   }
 
   async function getAssetLocations() {

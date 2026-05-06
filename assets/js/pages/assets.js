@@ -1179,10 +1179,14 @@ const Assets = (() => {
         row.querySelector('.ast-inline-cancel').addEventListener('click', _renderSettingsTab)
         row.querySelector('.ast-inline-save').addEventListener('click', async () => {
           const newName = input.value.trim(); if (!newName) return
-          const { error } = await API.updateAssetType(btn.dataset.id, newName)
+          const id = btn.dataset.id
+          const { data: updated, error } = await API.updateAssetType(id, newName)
           if (error) { Utils.showToast(error.message, 'error'); return }
-          const { data } = await API.getAssetTypes(); _types = data || []
-          _renderSettingsTab(); Utils.showToast('Renamed.', 'success')
+          // Mutate local state directly — avoids a stale re-fetch race
+          const t = _types.find(t => t.id === id)
+          if (t) t.name = updated?.name ?? newName
+          _renderSettingsTab()
+          Utils.showToast('Renamed.', 'success')
         })
       })
     })
