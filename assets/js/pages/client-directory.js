@@ -968,7 +968,9 @@ const ClientDirectory = (() => {
         /* Replace platforms */
         await Config.supabase.from('client_platforms').delete().eq('client_id', clientId)
         /* Replace entities (cascades to entity_platforms + entity_services) */
-        await Config.supabase.from('client_entities').delete().eq('client_id', clientId)
+        const { error: delEntErr } = await Config.supabase
+          .from('client_entities').delete().eq('client_id', clientId)
+        if (delEntErr) throw delEntErr
       } else {
         const { error } = await Config.supabase.from('clients')
           .insert({ id: clientId, ...clientData, created_by: _user.id })
@@ -988,7 +990,7 @@ const ClientDirectory = (() => {
           .from('client_entities')
           .insert({ client_id: clientId, entity_name: entity.name.trim() })
           .select('id').single()
-        if (entErr) continue
+        if (entErr) throw entErr
 
         const eid = entRow.id
         if (entity.platforms.length) {

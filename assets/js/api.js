@@ -562,11 +562,22 @@ const API = (() => {
 
   /* ── Client Dashboard ────────────────────────────────────── */
   async function getClientDashboard(clientId) {
-    return supabase
+    const result = await supabase
       .from('clients')
       .select('*, client_entities(*), client_platforms(*), scope_of_work(*), account_manager:employees!am_id(id, name), status_updater:employees!client_status_updated_by(name)')
       .eq('id', clientId)
       .single()
+    // Deduplicate client_entities by entity_name — guards against DB duplicates
+    // that can accumulate if a prior edit's delete silently failed (RLS etc.)
+    if (result.data?.client_entities) {
+      const seen = new Set()
+      result.data.client_entities = result.data.client_entities.filter(e => {
+        if (seen.has(e.entity_name)) return false
+        seen.add(e.entity_name)
+        return true
+      })
+    }
+    return result
   }
 
   async function updateClientStatus(clientId, status, updatedBy) {
