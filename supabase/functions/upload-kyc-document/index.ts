@@ -1,18 +1,16 @@
-// Growthic One — Edge Function: upload-policy-file
-// Uploads a policy document to the HR Shared Drive.
+// Growthic One — Edge Function: upload-kyc-document
+// Uploads a KYC identity document to the HR Shared Drive.
 //
 // Drive path (HR Drive):
-//   Policies / {categoryName} / {filename}
+//   Employee Database / {Employee Name} / {doc_type}.{ext}
 //
-// The Policies root folder and category sub-folders are created lazily
-// on first upload — no pre-creation step needed.
-//
-// Returns: { driveUrl: string, driveFileId: string }
+// Files are made viewable by anyone with the link (HR folder permissions
+// on the Drive restrict who can actually browse to it).
 //
 // Env vars required:
 //   GOOGLE_DRIVE_HR_DRIVE_ID    — HR Shared Drive ID
 //   GOOGLE_SERVICE_ACCOUNT_JSON
-//   SUPABASE_URL / SUPABASE_ANON_KEY
+//   SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -20,6 +18,8 @@ const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
+
+const VALID_DOC_TYPES = new Set(['aadhar', 'pan', 'passport', 'passport_photo'])
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -40,28 +40,62 @@ Deno.serve(async (req: Request) => {
     // ── Parse form ────────────────────────────────────────────
     const form         = await req.formData()
     const file         = form.get('file')          as File   | null
-    const categoryName = form.get('category_name') as string | null
+    const employeeId   = form.get('employee_id')   as string | null
+    const employeeName = form.get('employee_name') as string | null
+    const docType      = form.get('doc_type')      as string | null
 
-    if (!file || !categoryName) return json({ error: 'file and category_name are required.' }, 400)
-    if (file.size > 50 * 1024 * 1024) return json({ error: 'File exceeds 50 MB limit.' }, 400)
+    if (!file || !employeeId || !employeeName || !docType) {
+      return json({ error: 'file, employee_id, employee_name, and doc_type are required.' }, 400)
+    }
+    if (!VALID_DOC_TYPES.has(docType)) {
+      return json({ error: `Invalid doc_type: ${docType}. Must be one of: ${[...VALID_DOC_TYPES].join(', ')}` }, 400)
+    }
+    if (file.size > 10 * 1024 * 1024) return json({ error: 'File exceeds 10 MB limit.' }, 400)
 
-    // ── Folder path: HR / Policies / {categoryName} / {filename} ─
+    // Only the employee themselves, or HR / super_admin, may upload KYC docs
+    if (user.id !== employeeId) {
+      const adminClient = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      )
+      const { data: callerEmp } = await adminClient
+        .from('employees')
+        .select('role, department')
+        .eq('id', user.id)
+        .single()
+      const isHr = callerEmp?.role === 'super_admin' || callerEmp?.department === 'people_culture'
+      if (!isHr) return json({ error: 'You can only upload your own KYC documents.' }, 403)
+    }
+
+    // ── Google Drive ──────────────────────────────────────────
     const saJson      = JSON.parse(Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON')!)
     const accessToken = await getGoogleAccessToken(saJson)
     const hrRootId    = Deno.env.get('GOOGLE_DRIVE_HR_DRIVE_ID')!
 
+    // Path: HR / Employee Database / {Employee Name} / {doc_type}.{ext}
     let parent = hrRootId
-    parent = await findOrCreateFolder(accessToken, 'Policies',             parent)
-    parent = await findOrCreateFolder(accessToken, categoryName.trim(),    parent)
+    parent = await findOrCreateFolder(accessToken, 'Employee Database',    parent)
+    parent = await findOrCreateFolder(accessToken, employeeName.trim(),    parent)
+
+    // Use doc_type as file name so re-uploads cleanly overwrite the previous file
+    const originalExt = file.name.includes('.') ? file.name.split('.').pop()!.toLowerCase() : 'pdf'
+    const fileName    = `${docType}.${originalExt}`
+
+    // Delete any existing file with the same name (clean replace)
+    await deleteExistingFile(accessToken, parent, fileName)
 
     // ── Upload ────────────────────────────────────────────────
     const fileBytes = new Uint8Array(await file.arrayBuffer())
-    const { fileId, webViewLink } = await uploadFileToDrive(
-      accessToken, parent, file.name, fileBytes, file.type || 'application/octet-stream',
+    const { driveFileId, webViewLink } = await uploadFileToDrive(
+      accessToken, parent, fileName, fileBytes, file.type || 'application/octet-stream',
     )
 
-    await setPublicReadPermission(accessToken, fileId)
-    return json({ driveUrl: webViewLink, driveFileId: fileId })
+    await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}/permissions?supportsAllDrives=true`, {
+      method:'POST', headers:{ Authorization:`Bearer ${accessToken}`, 'Content-Type':'application/json' },
+      body: JSON.stringify({ role:'reader', type:'anyone' }),
+    }).catch(() => {})
+
+    return json({ success: true, drive_url: webViewLink })
 
   } catch (err) {
     return json({ error: String(err) }, 500)
@@ -104,7 +138,6 @@ async function findOrCreateFolder(token: string, name: string, parentId: string)
     { headers:{ Authorization:`Bearer ${token}` } },
   )
   const sd = await sr.json() as { files: { id: string }[]; error?: unknown }
-  if (sd.error) throw new Error(`Drive folder search failed: ${JSON.stringify(sd.error)}`)
   if (sd.files?.length > 0) return sd.files[0].id
   const cr = await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true', {
     method:'POST', headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
@@ -115,10 +148,24 @@ async function findOrCreateFolder(token: string, name: string, parentId: string)
   return cd.id
 }
 
+async function deleteExistingFile(token: string, folderId: string, fileName: string): Promise<void> {
+  const q = `name='${fileName.replace(/'/g,"\\'")}' and '${folderId}' in parents and trashed=false`
+  const sr = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+    { headers:{ Authorization:`Bearer ${token}` } },
+  )
+  const sd = await sr.json() as { files: { id: string }[] }
+  for (const f of sd.files || []) {
+    await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?supportsAllDrives=true`, {
+      method:'DELETE', headers:{ Authorization:`Bearer ${token}` },
+    }).catch(() => {})
+  }
+}
+
 async function uploadFileToDrive(
   token: string, folderId: string, fileName: string, fileBytes: Uint8Array, mimeType: string,
-): Promise<{ fileId: string; webViewLink: string }> {
-  const boundary = 'growthic_policy_boundary'
+): Promise<{ driveFileId: string; webViewLink: string }> {
+  const boundary = 'growthic_kyc_boundary'
   const enc = new TextEncoder()
   const meta = enc.encode(
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
@@ -134,24 +181,7 @@ async function uploadFileToDrive(
   )
   const ud = await ur.json() as { id?: string; webViewLink?: string; error?: unknown }
   if (!ud.id) throw new Error(`Drive upload failed: ${JSON.stringify(ud.error || ud)}`)
-
-  const id  = ud.id
-  const raw = ud.webViewLink || ''
-  let viewUrl: string
-  if (raw.includes('docs.google.com/document/d/'))          viewUrl = `https://docs.google.com/document/d/${id}/view`
-  else if (raw.includes('docs.google.com/spreadsheets/d/')) viewUrl = `https://docs.google.com/spreadsheets/d/${id}/view`
-  else if (raw.includes('docs.google.com/presentation/d/')) viewUrl = `https://docs.google.com/presentation/d/${id}/view`
-  else viewUrl = `https://drive.google.com/file/d/${id}/view`
-
-  return { fileId: id, webViewLink: viewUrl }
-}
-
-async function setPublicReadPermission(token: string, fileId: string): Promise<void> {
-  await fetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}/permissions?supportsAllDrives=true`,
-    { method:'POST', headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
-      body: JSON.stringify({ role:'reader', type:'anyone' }) },
-  ).catch(() => {})
+  return { driveFileId: ud.id, webViewLink: ud.webViewLink! }
 }
 
 function json(body: object, status = 200) {

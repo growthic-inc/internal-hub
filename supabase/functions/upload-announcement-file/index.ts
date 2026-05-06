@@ -1,13 +1,15 @@
 // Growthic One — Edge Function: upload-announcement-file
-// Uploads an announcement attachment to Google Drive.
+// Uploads an announcement attachment to the HR Shared Drive.
 //
-// Drive path:
+// Drive path (HR Drive):
 //   Announcements / {YYYY} / {MM-MonthName} / {filename}
 //
-// Env vars required (in addition to standard Supabase secrets):
-//   GOOGLE_DRIVE_ANNOUNCEMENTS_FOLDER_ID = 1taGMq1_OhhpV8OGtqgnmHPhB_q7wMwpt
-//
 // Returns: { driveUrl: string }
+//
+// Env vars required:
+//   GOOGLE_DRIVE_HR_DRIVE_ID    — HR Shared Drive ID
+//   GOOGLE_SERVICE_ACCOUNT_JSON
+//   SUPABASE_URL / SUPABASE_ANON_KEY
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -44,26 +46,26 @@ Deno.serve(async (req: Request) => {
     if (!file) return json({ error: 'file is required.' }, 400)
     if (file.size > 20 * 1024 * 1024) return json({ error: 'File exceeds 20 MB limit.' }, 400)
 
-    // ── Folder path: Announcements / YYYY / MM-MonthName ──────
-    const now       = new Date()
-    const year      = String(now.getFullYear())
-    const monthNum  = String(now.getMonth() + 1).padStart(2, '0')
-    const monthName = MONTH_NAMES[now.getMonth()]
-    const monthFolder = `${monthNum}-${monthName}`
+    // ── Folder path: HR / Announcements / YYYY / MM-MonthName ─
+    const now         = new Date()
+    const year        = String(now.getFullYear())
+    const monthNum    = String(now.getMonth() + 1).padStart(2, '0')
+    const monthName   = MONTH_NAMES[now.getMonth()]
+    const monthFolder = `${monthNum}-${monthName}`  // e.g. "05-May"
 
     const saJson      = JSON.parse(Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON')!)
     const accessToken = await getGoogleAccessToken(saJson)
-    const rootId      = Deno.env.get('GOOGLE_DRIVE_ANNOUNCEMENTS_FOLDER_ID')!
+    const hrRootId    = Deno.env.get('GOOGLE_DRIVE_HR_DRIVE_ID')!
 
-    let parent = rootId
-    parent = await findOrCreateFolder(accessToken, year,        parent)
-    parent = await findOrCreateFolder(accessToken, monthFolder, parent)
+    let parent = hrRootId
+    parent = await findOrCreateFolder(accessToken, 'Announcements', parent)
+    parent = await findOrCreateFolder(accessToken, year,            parent)
+    parent = await findOrCreateFolder(accessToken, monthFolder,     parent)
 
     // ── Upload ────────────────────────────────────────────────
     const fileBytes = new Uint8Array(await file.arrayBuffer())
     const { fileId, webViewLink } = await uploadFileToDrive(
-      accessToken, parent, file.name, fileBytes,
-      file.type || 'application/octet-stream',
+      accessToken, parent, file.name, fileBytes, file.type || 'application/octet-stream',
     )
 
     await setPublicReadPermission(accessToken, fileId)
@@ -74,88 +76,78 @@ Deno.serve(async (req: Request) => {
   }
 })
 
-/* ── Google Drive helpers (same pattern as upload-client-doc) ── */
+/* ── Google Drive helpers ─────────────────────────────────── */
 
 async function getGoogleAccessToken(sa: Record<string, string>): Promise<string> {
-  const now     = Math.floor(Date.now() / 1000)
+  const now = Math.floor(Date.now() / 1000)
   const header  = { alg: 'RS256', typ: 'JWT' }
   const payload = {
-    iss: sa.client_email,
-    scope: 'https://www.googleapis.com/auth/drive',
-    aud: 'https://oauth2.googleapis.com/token',
-    iat: now, exp: now + 3600,
+    iss: sa.client_email, scope: 'https://www.googleapis.com/auth/drive',
+    aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600,
   }
-  const b64url = (obj: object) =>
-    btoa(JSON.stringify(obj)).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_')
+  const b64url = (o: object) =>
+    btoa(JSON.stringify(o)).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_')
   const signingInput = `${b64url(header)}.${b64url(payload)}`
   const pemBody = sa.private_key
-    .replace(/-----BEGIN PRIVATE KEY-----/, '').replace(/-----END PRIVATE KEY-----/, '')
-    .replace(/\\n/g, '\n').replace(/\n/g, '')
+    .replace(/-----BEGIN PRIVATE KEY-----/,'').replace(/-----END PRIVATE KEY-----/,'')
+    .replace(/\\n/g,'\n').replace(/\n/g,'')
   const keyBytes  = Uint8Array.from(atob(pemBody), c => c.charCodeAt(0))
   const cryptoKey = await crypto.subtle.importKey(
-    'pkcs8', keyBytes, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign'],
+    'pkcs8', keyBytes, { name:'RSASSA-PKCS1-v1_5', hash:'SHA-256' }, false, ['sign'],
   )
   const sigBytes = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', cryptoKey, new TextEncoder().encode(signingInput))
-  const sig = btoa(String.fromCharCode(...new Uint8Array(sigBytes)))
-    .replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_')
-  const jwt = `${signingInput}.${sig}`
-  const tokenRes  = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+  const sig = btoa(String.fromCharCode(...new Uint8Array(sigBytes))).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_')
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:`grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${signingInput}.${sig}`,
   })
-  const tokenData = await tokenRes.json() as { access_token: string }
-  return tokenData.access_token
+  const td = await tokenRes.json() as { access_token: string }
+  return td.access_token
 }
 
 async function findOrCreateFolder(token: string, name: string, parentId: string): Promise<string> {
   const q = `name='${name.replace(/'/g,"\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
-  const searchRes  = await fetch(
+  const sr = await fetch(
     `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&supportsAllDrives=true&includeItemsFromAllDrives=true`,
-    { headers: { Authorization: `Bearer ${token}` } },
+    { headers:{ Authorization:`Bearer ${token}` } },
   )
-  const searchData = await searchRes.json() as { files: { id: string }[]; error?: unknown }
-  if (searchData.error) throw new Error(`Drive folder search failed: ${JSON.stringify(searchData.error)}`)
-  if (searchData.files?.length > 0) return searchData.files[0].id
-
-  const createRes  = await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] }),
+  const sd = await sr.json() as { files: { id: string }[]; error?: unknown }
+  if (sd.error) throw new Error(`Drive folder search failed: ${JSON.stringify(sd.error)}`)
+  if (sd.files?.length > 0) return sd.files[0].id
+  const cr = await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true', {
+    method:'POST', headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+    body: JSON.stringify({ name, mimeType:'application/vnd.google-apps.folder', parents:[parentId] }),
   })
-  const createData = await createRes.json() as { id?: string; error?: unknown }
-  if (!createData.id) throw new Error(`Drive folder create failed: ${JSON.stringify(createData.error || createData)}`)
-  return createData.id
+  const cd = await cr.json() as { id?: string; error?: unknown }
+  if (!cd.id) throw new Error(`Drive folder create failed: ${JSON.stringify(cd.error || cd)}`)
+  return cd.id
 }
 
 async function uploadFileToDrive(
-  token: string, folderId: string, fileName: string,
-  fileBytes: Uint8Array, mimeType: string,
+  token: string, folderId: string, fileName: string, fileBytes: Uint8Array, mimeType: string,
 ): Promise<{ fileId: string; webViewLink: string }> {
   const boundary = 'growthic_announcement_boundary'
-  const enc      = new TextEncoder()
-  const metaPart = enc.encode(
+  const enc = new TextEncoder()
+  const meta = enc.encode(
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
     JSON.stringify({ name: fileName, parents: [folderId] }) +
     `\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
   )
   const footer = enc.encode(`\r\n--${boundary}--`)
-  const body   = new Uint8Array(metaPart.length + fileBytes.length + footer.length)
-  body.set(metaPart, 0)
-  body.set(fileBytes, metaPart.length)
-  body.set(footer, metaPart.length + fileBytes.length)
-
-  const uploadRes  = await fetch(
+  const body   = new Uint8Array(meta.length + fileBytes.length + footer.length)
+  body.set(meta, 0); body.set(fileBytes, meta.length); body.set(footer, meta.length + fileBytes.length)
+  const ur = await fetch(
     `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink&supportsAllDrives=true`,
-    { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': `multipart/related; boundary=${boundary}` }, body },
+    { method:'POST', headers:{ Authorization:`Bearer ${token}`, 'Content-Type':`multipart/related; boundary=${boundary}` }, body },
   )
-  const uploadData = await uploadRes.json() as { id?: string; webViewLink?: string; error?: unknown }
-  if (!uploadData.id) throw new Error(`Drive upload failed: ${JSON.stringify(uploadData.error || uploadData)}`)
+  const ud = await ur.json() as { id?: string; webViewLink?: string; error?: unknown }
+  if (!ud.id) throw new Error(`Drive upload failed: ${JSON.stringify(ud.error || ud)}`)
 
-  const id  = uploadData.id
-  const raw = uploadData.webViewLink || ''
+  // Normalise to /view URL so reader-only users can open the file
+  const id  = ud.id
+  const raw = ud.webViewLink || ''
   let viewUrl: string
-  if (raw.includes('docs.google.com/document/d/'))      viewUrl = `https://docs.google.com/document/d/${id}/view`
+  if (raw.includes('docs.google.com/document/d/'))          viewUrl = `https://docs.google.com/document/d/${id}/view`
   else if (raw.includes('docs.google.com/spreadsheets/d/')) viewUrl = `https://docs.google.com/spreadsheets/d/${id}/view`
   else if (raw.includes('docs.google.com/presentation/d/')) viewUrl = `https://docs.google.com/presentation/d/${id}/view`
   else viewUrl = `https://drive.google.com/file/d/${id}/view`
@@ -166,14 +158,13 @@ async function uploadFileToDrive(
 async function setPublicReadPermission(token: string, fileId: string): Promise<void> {
   await fetch(
     `https://www.googleapis.com/drive/v3/files/${fileId}/permissions?supportsAllDrives=true`,
-    { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role: 'reader', type: 'anyone' }) },
-  )
+    { method:'POST', headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+      body: JSON.stringify({ role:'reader', type:'anyone' }) },
+  ).catch(() => {})
 }
 
 function json(body: object, status = 200) {
   return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
 }
