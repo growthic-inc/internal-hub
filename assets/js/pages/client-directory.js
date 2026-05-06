@@ -72,14 +72,15 @@ const ClientDirectory = (() => {
   // Uploads to Google Drive via the upload-client-doc Edge Function.
   // clientName is passed directly — no DB lookup needed (works for new clients too).
   // Returns a Drive /view URL stored directly in the DB column.
-  async function _uploadClientDoc(clientName, file, type) {
+  async function _uploadClientDoc(clientName, clientStatus, file, type) {
     const { data: { session } } = await Config.supabase.auth.getSession()
     if (!session) throw new Error('Not authenticated')
 
     const form = new FormData()
-    form.append('file',        file)
-    form.append('client_name', clientName)
-    form.append('doc_type',    type)   // 'brand_guidelines' | 'service_agreement'
+    form.append('file',          file)
+    form.append('client_name',   clientName)
+    form.append('client_status', clientStatus || 'active')
+    form.append('doc_type',      type)   // 'brand_guidelines' | 'service_agreement'
 
     const res = await fetch(
       `${Config.SUPABASE_URL}/functions/v1/upload-client-doc`,
@@ -934,10 +935,10 @@ const ClientDirectory = (() => {
       let saUrl = _existingSaUrl
 
       if (_files.bg) {
-        bgUrl = await _uploadClientDoc(name, _files.bg, 'brand_guidelines')
+        bgUrl = await _uploadClientDoc(name, status, _files.bg, 'brand_guidelines')
       }
       if (_files.sa && _canCommercial()) {
-        saUrl = await _uploadClientDoc(name, _files.sa, 'service_agreement')
+        saUrl = await _uploadClientDoc(name, status, _files.sa, 'service_agreement')
       }
 
       /* Build client record — category must match DB check constraint exactly */

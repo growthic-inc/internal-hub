@@ -257,13 +257,15 @@ const API = (() => {
       .order('created_at', { ascending: false })
   }
 
-  async function uploadAssetPhoto(file, assetId, context) {
+  async function uploadAssetPhoto(file, assetId, context, assetCategory = '', assetName = '') {
     const { data: { session } } = await supabase.auth.getSession()
     const form = new FormData()
-    form.append('file',        file)
-    form.append('asset_id',    assetId)
-    form.append('context',     context)
-    form.append('folder_type', 'asset_photos')
+    form.append('file',           file)
+    form.append('asset_id',       assetId)
+    form.append('context',        context)
+    form.append('folder_type',    'asset_photos')
+    form.append('asset_category', assetCategory)
+    form.append('asset_name',     assetName)
     const res = await fetch(
       `${Config.SUPABASE_URL}/functions/v1/upload-to-drive`,
       {
@@ -1442,8 +1444,41 @@ const API = (() => {
 
   // Sets clients.status (active / inactive / paused / archived) — distinct from
   // updateClientStatus which manages the CRM health field.
+  // After the DB update succeeds, fire-and-forget a Drive folder move so the
+  // client's folders stay in sync with the new status category.
   async function setClientStatus(clientId, status) {
-    return Config.supabase.from('clients').update({ status }).eq('id', clientId)
+    // Fetch current status so we know which folder to move from
+    const { data: current } = await Config.supabase
+      .from('clients')
+      .select('client_name, status')
+      .eq('id', clientId)
+      .single()
+
+    const result = await Config.supabase.from('clients').update({ status }).eq('id', clientId)
+    if (result.error) return result
+
+    // Fire-and-forget Drive folder move (don't block UI on Drive latency)
+    if (current?.client_name && current?.status && current.status !== status) {
+      const { data: { session } } = await Config.supabase.auth.getSession()
+      fetch(
+        `${Config.SUPABASE_URL}/functions/v1/move-client-folder`,
+        {
+          method:  'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': `Bearer ${session?.access_token}`,
+            'apikey':        Config.SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({
+            client_name: current.client_name,
+            old_status:  current.status,
+            new_status:  status,
+          }),
+        }
+      ).catch(() => {/* Drive move failure is non-fatal */})
+    }
+
+    return result
   }
 
   return {

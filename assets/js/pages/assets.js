@@ -1491,12 +1491,12 @@ const Assets = (() => {
      PHOTO UPLOAD HELPER
   ══════════════════════════════════════════════════════════ */
 
-  async function _uploadPhoto(fileInputId, statusElId, assetId, context) {
+  async function _uploadPhoto(fileInputId, statusElId, assetId, context, assetCategory = '', assetName = '') {
     const file = document.getElementById(fileInputId)?.files[0]
     if (!file) return null
     const statusEl = document.getElementById(statusElId)
     if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = 'Uploading photo…' }
-    const result = await API.uploadAssetPhoto(file, assetId, context)
+    const result = await API.uploadAssetPhoto(file, assetId, context, assetCategory, assetName)
     if (statusEl) statusEl.textContent = result.drive_url ? 'Photo uploaded.' : 'Photo upload failed — continuing without photo.'
     return result.drive_url || null
   }
@@ -1560,7 +1560,7 @@ const Assets = (() => {
 
       btn.disabled = true; btn.textContent = 'Assigning…'
 
-      const photoUrl = await _uploadPhoto('ast-assign-photo', 'ast-assign-photo-status', asset.id, 'assign')
+      const photoUrl = await _uploadPhoto('ast-assign-photo', 'ast-assign-photo-status', asset.id, 'assign', asset.type || '', asset.name || '')
 
       const { error } = await API.updateAsset(asset.id, {
         assigned_to:   empId,
@@ -1920,7 +1920,7 @@ const Assets = (() => {
 
       btn.disabled = true; btn.textContent = 'Submitting…'
 
-      const photoUrl = await _uploadPhoto('ast-report-photo', 'ast-report-photo-status', asset.id, 'issue')
+      const photoUrl = await _uploadPhoto('ast-report-photo', 'ast-report-photo-status', asset.id, 'issue', asset.type || '', asset.name || '')
 
       const { error } = await API.createAssetRepair({
         asset_id: asset.id, reported_by: _user.id,
