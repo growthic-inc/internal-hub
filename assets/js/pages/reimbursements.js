@@ -201,7 +201,7 @@ const Reimbursements = (() => {
     `
   }
 
-  function _renderPreApprovalTable(rows, showEmployee, showActions = false) {
+  function _renderPreApprovalTable(rows, showEmployee, showActions = false, canApproveRow = null) {
     if (!rows.length) return '<p class="empty-state">No pre-approval requests yet.</p>'
     return `
       <table class="data-table">
@@ -216,7 +216,9 @@ const Reimbursements = (() => {
           ${showActions ? '<th>Action</th>' : ''}
         </tr></thead>
         <tbody>
-          ${rows.map(r => `
+          ${rows.map(r => {
+            const canAct = showActions && (canApproveRow === null || canApproveRow(r))
+            return `
             <tr>
               ${showEmployee  ? `<td>${Utils.escapeHtml(r.submitter?.name || '—')}</td>` : ''}
               <td>${Utils.getExpenseLabel(r.expense_type)}</td>
@@ -225,15 +227,19 @@ const Reimbursements = (() => {
               <td>${Utils.formatDate(r.expected_date)}</td>
               <td>${STATUS_BADGE[r.status] || r.status}</td>
               <td class="text-muted">${Utils.escapeHtml(Utils.truncate(r.reason || '—', 50))}</td>
-              ${showActions ? `<td><button class="btn btn--xs btn--primary" data-approve="${r.id}">Review</button></td>` : ''}
-            </tr>
-          `).join('')}
+              ${showActions
+                ? canAct
+                  ? `<td><button class="btn btn--xs btn--primary" data-approve="${r.id}">Review</button></td>`
+                  : `<td><span class="badge badge--muted" style="font-size:11px;">Pending SA</span></td>`
+                : ''}
+            </tr>`
+          }).join('')}
         </tbody>
       </table>
     `
   }
 
-  function _renderClaimTable(rows, showEmployee, showApproveBtn = false, showPayBtn = false) {
+  function _renderClaimTable(rows, showEmployee, showApproveBtn = false, showPayBtn = false, canApproveRow = null) {
     if (!rows.length) return '<p class="empty-state">No claims found.</p>'
     // showApproveBtn = inbox view → show PA linkage column + generic status
     // showPayBtn = payment view
@@ -296,7 +302,9 @@ const Reimbursements = (() => {
                   ? `<a href="${Utils.escapeHtml(r.drive_receipt_url)}" target="_blank" class="link">View</a>`
                   : '—'}</td>
                 ${showApproveBtn
-                  ? `<td><button class="btn btn--xs btn--primary" data-approve="${r.id}">Review</button></td>`
+                  ? (canApproveRow === null || canApproveRow(r))
+                    ? `<td><button class="btn btn--xs btn--primary" data-approve="${r.id}">Review</button></td>`
+                    : `<td><span class="badge badge--muted" style="font-size:11px;">Pending SA</span></td>`
                   : ''}
                 ${showPayBtn
                   ? `<td>${r.status === 'approved'
@@ -326,22 +334,28 @@ const Reimbursements = (() => {
       API.getReimbursementInbox('claim'),
     ])
 
-    // Exclude People & Culture (HR) submissions — those are handled via Super Admin's "HR Requests" tab
-    const filterFn     = r => r.submitter?.department !== 'people_culture'
-    const preApprovals = (paRes.data || []).filter(filterFn)
-    const claims       = (clRes.data || []).filter(filterFn)
+    const isSA = _user.role === 'super_admin'
+
+    // Super Admin: filter P&C submissions to their own "HR Requests" tab (keeps Inbox focused)
+    // HR: show ALL pending requests for full visibility; action buttons restricted per row
+    const filterFn = isSA ? (r => r.submitter?.department !== 'people_culture') : null
+    const preApprovals = filterFn ? (paRes.data || []).filter(filterFn) : (paRes.data || [])
+    const claims       = filterFn ? (clRes.data || []).filter(filterFn) : (clRes.data || [])
+
+    // HR can only act on non-P&C submissions; P&C requests show "Pending SA" instead
+    const canApproveRow = isSA ? null : (r => r.submitter?.department !== 'people_culture')
 
     content.innerHTML = `
       <div class="section-card mb-4">
         <div class="section-card-header"><h3>Pending Pre-Approval Requests</h3></div>
         <div class="section-card-body" id="inbox-preapprovals">
-          ${_renderPreApprovalTable(preApprovals, true, true)}
+          ${_renderPreApprovalTable(preApprovals, true, true, canApproveRow)}
         </div>
       </div>
       <div class="section-card">
         <div class="section-card-header"><h3>Pending Expense Claims</h3></div>
         <div class="section-card-body" id="inbox-claims">
-          ${_renderClaimTable(claims, true, true, false)}
+          ${_renderClaimTable(claims, true, true, false, canApproveRow)}
         </div>
       </div>
     `
