@@ -598,7 +598,13 @@ const Reimbursements = (() => {
       if (client) pcEl.value = client.project_code || ''
 
       const { data: full } = await API.getClient(clientId)
-      const entities        = full?.client_entities || []
+      // Deduplicate entities — nested joins (entity_platforms/services) can produce duplicate rows
+      const seen     = new Set()
+      const entities = (full?.client_entities || []).filter(e => {
+        if (seen.has(e.id)) return false
+        seen.add(e.id)
+        return true
+      })
 
       if (entities.length > 1) {
         entitySel.innerHTML = '<option value="">— Select entity —</option>' +
@@ -1027,7 +1033,13 @@ const Reimbursements = (() => {
     if (pcEl && client) pcEl.value = client.project_code || ''
 
     const { data: full } = await API.getClient(clientId)
-    const entities        = full?.client_entities || []
+    // Deduplicate entities — nested joins (entity_platforms/services) can produce duplicate rows
+    const _seen    = new Set()
+    const entities = (full?.client_entities || []).filter(e => {
+      if (_seen.has(e.id)) return false
+      _seen.add(e.id)
+      return true
+    })
 
     if (entityWrap && entityEl) {
       if (entities.length > 1) {
@@ -1078,6 +1090,17 @@ const Reimbursements = (() => {
 
     if (!amount || amount <= 0) { Utils.showToast('Enter a valid amount.', 'error'); return }
     if (!date)                  { Utils.showToast('Select an expense date.', 'error'); return }
+
+    // Warn if a file was selected but not uploaded yet
+    const fileInput   = document.getElementById('receipt-file-input')
+    const uploadRow   = document.getElementById('receipt-upload-row')
+    const receiptDone = document.getElementById('receipt-done')
+    const fileChosen  = fileInput?.files?.length > 0
+    const uploaded    = receiptDone?.style.display !== 'none'
+    if (fileChosen && !uploaded && !_receiptUrl) {
+      Utils.showToast('Please click "Upload to Drive" to upload the receipt before submitting.', 'error')
+      return
+    }
 
     btn.disabled    = true
     btn.textContent = 'Submitting…'
