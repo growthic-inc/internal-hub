@@ -846,15 +846,15 @@ const App = (() => {
               </div>
             </div>
             <div class="form-group">
-              <label class="form-label">Personal Email</label>
+              <label class="form-label">Personal Email <span class="required">*</span></label>
               <input type="email" id="pw-personal-email" class="form-input" placeholder="personal@example.com" value="${Utils.escapeHtml(_d.personal_email)}">
             </div>
             <div class="form-group">
-              <label class="form-label">Phone Number</label>
+              <label class="form-label">Phone Number <span class="required">*</span></label>
               <input type="tel" id="pw-phone" class="form-input" placeholder="+91 98765 43210" value="${Utils.escapeHtml(_d.phone)}">
             </div>
             <div class="form-group">
-              <label class="form-label">Blood Group</label>
+              <label class="form-label">Blood Group <span class="required">*</span></label>
               <select id="pw-blood-group" class="form-input">
                 <option value="">Select</option>
                 ${['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(bg =>
@@ -867,7 +867,7 @@ const App = (() => {
       if (_step === 3) {
         html += `
           <div class="form-group">
-            <label class="form-label">Residential Address</label>
+            <label class="form-label">Residential Address <span class="required">*</span></label>
             <textarea id="pw-address" class="form-input" rows="3" placeholder="House no., Street, City, State, PIN">${Utils.escapeHtml(_d.address)}</textarea>
           </div>
           <div class="form-group" style="margin-top:14px;">
@@ -880,11 +880,11 @@ const App = (() => {
         html += `
           <div class="people-field-grid">
             <div class="form-group">
-              <label class="form-label">Bank Account Number</label>
+              <label class="form-label">Bank Account Number <span class="required">*</span></label>
               <input type="text" id="pw-bank-account" class="form-input" placeholder="Account number" value="${Utils.escapeHtml(_d.bank_account_number)}">
             </div>
             <div class="form-group">
-              <label class="form-label">IFSC Code</label>
+              <label class="form-label">IFSC Code <span class="required">*</span></label>
               <input type="text" id="pw-bank-ifsc" class="form-input" placeholder="e.g. HDFC0001234" value="${Utils.escapeHtml(_d.bank_ifsc)}">
             </div>
           </div>`
@@ -894,15 +894,15 @@ const App = (() => {
         html += `
           <div class="people-field-grid">
             <div class="form-group">
-              <label class="form-label">Contact Name</label>
+              <label class="form-label">Contact Name <span class="required">*</span></label>
               <input type="text" id="pw-ec-name" class="form-input" placeholder="Full name" value="${Utils.escapeHtml(_d.ec_name)}">
             </div>
             <div class="form-group">
-              <label class="form-label">Phone Number</label>
+              <label class="form-label">Phone Number <span class="required">*</span></label>
               <input type="tel" id="pw-ec-phone" class="form-input" placeholder="+91 98765 43210" value="${Utils.escapeHtml(_d.ec_phone)}">
             </div>
             <div class="form-group">
-              <label class="form-label">Relationship</label>
+              <label class="form-label">Relationship <span class="required">*</span></label>
               <select id="pw-ec-relationship" class="form-input">
                 <option value="">Select</option>
                 ${['Parent','Spouse','Sibling','Child','Friend','Other'].map(r =>
@@ -996,6 +996,10 @@ const App = (() => {
             _kycFiles[this.dataset.doc] = f
             _renderBody(0)
             _renderPreview()
+            // Re-render nav so Next button reflects the updated _kycFiles state.
+            // _renderBody(0) replaces DOM, so the old _bindStepInputs bindings
+            // are now on detached nodes — _renderNav re-attaches them.
+            _renderNav()
           })
         })
       }
@@ -1003,7 +1007,14 @@ const App = (() => {
       // PEP radio live update
       if (_step === 7) {
         wrap.querySelectorAll('input[name="pep"]').forEach(r => {
-          r.addEventListener('change', () => { _capture(); _renderBody(0) })
+          r.addEventListener('change', () => {
+            _capture()
+            _renderBody(0)
+            // _renderBody(0) replaces the DOM, so _bindStepInputs bindings are
+            // now on detached nodes. Re-render nav to re-attach them to the new
+            // declaration checkbox and update the Next button state.
+            _renderNav()
+          })
         })
       }
     }
