@@ -88,13 +88,14 @@
   <script src="../assets/js/pages/tools.js"></script>
   <script src="../assets/js/pages/access-control.js"></script>
   <script src="../assets/js/pages/permissions.js"></script>
-  <script src="../assets/js/pages/access.js"></script>
-  <script src="../assets/js/pages/settings.js"></script>
-  <!-- Phase 7: HR modules -->
+  <!-- Phase 7: HR modules must load before access.js so their
+       ModuleRegistry.register() calls are captured at parse time -->
   <script src="../assets/js/pages/people.js"></script>
   <script src="../assets/js/pages/leave-tracker.js"></script>
   <script src="../assets/js/pages/announcements.js"></script>
   <script src="../assets/js/pages/policies.js"></script>
+  <script src="../assets/js/pages/access.js"></script>
+  <script src="../assets/js/pages/settings.js"></script>
   <!-- Phase 8 -->
   <script src="../assets/js/pages/home.js"></script>
   <script src="../assets/js/app.js"></script>
