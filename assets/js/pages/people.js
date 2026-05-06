@@ -305,30 +305,39 @@ const People = (() => {
   }
 
   async function _showProfileView(emp) {
+    const isActive   = emp.status === 'active'
     const avatarHtml = emp.profile_image_url
-      ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" alt=""
-           style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
-      : `<span style="font-size:22px;font-weight:700;">${Utils.getInitials(emp.name)}</span>`
+      ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" alt="" style="width:100%;height:100%;object-fit:cover;">`
+      : `<span style="font-size:26px;font-weight:700;">${Utils.getInitials(emp.name)}</span>`
 
-    const statusBadge = emp.status === 'active'
-      ? '<span class="badge badge--success">Active</span>'
-      : '<span class="badge badge--danger">Inactive</span>'
+    // Tenure since joining date
+    const tenure = (() => {
+      if (!emp.joining_date) return null
+      const start = new Date(emp.joining_date)
+      const now   = new Date()
+      const totalMonths = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth())
+      const years  = Math.floor(totalMonths / 12)
+      const months = totalMonths % 12
+      if (totalMonths < 1) return 'New joiner'
+      if (years === 0) return `${months}mo`
+      return months === 0 ? `${years}yr` : `${years}yr ${months}mo`
+    })()
 
-    // Can this viewer award badges to this employee?
-    // HR (canManage) or the direct manager of this employee
+    // Can this viewer award badges?
     const _canAwardBadge = _canManage || (_user && emp.manager_id === _user.id)
 
-    // Fetch badges + KYC in parallel (KYC only for HR / super_admin)
+    // Fetch badges + KYC in parallel
     const [{ data: empBadges }, kycRes] = await Promise.all([
       API.getEmployeeBadges(emp.id),
       _canManage ? API.getEmployeeKyc(emp.id) : Promise.resolve({ data: null }),
     ])
     const kyc = kycRes?.data || {}
+
     const badgeChips = (empBadges || []).map(eb => {
       const b = eb.badge || {}
-      const colour = b.colour || '#0F4799'
+      const colour   = b.colour || '#0F4799'
       const awardedBy = eb.awarder?.name ? ` · Awarded by ${eb.awarder.name}` : ''
-      const note = eb.note ? ` — "${eb.note}"` : ''
+      const note      = eb.note ? ` — "${eb.note}"` : ''
       return `
         <div class="badge-chip badge-chip--${b.category || 'recognition'}"
              style="--badge-bg:${colour}18;--badge-text:${colour};--badge-border:${colour}40;"
@@ -338,151 +347,173 @@ const People = (() => {
         </div>`
     }).join('')
 
-    const badgesSection = `
-      <div class="profile-badges-section">
-        <div class="profile-badges-label">Badges ${empBadges?.length ? `<span style="font-weight:400;color:var(--text-muted);">(${empBadges.length})</span>` : ''}</div>
-        ${badgeChips
-          ? `<div class="badge-chip-row">${badgeChips}</div>`
-          : `<p class="profile-badges-empty">No badges yet.</p>`}
-        ${_canAwardBadge ? `
-          <button class="btn btn--ghost btn--sm" id="ppl-award-badge-btn"
-            data-emp-id="${emp.id}" data-emp-name="${Utils.escapeHtml(emp.name)}"
-            style="margin-top:10px;font-size:12px;">
-            🏅 Award a Badge
-          </button>` : ''}
+    // Quick stat cell helper
+    const _stat = (icon, label, value) => `
+      <div style="padding:14px 10px;text-align:center;">
+        <div style="font-size:18px;line-height:1;margin-bottom:4px;">${icon}</div>
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-muted);margin-bottom:3px;">${label}</div>
+        <div style="font-size:12px;font-weight:500;color:var(--text);">${value}</div>
       </div>`
 
+    // Section header helper
+    const _sec = label => `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);margin-bottom:12px;">${label}</div>`
+
     Utils.openModal(`
-      <div class="modal-header">
-        <h3 class="modal-title">Employee Profile</h3>
-        <button class="modal-close" onclick="Utils.closeModal()">${CLOSE_SVG}</button>
-      </div>
       <div class="modal-body" style="padding:0;">
 
-        <!-- Profile Header -->
-        <div class="people-profile-header" style="display:flex;align-items:center;gap:16px;
-          padding:20px 24px;background:var(--surface-alt);border-bottom:1px solid var(--border);">
-          <div class="people-avatar-lg" style="width:72px;height:72px;border-radius:50%;
-            background:var(--primary-light);color:var(--primary);display:flex;
-            align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">
+        <!-- ── Hero ──────────────────────────────────────────── -->
+        <div style="background:linear-gradient(135deg,#0F4799 0%,#1a72c7 100%);
+          padding:28px 24px 24px;text-align:center;position:relative;">
+          <button class="modal-close" onclick="Utils.closeModal()"
+            style="position:absolute;top:12px;right:12px;background:rgba(255,255,255,0.15);
+              border:none;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;
+              justify-content:center;cursor:pointer;color:#fff;">${CLOSE_SVG}</button>
+
+          <!-- Avatar -->
+          <div style="width:88px;height:88px;border-radius:50%;background:var(--primary-light);
+            color:var(--primary);display:flex;align-items:center;justify-content:center;
+            overflow:hidden;margin:0 auto 14px;border:3px solid rgba(255,255,255,0.85);
+            box-shadow:0 4px 16px rgba(0,0,0,0.25);">
             ${avatarHtml}
           </div>
-          <div>
-            <div style="font-size:18px;font-weight:700;color:var(--text);line-height:1.2;">
-              ${Utils.escapeHtml(emp.name)}
-            </div>
-            <div style="font-size:13px;color:var(--text-muted);margin-top:3px;">
-              ${Utils.escapeHtml(emp.designation || '—')}
-              ${emp.department ? ` · <span class="dept-badge">${Utils.getDeptLabel(emp.department)}</span>` : ''}
-            </div>
-            <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
-              <!-- <span style="font-size:12px;font-weight:600;color:var(--text-muted);">${Utils.escapeHtml(emp.employee_id || '—')}</span> TODO: unhide once ID generation is fixed -->
-              ${statusBadge}
-            </div>
+
+          <div style="font-size:20px;font-weight:700;color:#fff;line-height:1.2;">${Utils.escapeHtml(emp.name)}</div>
+          <div style="font-size:13px;color:rgba(255,255,255,0.75);margin-top:4px;">${Utils.escapeHtml(emp.designation || '—')}</div>
+
+          <!-- Pills -->
+          <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px;flex-wrap:wrap;">
+            ${emp.department ? `<span style="background:rgba(255,255,255,0.18);color:#fff;font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px;backdrop-filter:blur(4px);">${Utils.getDeptLabel(emp.department)}</span>` : ''}
+            ${tenure ? `<span style="background:rgba(255,255,255,0.18);color:#fff;font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px;">⏱ ${tenure}</span>` : ''}
+            <span style="background:${isActive ? 'rgba(29,158,117,0.35)' : 'rgba(239,68,68,0.35)'};
+              color:${isActive ? '#6ee7b7' : '#fca5a5'};font-size:11px;font-weight:600;
+              padding:3px 10px;border-radius:99px;">
+              ${isActive ? '● Active' : '● Inactive'}
+            </span>
           </div>
         </div>
 
-        <!-- Badges -->
-        ${badgesSection}
+        <!-- ── Quick Stats ────────────────────────────────────── -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--border);background:var(--surface);">
+          <div style="border-right:1px solid var(--border);">
+            ${_stat('💼', 'Type', _empTypeLabel(emp.employment_type))}
+          </div>
+          <div style="border-right:1px solid var(--border);">
+            ${_stat('🏢', 'Location', _workLocationLabel(emp.work_location))}
+          </div>
+          <div style="border-right:1px solid var(--border);">
+            ${_stat('📅', 'Joined', Utils.formatDate(emp.joining_date))}
+          </div>
+          <div>
+            ${_stat('👤', 'Manager', emp.manager ? Utils.escapeHtml(emp.manager.name) : '—')}
+          </div>
+        </div>
 
-        <!-- Field Grid -->
-        <div style="padding:20px 24px;">
-          <div class="people-field-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <!-- ── Badges ─────────────────────────────────────────── -->
+        <div style="padding:16px 24px;border-bottom:1px solid var(--border);">
+          ${_sec(`Badges${empBadges?.length ? ` (${empBadges.length})` : ''}`)}
+          ${badgeChips
+            ? `<div class="badge-chip-row">${badgeChips}</div>`
+            : `<p style="font-size:13px;color:var(--text-muted);margin:0;">No badges yet.</p>`}
+          ${_canAwardBadge ? `
+            <button class="btn btn--ghost btn--sm" id="ppl-award-badge-btn"
+              data-emp-id="${emp.id}" data-emp-name="${Utils.escapeHtml(emp.name)}"
+              style="margin-top:10px;font-size:12px;">🏅 Award a Badge</button>` : ''}
+        </div>
 
+        <!-- ── Contact ────────────────────────────────────────── -->
+        <div style="padding:16px 24px;border-bottom:1px solid var(--border);">
+          ${_sec('Contact')}
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
             <div class="people-field">
               <div class="people-field-label">Work Email</div>
-              <div class="people-field-value">${Utils.escapeHtml(emp.email || '—')}</div>
+              <div class="people-field-value">
+                ${emp.email ? `<a href="mailto:${Utils.escapeHtml(emp.email)}" style="color:var(--primary);text-decoration:none;">${Utils.escapeHtml(emp.email)}</a>` : '—'}
+              </div>
             </div>
             <div class="people-field">
               <div class="people-field-label">Personal Email</div>
-              <div class="people-field-value">${Utils.escapeHtml(emp.personal_email || '—')}</div>
+              <div class="people-field-value">
+                ${emp.personal_email ? `<a href="mailto:${Utils.escapeHtml(emp.personal_email)}" style="color:var(--primary);text-decoration:none;">${Utils.escapeHtml(emp.personal_email)}</a>` : '—'}
+              </div>
             </div>
-
             <div class="people-field">
               <div class="people-field-label">Phone</div>
-              <div class="people-field-value">${Utils.escapeHtml(emp.phone_number || '—')}</div>
+              <div class="people-field-value">
+                ${emp.phone_number ? `<a href="tel:${Utils.escapeHtml(emp.phone_number)}" style="color:var(--primary);text-decoration:none;">${Utils.escapeHtml(emp.phone_number)}</a>` : '—'}
+              </div>
             </div>
+            ${emp.linkedin_url ? `
+            <div class="people-field">
+              <div class="people-field-label">LinkedIn</div>
+              <div class="people-field-value">
+                <a href="${Utils.escapeHtml(emp.linkedin_url)}" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:none;">View Profile →</a>
+              </div>
+            </div>` : ''}
+          </div>
+        </div>
+
+        <!-- ── Personal ───────────────────────────────────────── -->
+        <div style="padding:16px 24px;border-bottom:1px solid var(--border);">
+          ${_sec('Personal')}
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
             <div class="people-field">
               <div class="people-field-label">Date of Birth</div>
               <div class="people-field-value">${Utils.formatDate(emp.date_of_birth)}</div>
             </div>
-
             <div class="people-field">
-              <div class="people-field-label">Employment Type</div>
-              <div class="people-field-value">${_empTypeLabel(emp.employment_type)}</div>
-            </div>
-            <div class="people-field">
-              <div class="people-field-label">Work Location</div>
-              <div class="people-field-value">${_workLocationLabel(emp.work_location)}</div>
-            </div>
-
-            <div class="people-field">
-              <div class="people-field-label">Joining Date</div>
-              <div class="people-field-value">${Utils.formatDate(emp.joining_date)}</div>
-            </div>
-            <div class="people-field">
-              <div class="people-field-label">Probation Status</div>
+              <div class="people-field-label">Probation</div>
               <div class="people-field-value">
                 ${emp.probation_completed
-                  ? `Completed${emp.probation_completed_date ? ' · ' + Utils.formatDate(emp.probation_completed_date) : ''}`
+                  ? `<span style="color:var(--success);">✓ Completed${emp.probation_completed_date ? ' · ' + Utils.formatDate(emp.probation_completed_date) : ''}</span>`
                   : 'Ongoing'}
               </div>
             </div>
 
             <div class="people-field">
-              <div class="people-field-label">Reporting Manager</div>
+              <div class="people-field-label">Status</div>
               <div class="people-field-value">
-                ${emp.manager ? Utils.escapeHtml(emp.manager.name) : '—'}
-              </div>
+                ${isActive
+                  ? '<span class="badge badge--success">Active</span>'
+                  : '<span class="badge badge--danger">Inactive</span>'}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Emergency Contact ──────────────────────────────── -->
+        <div style="padding:16px 24px;${_canManage ? 'border-bottom:1px solid var(--border);' : ''}">
+          ${_sec('Emergency Contact')}
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">
+            <div class="people-field">
+              <div class="people-field-label">Name</div>
+              <div class="people-field-value">${Utils.escapeHtml(emp.emergency_contact_name || '—')}</div>
             </div>
             <div class="people-field">
-              <div class="people-field-label">Status</div>
-              <div class="people-field-value">${statusBadge}</div>
+              <div class="people-field-label">Relationship</div>
+              <div class="people-field-value">${Utils.escapeHtml(emp.emergency_contact_relationship || '—')}</div>
             </div>
-
-          </div>
-
-          <!-- Emergency Contact -->
-          <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
-            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;
-              color:var(--text-muted);margin-bottom:12px;">Emergency Contact</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
-              <div class="people-field">
-                <div class="people-field-label">Name</div>
-                <div class="people-field-value">${Utils.escapeHtml(emp.emergency_contact_name || '—')}</div>
-              </div>
-              <div class="people-field">
-                <div class="people-field-label">Relationship</div>
-                <div class="people-field-value">${Utils.escapeHtml(emp.emergency_contact_relationship || '—')}</div>
-              </div>
-              <div class="people-field">
-                <div class="people-field-label">Phone</div>
-                <div class="people-field-value">${Utils.escapeHtml(emp.emergency_contact_phone || '—')}</div>
-              </div>
+            <div class="people-field">
+              <div class="people-field-label">Phone</div>
+              <div class="people-field-value">${Utils.escapeHtml(emp.emergency_contact_phone || '—')}</div>
             </div>
           </div>
-
-          ${_canManage ? `
-          <!-- KYC Documents (HR / Super Admin only) -->
-          <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);">
-                KYC Documents
-              </div>
-              ${kyc.kyc_submitted_at
-                ? `<span style="font-size:11px;color:var(--success);font-weight:500;">
-                     ✓ Submitted ${Utils.formatDate(kyc.kyc_submitted_at)}
-                   </span>`
-                : `<span style="font-size:11px;color:var(--text-muted);">Not yet submitted</span>`}
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-              ${_kycDocRow('🪪', 'Aadhaar Card',    kyc.kyc_aadhar_url)}
-              ${_kycDocRow('🏷️', 'PAN Card',        kyc.kyc_pan_url)}
-              ${_kycDocRow('📘', 'Passport',         kyc.kyc_passport_url)}
-              ${_kycDocRow('🖼️', 'Passport Photo',   kyc.kyc_passport_photo_url)}
-            </div>
-          </div>` : ''}
         </div>
+
+        ${_canManage ? `
+        <!-- ── KYC Documents (HR / Super Admin only) ──────────── -->
+        <div style="padding:16px 24px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            ${_sec('KYC Documents')}
+            ${kyc.kyc_submitted_at
+              ? `<span style="font-size:11px;color:var(--success);font-weight:500;margin-bottom:12px;">✓ Submitted ${Utils.formatDate(kyc.kyc_submitted_at)}</span>`
+              : `<span style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">Not yet submitted</span>`}
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            ${_kycDocRow('🪪', 'Aadhaar Card',  kyc.kyc_aadhar_url)}
+            ${_kycDocRow('🏷️', 'PAN Card',      kyc.kyc_pan_url)}
+            ${_kycDocRow('📘', 'Passport',       kyc.kyc_passport_url)}
+            ${_kycDocRow('🖼️', 'Passport Photo', kyc.kyc_passport_photo_url)}
+          </div>
+        </div>` : ''}
 
       </div>
 
