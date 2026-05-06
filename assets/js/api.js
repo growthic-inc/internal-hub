@@ -1094,7 +1094,7 @@ const API = (() => {
   async function getAllLeaveRequests(filters = {}) {
     let q = supabase
       .from('leave_requests')
-      .select('*, leave_types(name), employee:employees!employee_id(id, name, department), approver:employees!approver_id(name)')
+      .select('*, leave_types(name), employee:employees!employee_id(id, name, department, designation, profile_image_url), approver:employees!approver_id(name)')
       .order('created_at', { ascending: false })
     if (filters.status) q = q.eq('status', filters.status)
     if (filters.employeeId) q = q.eq('employee_id', filters.employeeId)
@@ -1139,7 +1139,7 @@ const API = (() => {
   async function getAllWfhRequests(filters = {}) {
     let q = supabase
       .from('wfh_requests')
-      .select('*, employee:employees!employee_id(id, name, department), approver:employees!approver_id(name)')
+      .select('*, employee:employees!employee_id(id, name, department, designation, profile_image_url), approver:employees!approver_id(name)')
       .order('created_at', { ascending: false })
     if (filters.status) q = q.eq('status', filters.status)
     return q

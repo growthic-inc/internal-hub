@@ -63,10 +63,14 @@ const LeaveTracker = (() => {
     return credited - taken
   }
 
-  // ISO date string (YYYY-MM-DD) without timezone shift
+  // ISO date string (YYYY-MM-DD) using LOCAL date components to avoid
+  // UTC conversion shifting the date back for IST/+ve offset timezones
   function _toISO(date) {
-    const d = new Date(date)
-    return d.toISOString().split('T')[0]
+    const d   = new Date(date)
+    const y   = d.getFullYear()
+    const m   = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
   }
 
   // Parse "YYYY-MM-DD" to a local Date at midnight
@@ -1547,7 +1551,7 @@ const LeaveTracker = (() => {
           </div>
           <div style="flex:1;min-width:0;">
             <div style="font-weight:500;font-size:13px;">${Utils.escapeHtml(emp.name || '—')}</div>
-            <div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(emp.department || '—')} · ${Utils.escapeHtml(typeLabel)}</div>
+            <div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(emp.designation || Utils.getDeptLabel(emp.department) || '—')} · ${Utils.escapeHtml(typeLabel)}</div>
           </div>
           <div style="font-size:12px;color:var(--text-muted);white-space:nowrap;">
             ${Utils.formatDate(r.start_date)} – ${Utils.formatDate(r.end_date)}
