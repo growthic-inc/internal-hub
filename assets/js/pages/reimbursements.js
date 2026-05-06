@@ -89,20 +89,19 @@ const Reimbursements = (() => {
 
   /* ── render ──────────────────────────────────────────────── */
   function render(user) {
-    // HR is identified by department (people_culture) regardless of stored role value
-    const isHR         = user.department === 'people_culture'
     const isSuperAdmin = user.role === 'super_admin'
     const isFinance    = user.department === 'finance' || user.role === 'finance'
 
-    // HR and Super Admin always see the approval Inbox — no access_matrix gate needed
-    const canApprove = isHR || isSuperAdmin
+    // Approval access is purely driven by Access Control (super_admin always passes).
+    // HR dept gets can_approve via the Access Control module — no hardcoded role bypass.
+    const canApprove = isSuperAdmin || App.hasAccess('reimbursements', 'approve_requests', 'can_approve')
     const canPayment = (isFinance || isSuperAdmin) && App.hasAccess('reimbursements', 'process_payment', 'can_approve')
 
     const tabs = [{ id: 'mine', label: 'My Requests' }]
-    if (canApprove)            tabs.push({ id: 'inbox',        label: 'Inbox' })
-    if (isSuperAdmin)          tabs.push({ id: 'hr-requests',  label: 'HR Requests' })
-    if (isHR || isSuperAdmin)  tabs.push({ id: 'all-requests', label: 'All Requests' })
-    if (canPayment)            tabs.push({ id: 'payment',      label: 'For Payment' })
+    if (canApprove)    tabs.push({ id: 'inbox',        label: 'Inbox' })
+    if (isSuperAdmin)  tabs.push({ id: 'hr-requests',  label: 'HR Requests' })  // SA convenience view for HR-submitted requests
+    if (canApprove)    tabs.push({ id: 'all-requests', label: 'All Requests' })
+    if (canPayment)    tabs.push({ id: 'payment',      label: 'For Payment' })
 
     return `
       <div class="page-inner">
@@ -126,7 +125,7 @@ const Reimbursements = (() => {
     _isHR                = user.department === 'people_culture'
     _p                   = {
       can_create:  App.hasAccess('reimbursements', 'raise_pre_approval',  'can_upload'),
-      can_approve: _isHR || user.role === 'super_admin',  // role-based for HR/SA, not access_matrix
+      can_approve: user.role === 'super_admin' || App.hasAccess('reimbursements', 'approve_requests', 'can_approve'),
     }
     _activeTab           = 'mine'
     _selectedPreApproval = null
@@ -334,28 +333,22 @@ const Reimbursements = (() => {
       API.getReimbursementInbox('claim'),
     ])
 
-    const isSA = _user.role === 'super_admin'
-
-    // Super Admin: filter P&C submissions to their own "HR Requests" tab (keeps Inbox focused)
-    // HR: show ALL pending requests for full visibility; action buttons restricted per row
-    const filterFn = isSA ? (r => r.submitter?.department !== 'people_culture') : null
-    const preApprovals = filterFn ? (paRes.data || []).filter(filterFn) : (paRes.data || [])
-    const claims       = filterFn ? (clRes.data || []).filter(filterFn) : (clRes.data || [])
-
-    // HR can only act on non-P&C submissions; P&C requests show "Pending SA" instead
-    const canApproveRow = isSA ? null : (r => r.submitter?.department !== 'people_culture')
+    // All pending requests — no department filter.
+    // HR has full approval authority same as Super Admin (except payment processing).
+    const preApprovals = paRes.data || []
+    const claims       = clRes.data || []
 
     content.innerHTML = `
       <div class="section-card mb-4">
         <div class="section-card-header"><h3>Pending Pre-Approval Requests</h3></div>
         <div class="section-card-body" id="inbox-preapprovals">
-          ${_renderPreApprovalTable(preApprovals, true, true, canApproveRow)}
+          ${_renderPreApprovalTable(preApprovals, true, true)}
         </div>
       </div>
       <div class="section-card">
         <div class="section-card-header"><h3>Pending Expense Claims</h3></div>
         <div class="section-card-body" id="inbox-claims">
-          ${_renderClaimTable(claims, true, true, false, canApproveRow)}
+          ${_renderClaimTable(claims, true, true, false)}
         </div>
       </div>
     `
@@ -659,16 +652,25 @@ const Reimbursements = (() => {
       return
     }
 
-    // Notify reporting manager that a pre-approval has been filed
-    if (_user.manager_id) {
-      API.createNotification({
-        recipient_employee_id: _user.manager_id,
-        type:    'submitted',
-        message: `${_user.name} has submitted a pre-approval reimbursement request (${Utils.getExpenseLabel(expenseType)}, est. ${Utils.formatCurrency(amount)}).`,
-        module:  'reimbursements',
-        record_id: inserted?.id || null,
-      })
+    // Notify reporting manager, HR team, and Super Admin
+    const _notifMsg = `${_user.name} has submitted a pre-approval request (${Utils.getExpenseLabel(expenseType)}, est. ${Utils.formatCurrency(amount)}) — please review.`
+    const _notifPayload = { type: 'submitted', message: _notifMsg, module: 'reimbursements', record_id: inserted?.id || null }
+    const _notified = new Set([_user.id])  // never notify the submitter themselves
+
+    if (_user.manager_id && !_notified.has(_user.manager_id)) {
+      _notified.add(_user.manager_id)
+      API.createNotification({ recipient_employee_id: _user.manager_id, ..._notifPayload })
     }
+    const [{ data: hrTeam }, { data: saTeam }] = await Promise.all([
+      API.getEmployeesByDepartment('people_culture'),
+      API.getEmployeesByRole('super_admin'),
+    ])
+    ;[...(hrTeam || []), ...(saTeam || [])].forEach(emp => {
+      if (!_notified.has(emp.id)) {
+        _notified.add(emp.id)
+        API.createNotification({ recipient_employee_id: emp.id, ..._notifPayload })
+      }
+    })
 
     Utils.closeModal()
     Utils.showToast('Pre-approval request submitted.', 'success')
@@ -1104,16 +1106,25 @@ const Reimbursements = (() => {
       return
     }
 
-    // Notify reporting manager that an expense claim has been filed
-    if (_user.manager_id) {
-      API.createNotification({
-        recipient_employee_id: _user.manager_id,
-        type:    'submitted',
-        message: `${_user.name} has filed an expense claim (${Utils.getExpenseLabel(expenseType)}, ${Utils.formatCurrency(amount)}).`,
-        module:  'reimbursements',
-        record_id: inserted?.id || null,
-      })
+    // Notify reporting manager, HR team, and Super Admin
+    const _notifMsg = `${_user.name} has filed an expense claim (${Utils.getExpenseLabel(expenseType)}, ${Utils.formatCurrency(amount)}) — please review.`
+    const _notifPayload = { type: 'submitted', message: _notifMsg, module: 'reimbursements', record_id: inserted?.id || null }
+    const _notified = new Set([_user.id])
+
+    if (_user.manager_id && !_notified.has(_user.manager_id)) {
+      _notified.add(_user.manager_id)
+      API.createNotification({ recipient_employee_id: _user.manager_id, ..._notifPayload })
     }
+    const [{ data: hrTeam }, { data: saTeam }] = await Promise.all([
+      API.getEmployeesByDepartment('people_culture'),
+      API.getEmployeesByRole('super_admin'),
+    ])
+    ;[...(hrTeam || []), ...(saTeam || [])].forEach(emp => {
+      if (!_notified.has(emp.id)) {
+        _notified.add(emp.id)
+        API.createNotification({ recipient_employee_id: emp.id, ..._notifPayload })
+      }
+    })
 
     Utils.closeModal()
     Utils.showToast('Expense claim submitted.', 'success')

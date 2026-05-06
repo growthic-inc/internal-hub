@@ -452,6 +452,14 @@ const API = (() => {
       .eq('status', 'active')
   }
 
+  async function getEmployeesByRole(role) {
+    return supabase
+      .from('employees')
+      .select('id, name')
+      .eq('role', role)
+      .eq('status', 'active')
+  }
+
   async function getApprovedClaims() {
     return supabase
       .from('reimbursements')
@@ -1432,7 +1440,7 @@ const API = (() => {
     getTimesheetEntries, getTeamTimesheetEntries, getDirectReports, upsertTimesheetEntry,
     insertMasterFolderFile, softDeleteMasterFolderFile,
     getMyReimbursements, getReimbursementInbox, getAllReimbursementsAdmin, getApprovedClaims,
-    insertReimbursement, getMyPreApprovals, getEmployeesByDepartment,
+    insertReimbursement, getMyPreApprovals, getEmployeesByDepartment, getEmployeesByRole,
     getAssets, createAsset, updateAsset, deleteAsset,
     getAssetHistory, addAssetHistory,
     getAllAssetRepairs, getAssetRepairsForAsset, createAssetRepair, updateAssetRepair,
