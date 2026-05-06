@@ -1096,9 +1096,11 @@ const People = (() => {
 
     treeEl.innerHTML = `
       <div class="org-chart-wrap">
-        <ul class="org-tree-level org-tree-level--root">
-          ${roots.map(root => _buildOrgNodeHtml(root, visibleNodes)).join('')}
-        </ul>
+        <div class="org-tree-center">
+          <ul class="org-tree-level org-tree-level--root">
+            ${roots.map(root => _buildOrgNodeHtml(root, visibleNodes)).join('')}
+          </ul>
+        </div>
       </div>
     `
 

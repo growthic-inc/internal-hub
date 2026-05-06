@@ -4426,6 +4426,14 @@
   padding: 20px 0 8px;
 }
 
+/* Centering shim: inline-block sizes to content width so the scroll
+   container's scrollWidth starts at 0 — fixes left-clip when tree is
+   wider than the viewport (flex justify-content:center overflow bug). */
+.org-tree-center {
+  display: inline-block;
+  min-width: 100%;
+}
+
 .org-tree-level {
   list-style: none;
   margin: 0;
