@@ -1501,9 +1501,11 @@ const ClientDashboard = (() => {
     if (!str || typeof str !== 'string') return null
     str = str.trim()
     if (!str) return null
-    // Excel serial number (e.g. "45292") — LinkedIn date cells come back as serials when cellDates:false
-    if (/^\d+$/.test(str)) {
-      const d = new Date((parseInt(str, 10) - 25569) * 86400 * 1000)
+    // Excel serial number — integer (e.g. "45292") or float with time component
+    // (e.g. "45999.228...") — SheetJS converts date-like strings to serials even
+    // with cellDates:false, so we must handle both integer and decimal forms.
+    if (/^\d+(\.\d+)?$/.test(str)) {
+      const d = new Date((parseFloat(str) - 25569) * 86400 * 1000)
       if (isNaN(d.getTime())) return null
       return d.toISOString().slice(0, 10)
     }
