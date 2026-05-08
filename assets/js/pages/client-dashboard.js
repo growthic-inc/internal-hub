@@ -985,6 +985,8 @@ const ClientDashboard = (() => {
       if (sheets.includes('metrics') && sheets.includes('all posts')) return 'content'
       if (sheets.includes('new followers')) return 'followers'
       if (sheets.includes('visitor metrics')) return 'visitors'
+      // LinkedIn personal profile AggregateAnalytics export (all sheets UPPERCASED)
+      if (sheets.includes('engagement') && sheets.includes('top posts')) return 'personal_analytics'
       return null
     }
 
@@ -1017,9 +1019,10 @@ const ClientDashboard = (() => {
         } else {
           const fileType = _detectLinkedInFileType(wb)
           if (!fileType) { _showError("This file doesn't look like a valid LinkedIn analytics export. Expected: a Content export (Metrics + All posts sheets), a Followers export (New followers sheet), or a Visitors export (Visitor metrics sheet)."); return }
-          if (fileType === 'content')        await _parseContentFile(wb)
-          else if (fileType === 'followers') _parseFollowersFile(wb)
-          else if (fileType === 'visitors')  _parseVisitorsFile(wb)
+          if (fileType === 'content')             await _parseContentFile(wb)
+          else if (fileType === 'followers')     _parseFollowersFile(wb)
+          else if (fileType === 'visitors')      _parseVisitorsFile(wb)
+          else if (fileType === 'personal_analytics') _parsePersonalAnalyticsFile(wb)
         }
       } catch (err) { console.error('[ClientDashboard] parse error', err); _showError('Failed to parse file: ' + (err.message || 'Unknown error.')) }
     }
@@ -1280,6 +1283,169 @@ const ClientDashboard = (() => {
       return demographics
     }
 
+    // ── LinkedIn personal profile AggregateAnalytics export ──────────────────
+    // Sheets: DISCOVERY (totals), ENGAGEMENT (daily), TOP POSTS (dual table),
+    //         FOLLOWERS (daily), DEMOGRAPHICS (single combined sheet)
+    function _parsePersonalAnalyticsFile(wb) {
+      const findSheet = name => {
+        const sn = wb.SheetNames.find(n => n.toLowerCase().trim() === name.toLowerCase())
+        return sn ? wb.Sheets[sn] : null
+      }
+
+      // ── ENGAGEMENT → daily metrics ──────────────────────────────────────
+      const engSheet = findSheet('engagement')
+      if (!engSheet) { _showError('Could not find "ENGAGEMENT" sheet in this file.'); return }
+      const engRows = XLSX.utils.sheet_to_json(engSheet, { header: 1, defval: '' })
+      if (engRows.length < 2) { _showError('The ENGAGEMENT sheet appears to be empty.'); return }
+      const engH = engRows[0].map(h => String(h).trim())
+      const eI   = h => engH.indexOf(h)
+      const metrics = []
+      for (let i = 1; i < engRows.length; i++) {
+        const row  = engRows[i]
+        const date = _parseDate(String(row[eI('Date')] || ''))
+        if (!date) continue
+        const impressions = _num(row[eI('Impressions')])
+        const engagements = _num(row[eI('Engagements')])
+        const engRate     = impressions > 0 ? engagements / impressions : 0
+        metrics.push({
+          date,
+          impressions,
+          reach:                      0,
+          clicks:                     0,
+          reactions:                  engagements,   // total engagements → reactions
+          comments:                   0,
+          reposts_shares:             0,
+          follows:                    0,
+          engagement_rate:            engRate,
+          impressions_organic:        impressions,
+          impressions_sponsored:      0,
+          unique_impressions_organic: 0,
+          clicks_organic:             0,
+          clicks_sponsored:           0,
+          reactions_organic:          engagements,
+          reactions_sponsored:        0,
+          comments_organic:           0,
+          comments_sponsored:         0,
+          reposts_organic:            0,
+          reposts_sponsored:          0,
+          engagement_rate_organic:    engRate,
+          engagement_rate_sponsored:  0,
+        })
+      }
+
+      // ── TOP POSTS → posts (dual side-by-side table) ─────────────────────
+      // Layout: row 0 = disclaimer, row 1 = headers (cols 0–2: by engagements,
+      //         cols 4–6: by impressions), rows 2+ = data
+      const posts = []
+      const tpSheet = findSheet('top posts')
+      if (tpSheet) {
+        const tpRows = XLSX.utils.sheet_to_json(tpSheet, { header: 1, defval: '' })
+        // Find header row — contains "Post URL"
+        let tpHeaderIdx = tpRows.findIndex(r => r.some(c => String(c).trim().toLowerCase() === 'post url'))
+        if (tpHeaderIdx >= 0) {
+          const postMap = new Map() // url → { date, engagements, impressions }
+          for (let i = tpHeaderIdx + 1; i < tpRows.length; i++) {
+            const row = tpRows[i]
+            // Left table (cols 0–2): top by engagements
+            const urlL = String(row[0] || '').trim()
+            if (urlL.startsWith('http')) {
+              if (!postMap.has(urlL)) postMap.set(urlL, { date: null, engagements: 0, impressions: 0 })
+              const e = postMap.get(urlL)
+              const d = _parseDate(String(row[1] || '')); if (d) e.date = d
+              e.engagements = _num(row[2])
+            }
+            // Right table (cols 4–6): top by impressions
+            const urlR = String(row[4] || '').trim()
+            if (urlR.startsWith('http')) {
+              if (!postMap.has(urlR)) postMap.set(urlR, { date: null, engagements: 0, impressions: 0 })
+              const e = postMap.get(urlR)
+              const d = _parseDate(String(row[5] || '')); if (d && !e.date) e.date = d
+              e.impressions = _num(row[6])
+            }
+          }
+          for (const [url, d] of postMap.entries()) {
+            const engRate = d.impressions > 0 ? d.engagements / d.impressions : 0
+            posts.push({
+              post_title:          '',
+              post_url:            url,
+              post_type:           '',
+              content_type:        '',
+              campaign_name:       '',
+              posted_by:           '',
+              created_date:        d.date,
+              campaign_start_date: null,
+              campaign_end_date:   null,
+              audience:            '',
+              impressions:         d.impressions,
+              views:               d.impressions,
+              offsite_views:       0,
+              clicks:              0,
+              ctr:                 0,
+              likes:               d.engagements, // total engagements stored as likes
+              comments:            0,
+              reposts_shares:      0,
+              follows:             0,
+              engagement_rate:     engRate,
+              saves:               0,
+            })
+          }
+        }
+      }
+
+      // ── FOLLOWERS → daily follower counts ───────────────────────────────
+      // Row 0: "Total followers on <date>, <count>" preamble
+      // First row with "Date" header is the actual header row
+      const followers_daily = []
+      const folSheet = findSheet('followers')
+      if (folSheet) {
+        const folRows = XLSX.utils.sheet_to_json(folSheet, { header: 1, defval: '' })
+        const folHeaderIdx = folRows.findIndex(r => r.some(c => String(c).trim().toLowerCase() === 'date'))
+        if (folHeaderIdx >= 0) {
+          const folH  = folRows[folHeaderIdx].map(h => String(h).trim().toLowerCase())
+          const fdIdx = folH.indexOf('date')
+          const fvIdx = folH.findIndex(h => h.includes('follower'))
+          for (let i = folHeaderIdx + 1; i < folRows.length; i++) {
+            const row  = folRows[i]
+            const date = _parseDate(String(row[fdIdx] || ''))
+            if (!date) continue
+            const count = _num(row[fvIdx])
+            followers_daily.push({ date, total_new_followers: count, organic_followers: count, sponsored_followers: 0, auto_invited_followers: 0 })
+          }
+        }
+      }
+
+      // ── DEMOGRAPHICS → single combined sheet ────────────────────────────
+      // Format: col 0 = dimension category (Company, Location, …)
+      //         col 1 = label (e.g. "Greater Delhi Area")
+      //         col 2 = percentage string ("49%" or "< 1%")
+      const demographics = []
+      const demoSheet = findSheet('demographics')
+      if (demoSheet) {
+        const dimMap = { 'company': 'company', 'location': 'location', 'company size': 'company_size', 'seniority': 'seniority', 'job title': 'job_title', 'industry': 'industry' }
+        const demoRows = XLSX.utils.sheet_to_json(demoSheet, { header: 1, defval: '' })
+        for (let i = 1; i < demoRows.length; i++) { // skip header row
+          const row    = demoRows[i]
+          const dimRaw = String(row[0] || '').trim().toLowerCase()
+          const label  = String(row[1] || '').trim()
+          const pctStr = String(row[2] || '').trim()
+          if (!dimRaw || !label) continue
+          const dk = dimMap[dimRaw]; if (!dk) continue
+          // "49%" → 49 | "< 1%" → 0.5 (stored as numeric percentage)
+          const value = pctStr.startsWith('<') ? 0.5 : (parseFloat(pctStr.replace('%', '')) || 0)
+          demographics.push({ dimension: dk, label, value })
+        }
+      }
+
+      if (!metrics.length) { _showError('No engagement data rows found in the personal analytics file.'); return }
+
+      const allDates = metrics.map(m => m.date).filter(Boolean).sort()
+      _parsedPayload = { data_type: 'personal_analytics', metrics, posts, followers_daily, demographics }
+      _showPreview(_previewAlert(
+        `Found <strong>${metrics.length}</strong> days of engagement data, <strong>${posts.length}</strong> top posts, <strong>${followers_daily.length}</strong> days of follower data &amp; <strong>${demographics.length}</strong> demographic segments.`,
+        allDates[0] || '—', allDates[allDates.length - 1] || '—'
+      ))
+    }
+
     async function _doUpload(payload) {
       const platform = document.getElementById('up-platform')?.value
       const clientId = document.getElementById('up-client')?.value
@@ -1292,6 +1458,27 @@ const ClientDashboard = (() => {
         if (driveRes?.drive_url) drive_url = driveRes.drive_url
         if (driveRes?.error) console.warn('[Analytics] Drive upload failed:', driveRes.error)
       }
+      // Personal analytics: one file → two ingest calls (content + followers)
+      if (payload.data_type === 'personal_analytics') {
+        try {
+          const base = { client_id: payload.client_id, platform: payload.platform, entity_id: payload.entity_id, drive_url }
+          const [r1, r2] = await Promise.all([
+            API.ingestAnalytics({ ...base, data_type: 'content',   metrics: payload.metrics,   posts: payload.posts }),
+            API.ingestAnalytics({ ...base, data_type: 'followers', followers_daily: payload.followers_daily, demographics: payload.demographics }),
+          ])
+          if ((r1.success === false || r1.error) || (r2.success === false || r2.error)) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Upload and Process' }
+            _showError(r1.error || r2.error || r1.message || r2.message || 'Upload failed.'); return
+          }
+          Utils.closeModal(); Utils.showToast('Data uploaded successfully.', 'success'); _loadDashboard()
+        } catch (err) {
+          console.error('[ClientDashboard] upload error', err)
+          if (btn) { btn.disabled = false; btn.textContent = 'Upload and Process' }
+          _showError('Upload failed: ' + (err.message || 'Unknown error.'))
+        }
+        return
+      }
+
       try {
         const result = await API.ingestAnalytics({ ...payload, drive_url })
         if (result.error || result.success === false) {
