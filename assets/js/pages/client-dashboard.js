@@ -1430,8 +1430,8 @@ const ClientDashboard = (() => {
           const pctStr = String(row[2] || '').trim()
           if (!dimRaw || !label) continue
           const dk = dimMap[dimRaw]; if (!dk) continue
-          // "49%" → 49 | "< 1%" → 0.5 (stored as numeric percentage)
-          const value = pctStr.startsWith('<') ? 0.5 : (parseFloat(pctStr.replace('%', '')) || 0)
+          // "49%" → 49 | "< 1%" → 0  (DB value column is integer; store whole-number %)
+          const value = pctStr.startsWith('<') ? 0 : Math.round(parseFloat(pctStr.replace('%', '')) || 0)
           demographics.push({ dimension: dk, label, value })
         }
       }
