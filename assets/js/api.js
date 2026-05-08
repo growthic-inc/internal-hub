@@ -55,6 +55,13 @@ const API = (() => {
       .single()
   }
 
+  async function updateEntityProfileType(entityId, profileType) {
+    return supabase
+      .from('client_entities')
+      .update({ profile_type: profileType })
+      .eq('id', entityId)
+  }
+
   /* ── Employees ────────────────────────────────────────────── */
   async function getEmployees(activeOnly = true) {
     let query = supabase
@@ -1493,7 +1500,7 @@ const API = (() => {
   }
 
   return {
-    getClients, getClient, getClientByProjectCode,
+    getClients, getClient, getClientByProjectCode, updateEntityProfileType,
     getEmployees, getEmployee, getTeamLeads, getAllEmployees,
     getTimesheetEntries, getTeamTimesheetEntries, getDirectReports, upsertTimesheetEntry,
     insertMasterFolderFile, softDeleteMasterFolderFile,

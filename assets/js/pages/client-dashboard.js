@@ -22,12 +22,20 @@ const ClientDashboard = (() => {
     reposts_shares:  { label: 'Shares',          color: '#45BBF0', field: 'reposts_shares' },
     engagement_rate: { label: 'Engagement Rate', color: '#EF4444', field: 'engagement_rate', scale: 100 },
   }
+  // Personal LinkedIn profile — only impressions, total engagements, and eng. rate exist
+  const METRIC_CONFIG_PERSONAL = {
+    impressions:     { label: 'Impressions',     color: '#0F4799', field: 'impressions' },
+    reactions:       { label: 'Engagements',     color: '#1D9E75', field: 'reactions' },
+    engagement_rate: { label: 'Engagement Rate', color: '#EF4444', field: 'engagement_rate', scale: 100 },
+  }
 
   function _getMetricConfig() {
+    if (_isPersonalProfile) return METRIC_CONFIG_PERSONAL
     return _currentPlatform === 'Instagram' ? METRIC_CONFIG_INSTAGRAM : METRIC_CONFIG_LINKEDIN
   }
   function _getMetricKeys() { return Object.keys(_getMetricConfig()) }
   function _getDefaultActiveMetrics() {
+    if (_isPersonalProfile) return ['impressions', 'reactions']
     return _currentPlatform === 'Instagram' ? ['impressions', 'reactions'] : ['impressions', 'clicks']
   }
 
@@ -36,6 +44,7 @@ const ClientDashboard = (() => {
   let _customDateFrom = '', _customDateTo = ''
   let _trendChart = null, _pubChart = null, _followersChart = null, _visitorsChart = null
   let _activeMetrics = ['impressions', 'clicks']
+  let _isPersonalProfile = false
   let _tcSort = { col: 'impressions', dir: 'desc' }, _tcPosts = []
 
   /* ── render ─────────────────────────────────────────────── */
@@ -236,6 +245,12 @@ const ClientDashboard = (() => {
     const demoFollowers = demographicsFollowersRes.data || [], demoVisitors = demographicsVisitorsRes.data || []
     const prevMetrics = prevMetricsRes.data || [], prevPosts = prevPostsRes.data || [], prevFollowers = prevFollowersRes.data || []
 
+    // Detect personal profile from the current entity's profile_type
+    const _currentEntityData = (_currentClient?.client_entities || []).find(e => e.id === _currentEntity)
+    _isPersonalProfile = _currentEntityData?.profile_type === 'personal_profile'
+    // Reset active metrics whenever entity/platform changes
+    _activeMetrics = _getDefaultActiveMetrics()
+
     if (!metrics.length && !posts.length) { _renderEmptyState(body); return }
 
     if (_trendChart)     { _trendChart.destroy();     _trendChart = null }
@@ -246,9 +261,36 @@ const ClientDashboard = (() => {
     const kpis = _computeKPIs(metrics, posts, followers, prevMetrics, prevPosts, prevFollowers)
     const mCfg = _getMetricConfig(), mKeys = _getMetricKeys()
     const isIG = _currentPlatform === 'Instagram'
-    const organicNote = !isIG ? `<span style="font-size:11px;color:var(--text-muted);background:var(--surface);padding:2px 8px;border-radius:99px;border:1px solid var(--border);">Organic only</span>` : ''
 
-    // Pre-compute What's Working so we can decide layout
+    // ── Personal profile: simplified layout ─────────────────────────────
+    if (_isPersonalProfile) {
+      const trendPills = mKeys.map(k =>
+        `<span class="chart-metric-pill${_activeMetrics.includes(k) ? ' active' : ''}" data-metric="${k}">${Utils.escapeHtml(mCfg[k].label)}</span>`
+      ).join('')
+      body.innerHTML = `
+        ${_renderContextBar(uploadLog, dateFrom, dateTo)}
+        <div class="kpi-grid" style="margin-bottom:16px;">${_renderKPICards(kpis)}</div>
+        <div class="chart-card mb-4">
+          <div class="chart-card-header">
+            <span class="chart-card-title">Performance Trend</span>
+            <div class="chart-multi-select" id="trend-pills">${trendPills}</div>
+          </div>
+          <div class="chart-canvas-wrap" style="height:260px;"><canvas id="trend-chart"></canvas></div>
+        </div>
+        <div class="section-card mb-4">
+          <div class="section-card-header"><h3>Top Posts</h3></div>
+          <div class="section-card-body" style="padding:0;" data-tc="1">${_renderPersonalTopContent(posts)}</div>
+        </div>
+        ${_renderAudienceSection(followers, visitors, demoFollowers, demoVisitors)}
+      `
+      _initTrendChart(metrics)
+      _initFollowersChart(followers)
+      _bindContextBar(); _bindTrendPills(metrics); _bindDemoTabs(); _bindTopContent()
+      return
+    }
+
+    // ── Standard company page layout ─────────────────────────────────────
+    const organicNote = !isIG ? `<span style="font-size:11px;color:var(--text-muted);background:var(--surface);padding:2px 8px;border-radius:99px;border:1px solid var(--border);">Organic only</span>` : ''
     const _wwHtml = _renderContentTypeBreakdown(posts)
 
     body.innerHTML = `
@@ -369,6 +411,7 @@ const ClientDashboard = (() => {
     'Impressions':      { color: '#0F4799', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>` },
     'Clicks':           { color: '#45BBF0', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><path d="M10 14L21 3"/><path d="M21 16v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>` },
     'Reactions':        { color: '#1D9E75', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>` },
+    'Engagements':      { color: '#1D9E75', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>` },
     'Engagement Rate':  { color: '#EF4444', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>` },
     'Posts Published':  { color: '#8B5CF6', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>` },
     'Followers Gained': { color: '#F59E0B', icon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>` },
@@ -393,6 +436,22 @@ const ClientDashboard = (() => {
     const totalFollowers    = sum(followers,     'total_new_followers')
     const prevTotalFollowers= sum(prevFollowers, 'total_new_followers')
 
+    if (_isPersonalProfile) {
+      // Personal LinkedIn profile — only impressions + total engagements + followers
+      const totalImpressions = sum(metrics, 'impressions')
+      const totalEngagements = sum(metrics, 'reactions') // engagements stored as reactions
+      const avgEng           = metrics.length ? sum(metrics, 'engagement_rate') / metrics.length * 100 : 0
+      const pImpressions     = sum(prevMetrics, 'impressions')
+      const pEngagements     = sum(prevMetrics, 'reactions')
+      const pAvgEng          = prevMetrics.length ? sum(prevMetrics, 'engagement_rate') / prevMetrics.length * 100 : 0
+      return [
+        { label: 'Impressions',     rawValue: totalImpressions, value: loc(totalImpressions),    growth: growthPct(totalImpressions, pImpressions)    },
+        { label: 'Engagements',     rawValue: totalEngagements, value: loc(totalEngagements),    growth: growthPct(totalEngagements, pEngagements)    },
+        { label: 'Engagement Rate', rawValue: avgEng,           value: avgEng.toFixed(2) + '%',  growth: growthPct(avgEng,           pAvgEng)         },
+        { label: 'Followers Gained',rawValue: totalFollowers,   value: loc(totalFollowers),      growth: growthPct(totalFollowers,   prevTotalFollowers) },
+      ]
+    }
+
     if (_currentPlatform === 'Instagram') {
       // Instagram KPIs — all organic (basic export has no paid split)
       const totalViews    = sum(metrics, 'impressions')
@@ -410,12 +469,12 @@ const ClientDashboard = (() => {
       const pAvgEng   = prevMetrics.length ? (sum(prevMetrics, 'engagement_rate') / prevMetrics.length) * 100 : 0
 
       return [
-        { label: 'Views',           value: loc(totalViews),          growth: growthPct(totalViews,    pViews)           },
-        { label: 'Likes',           value: loc(totalLikes),          growth: growthPct(totalLikes,    pLikes)           },
-        { label: 'Saves',           value: loc(totalSaves),          growth: growthPct(totalSaves,    pSaves)           },
-        { label: 'Comments',        value: loc(totalComments),       growth: growthPct(totalComments, pComments)        },
-        { label: 'Shares',          value: loc(totalShares),         growth: growthPct(totalShares,   pShares)          },
-        { label: 'Followers Gained',value: loc(totalFollowers),      growth: growthPct(totalFollowers,prevTotalFollowers) },
+        { label: 'Views',           rawValue: totalViews,    value: loc(totalViews),          growth: growthPct(totalViews,    pViews)           },
+        { label: 'Likes',           rawValue: totalLikes,    value: loc(totalLikes),          growth: growthPct(totalLikes,    pLikes)           },
+        { label: 'Saves',           rawValue: totalSaves,    value: loc(totalSaves),          growth: growthPct(totalSaves,    pSaves)           },
+        { label: 'Comments',        rawValue: totalComments, value: loc(totalComments),       growth: growthPct(totalComments, pComments)        },
+        { label: 'Shares',          rawValue: totalShares,   value: loc(totalShares),         growth: growthPct(totalShares,   pShares)          },
+        { label: 'Followers Gained',rawValue: totalFollowers,value: loc(totalFollowers),      growth: growthPct(totalFollowers,prevTotalFollowers) },
       ]
     }
 
@@ -435,17 +494,19 @@ const ClientDashboard = (() => {
       : 0
 
     return [
-      { label: 'Impressions',     value: loc(totalImpressions),   growth: growthPct(totalImpressions, pImpressions)    },
-      { label: 'Clicks',          value: loc(totalClicks),        growth: growthPct(totalClicks,      pClicks)         },
-      { label: 'Reactions',       value: loc(totalReactions),     growth: growthPct(totalReactions,   pReactions)      },
-      { label: 'Engagement Rate', value: avgEng.toFixed(2) + '%', growth: growthPct(avgEng,           pAvgEng)         },
-      { label: 'Posts Published', value: loc(posts.length),       growth: growthPct(posts.length,     prevPosts.length)},
-      { label: 'Followers Gained',value: loc(totalFollowers),     growth: growthPct(totalFollowers,   prevTotalFollowers)},
+      { label: 'Impressions',     rawValue: totalImpressions, value: loc(totalImpressions),   growth: growthPct(totalImpressions, pImpressions)    },
+      { label: 'Clicks',          rawValue: totalClicks,      value: loc(totalClicks),        growth: growthPct(totalClicks,      pClicks)         },
+      { label: 'Reactions',       rawValue: totalReactions,   value: loc(totalReactions),     growth: growthPct(totalReactions,   pReactions)      },
+      { label: 'Engagement Rate', rawValue: avgEng,           value: avgEng.toFixed(2) + '%', growth: growthPct(avgEng,           pAvgEng)         },
+      { label: 'Posts Published', rawValue: posts.length,     value: loc(posts.length),       growth: growthPct(posts.length,     prevPosts.length)},
+      { label: 'Followers Gained',rawValue: totalFollowers,   value: loc(totalFollowers),     growth: growthPct(totalFollowers,   prevTotalFollowers)},
     ]
   }
 
   function _renderKPICards(kpis) {
-    return kpis.map(k => {
+    // For personal profiles, hide any card where there's genuinely no data (value = 0)
+    const visible = _isPersonalProfile ? kpis.filter(k => k.rawValue !== 0) : kpis
+    return visible.map(k => {
       const meta = _KPI_META[k.label] || { color: '#0F4799', icon: '' }
       let deltaHtml = ''
       if (k.growth !== null && k.growth !== undefined) {
@@ -779,6 +840,56 @@ const ClientDashboard = (() => {
     return _buildTopContentTable()
   }
 
+  /* ── Personal profile top posts (simplified) ───────────────── */
+  // Simplified table: Post link, Date, Impressions, Engagements, Eng. Rate
+  // No title (personal posts don't have titles), no type, no posted-by
+  function _renderPersonalTopContent(posts) {
+    _tcPosts = posts
+    if (!posts.length) return '<p style="padding:24px;color:var(--text-muted);font-size:13px;">No posts in selected range.</p>'
+    return _buildPersonalTopContentTable()
+  }
+
+  function _buildPersonalTopContentTable() {
+    if (!_tcPosts.length) return ''
+
+    const sorted = [..._tcPosts].sort((a, b) => {
+      let av, bv
+      if (_tcSort.col === 'impressions')      { av = _num(a.impressions);     bv = _num(b.impressions) }
+      else if (_tcSort.col === 'reactions')   { av = _num(a.likes);           bv = _num(b.likes) }
+      else                                    { av = _num(a.engagement_rate); bv = _num(b.engagement_rate) }
+      return _tcSort.dir === 'desc' ? bv - av : av - bv
+    }).slice(0, 10)
+
+    const sortIcon = col => {
+      const active = _tcSort.col === col
+      if (!active) return `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="opacity:.35;vertical-align:middle;margin-left:3px;"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="5 12 12 19 19 12"/></svg>`
+      return _tcSort.dir === 'desc'
+        ? `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.5" style="vertical-align:middle;margin-left:3px;"><polyline points="6 9 12 15 18 9"/></svg>`
+        : `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.5" style="vertical-align:middle;margin-left:3px;"><polyline points="18 15 12 9 6 15"/></svg>`
+    }
+    const thSort = (col, label, align = 'right') =>
+      `<th style="text-align:${align};cursor:pointer;user-select:none;" class="tc-sort-th" data-sort-col="${col}">${label}${sortIcon(col)}</th>`
+
+    return `<table class="data-table" id="top-content-table"><thead><tr>
+      <th>Post Link</th><th>Date</th>
+      ${thSort('impressions',    'Impressions')}
+      ${thSort('reactions',      'Engagements')}
+      ${thSort('engagement_rate','Eng. Rate')}
+    </tr></thead><tbody>${sorted.map(p => {
+      const url     = p.post_url ? Utils.escapeHtml(p.post_url) : null
+      const label   = url ? Utils.truncate(p.post_url, 60) : '(no link)'
+      const engRate = p.engagement_rate != null ? (_num(p.engagement_rate) * 100).toFixed(2) + '%' : '—'
+      const engVal  = _num(p.likes)  // engagements stored in likes column for personal posts
+      return `<tr>
+        <td>${url ? `<a href="${url}" target="_blank" rel="noopener" style="color:var(--primary);font-size:12px;">${Utils.escapeHtml(label)}</a>` : Utils.escapeHtml(label)}</td>
+        <td style="white-space:nowrap;">${p.created_date ? Utils.formatDate(p.created_date) : '—'}</td>
+        <td style="text-align:right;">${_num(p.impressions).toLocaleString('en-IN')}</td>
+        <td style="text-align:right;">${engVal > 0 ? engVal.toLocaleString('en-IN') : '—'}</td>
+        <td style="text-align:right;font-weight:600;">${engRate}</td>
+      </tr>`
+    }).join('')}</tbody></table>`
+  }
+
   function _buildTopContentTable() {
     if (!_tcPosts.length) return ''
     const isIG = _currentPlatform === 'Instagram'
@@ -870,7 +981,10 @@ const ClientDashboard = (() => {
         const col = th.dataset.sortCol
         _tcSort.col === col ? (_tcSort.dir = _tcSort.dir === 'desc' ? 'asc' : 'desc') : (_tcSort.col = col, _tcSort.dir = 'desc')
         const wrap = document.querySelector('.section-card-body[data-tc]')
-        if (wrap) { wrap.innerHTML = _buildTopContentTable(); _bindTopContent() }
+        if (wrap) {
+          wrap.innerHTML = _isPersonalProfile ? _buildPersonalTopContentTable() : _buildTopContentTable()
+          _bindTopContent()
+        }
       })
     })
   }
@@ -1469,6 +1583,13 @@ const ClientDashboard = (() => {
           if ((r1.success === false || r1.error) || (r2.success === false || r2.error)) {
             if (btn) { btn.disabled = false; btn.textContent = 'Upload and Process' }
             _showError(r1.error || r2.error || r1.message || r2.message || 'Upload failed.'); return
+          }
+          // Auto-flag this entity as a personal profile so the simplified view renders on next load
+          if (payload.entity_id) {
+            await API.updateEntityProfileType(payload.entity_id, 'personal_profile').catch(e => console.warn('[ClientDashboard] profile_type update failed:', e))
+            // Refresh the in-memory client so _loadDashboard picks up the new profile_type
+            const { data: refreshed } = await API.getClientDashboard(payload.client_id).catch(() => ({ data: null }))
+            if (refreshed) _currentClient = refreshed
           }
           Utils.closeModal(); Utils.showToast('Data uploaded successfully.', 'success'); _loadDashboard()
         } catch (err) {
