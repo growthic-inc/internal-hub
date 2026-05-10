@@ -1535,7 +1535,7 @@ const ClientDashboard = (() => {
       const demographics = []
       const demoSheet = findSheet('demographics')
       if (demoSheet) {
-        const dimMap = { 'company': 'company', 'location': 'location', 'company size': 'company_size', 'seniority': 'seniority', 'job title': 'job_title', 'industry': 'industry' }
+        const dimMap = { 'location': 'location', 'company size': 'company_size', 'seniority': 'seniority', 'job title': 'job_function', 'industry': 'industry' }
         const demoRows = XLSX.utils.sheet_to_json(demoSheet, { header: 1, defval: '' })
         for (let i = 1; i < demoRows.length; i++) { // skip header row
           const row    = demoRows[i]
