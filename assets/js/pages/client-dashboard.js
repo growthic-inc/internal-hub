@@ -271,7 +271,7 @@ const ClientDashboard = (() => {
       ).join('')
       body.innerHTML = `
         ${_renderContextBar(uploadLog, dateFrom, dateTo)}
-        <div class="kpi-grid" style="margin-bottom:16px;">${_renderKPICards(kpis)}</div>
+        <div class="kpi-grid--personal">${_renderKPICards(kpis)}</div>
         <div class="chart-card mb-4">
           <div class="chart-card-header">
             <span class="chart-card-title">Performance Trend</span>
@@ -367,9 +367,17 @@ const ClientDashboard = (() => {
     const statusMap = { on_track: ['On Track', 'status--on-track'], at_risk: ['At Risk', 'status--at-risk'], off_track: ['Off Track', 'status--off-track'] }
     const [slabel, scls] = statusMap[statusVal] || statusMap.on_track
 
+    const personalBadge = _isPersonalProfile
+      ? `<span class="ctx-chip ctx-chip--personal">
+           <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+           Personal Profile
+         </span>`
+      : ''
+
     return `<div class="db-context-bar">
       <div class="db-context-left">
         <span class="ctx-chip ctx-chip--platform">${platIcon} ${Utils.escapeHtml(_currentPlatform)}</span>
+        ${personalBadge}
         <span class="ctx-chip">
           <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
           ${Utils.formatDate(dateFrom)} — ${Utils.formatDate(dateTo)}
@@ -506,8 +514,11 @@ const ClientDashboard = (() => {
   }
 
   function _renderKPICards(kpis) {
-    // For personal profiles, hide any card where there's genuinely no data (value = 0)
-    const visible = _isPersonalProfile ? kpis.filter(k => k.rawValue !== 0) : kpis
+    // For personal profiles, hide numeric cards where rawValue is exactly 0
+    // (but always show Engagement Rate and % fields even if 0)
+    const visible = _isPersonalProfile
+      ? kpis.filter(k => k.rawValue !== 0 || k.label === 'Engagement Rate')
+      : kpis
     return visible.map(k => {
       const meta = _KPI_META[k.label] || { color: '#0F4799', icon: '' }
       let deltaHtml = ''
