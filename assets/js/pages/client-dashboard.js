@@ -245,9 +245,11 @@ const ClientDashboard = (() => {
     const demoFollowers = demographicsFollowersRes.data || [], demoVisitors = demographicsVisitorsRes.data || []
     const prevMetrics = prevMetricsRes.data || [], prevPosts = prevPostsRes.data || [], prevFollowers = prevFollowersRes.data || []
 
-    // Detect personal profile from the current entity's profile_type
+    // Detect personal profile: either via entity profile_type (when entity exists)
+    // or from the upload log containing a 'personal_analytics' entry (entity-less clients)
     const _currentEntityData = (_currentClient?.client_entities || []).find(e => e.id === _currentEntity)
     _isPersonalProfile = _currentEntityData?.profile_type === 'personal_profile'
+      || uploadLog.some(u => u.data_type === 'personal_analytics')
     // Reset active metrics whenever entity/platform changes
     _activeMetrics = _getDefaultActiveMetrics()
 
@@ -1577,7 +1579,7 @@ const ClientDashboard = (() => {
         try {
           const base = { client_id: payload.client_id, platform: payload.platform, entity_id: payload.entity_id, drive_url }
           const [r1, r2] = await Promise.all([
-            API.ingestAnalytics({ ...base, data_type: 'content',   metrics: payload.metrics,   posts: payload.posts }),
+            API.ingestAnalytics({ ...base, data_type: 'personal_analytics', metrics: payload.metrics, posts: payload.posts }),
             API.ingestAnalytics({ ...base, data_type: 'followers', followers_daily: payload.followers_daily, demographics: payload.demographics }),
           ])
           if ((r1.success === false || r1.error) || (r2.success === false || r2.error)) {
