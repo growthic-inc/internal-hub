@@ -40,11 +40,19 @@ const Auth = (() => {
     const session = await getSession()
     if (!session) return null
 
-    const { data, error } = await supabase
+    // Use eq + limit(1) instead of .single() so duplicate employee rows
+    // (caused by HR submitting the add-employee form more than once) don't
+    // produce a 406 "Cannot coerce to single JSON object" error and log the
+    // user out. The row whose id matches auth.uid() is preferred; if not
+    // found first, we fall back to whichever row the DB returns.
+    const { data: rows, error } = await supabase
       .from('employees')
       .select('id, name, email, role, department, status, manager_id, profile_completed, profile_image_url, joining_date, date_of_birth')
       .eq('email', session.user.email)
-      .single()
+      .order('id', { ascending: true })
+      .limit(1)
+
+    const data = rows?.[0] ?? null
 
     if (error || !data) {
       console.error('[Auth] Could not fetch employee record:', error?.message)
