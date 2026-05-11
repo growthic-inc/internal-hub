@@ -1283,6 +1283,10 @@ const LeaveTracker = (() => {
         ? Utils.formatDate(r.start_date)
         : `${Utils.formatDate(r.start_date)} – ${Utils.formatDate(r.end_date)}`
 
+      const reasonPreview = r.reason ? Utils.truncate(r.reason, 80) : ''
+      const reasonFull    = r.reason || ''
+      const hasMore       = reasonFull.length > 80
+
       return `
         <div class="lt-approval-card section-card" style="margin-bottom:12px;"
           data-approval-id="${r.id}" data-approval-type="${type}">
@@ -1290,7 +1294,7 @@ const LeaveTracker = (() => {
             <div style="width:36px;height:36px;border-radius:50%;background:var(--primary-light,#e8f0fe);color:var(--primary);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">
               ${emp.profile_image_url ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" alt="" style="width:100%;height:100%;object-fit:cover;">` : Utils.getInitials(emp.name || '?')}
             </div>
-            <div style="flex:1;min-width:0;">
+            <div style="flex:1;min-width:0;cursor:pointer;" class="lt-approval-card-body" data-detail-id="${r.id}" data-detail-type="${type}">
               <div style="font-weight:600;font-size:14px;">${Utils.escapeHtml(emp.name || '—')}</div>
               <div style="font-size:12px;color:var(--text-muted);">${Utils.escapeHtml(emp.department || '—')}</div>
               <div style="margin-top:6px;font-size:13px;">
@@ -1299,7 +1303,9 @@ const LeaveTracker = (() => {
                 · ${r.days} day${Number(r.days) === 1 ? '' : 's'}
                 ${type === 'leave' && r.is_half_day ? `<span class="badge badge--muted" style="font-size:10px;margin-left:4px;">Half-day ${r.half_day_period || ''}</span>` : ''}
               </div>
-              ${r.reason ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px;">${Utils.escapeHtml(Utils.truncate(r.reason, 80))}</div>` : ''}
+              ${r.reason ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px;">
+                ${Utils.escapeHtml(reasonPreview)}${hasMore ? `<span style="color:var(--primary);margin-left:4px;font-weight:500;">View more</span>` : ''}
+              </div>` : ''}
               ${type === 'wfh' && r.work_plan ? `
                 <div style="margin-top:8px;padding:8px 10px;background:var(--bg-muted,rgba(0,0,0,0.04));border-radius:6px;border-left:3px solid var(--accent);">
                   <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;">Work Plan</div>
@@ -1334,6 +1340,106 @@ const LeaveTracker = (() => {
         else if (action === 'approve-cancel') _approveCancellation(id, type)
         else if (action === 'deny-cancel')    _denyCancellation(id, type)
       })
+    })
+
+    // Clicking the card body (name/date/reason area) opens a detail modal
+    document.querySelectorAll('.lt-approval-card-body').forEach(body => {
+      body.addEventListener('click', () => {
+        const id   = body.dataset.detailId
+        const type = body.dataset.detailType
+        _openLeaveDetailModal(id, type)
+      })
+    })
+  }
+
+  function _openLeaveDetailModal(id, type) {
+    const arr = type === 'leave' ? _pendingApprovals : _pendingWfh
+    const r   = arr.find(x => x.id === id)
+    if (!r) return
+
+    const emp      = r.employee || {}
+    const typeName = type === 'leave' ? (r.leave_types?.name || 'Leave') : 'WFH'
+    const dateRange = r.start_date === r.end_date
+      ? Utils.formatDate(r.start_date)
+      : `${Utils.formatDate(r.start_date)} – ${Utils.formatDate(r.end_date)}`
+    const isCancPend = r.status === 'cancellation_pending'
+
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">Leave Request</h3>
+        <button class="modal-close" onclick="Utils.closeModal()">${CLOSE_SVG}</button>
+      </div>
+      <div class="modal-body" style="padding:20px 24px;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;">
+          <div style="width:44px;height:44px;border-radius:50%;background:var(--primary-light,#e8f0fe);color:var(--primary);font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">
+            ${emp.profile_image_url ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" alt="" style="width:100%;height:100%;object-fit:cover;">` : Utils.getInitials(emp.name || '?')}
+          </div>
+          <div>
+            <div style="font-weight:600;font-size:15px;">${Utils.escapeHtml(emp.name || '—')}</div>
+            <div style="font-size:12px;color:var(--text-muted);">${Utils.escapeHtml(emp.department || '—')}</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;margin-bottom:16px;">
+          <div>
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:3px;">Type</div>
+            <div style="font-size:14px;font-weight:500;">${Utils.escapeHtml(typeName)}</div>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:3px;">Duration</div>
+            <div style="font-size:14px;font-weight:500;">${r.days} day${Number(r.days) === 1 ? '' : 's'}${type === 'leave' && r.is_half_day ? ' (half-day)' : ''}</div>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:3px;">Date${r.start_date !== r.end_date ? 's' : ''}</div>
+            <div style="font-size:14px;font-weight:500;">${dateRange}</div>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:3px;">Status</div>
+            <div style="font-size:14px;">${STATUS_BADGE[r.status] || r.status}</div>
+          </div>
+        </div>
+        ${r.reason ? `
+          <div style="margin-bottom:14px;">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:6px;">Reason</div>
+            <div style="font-size:14px;line-height:1.6;white-space:pre-line;background:var(--surface);padding:10px 12px;border-radius:6px;border:1px solid var(--border);">${Utils.escapeHtml(r.reason)}</div>
+          </div>
+        ` : ''}
+        ${type === 'wfh' && r.work_plan ? `
+          <div style="margin-bottom:14px;">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:6px;">Work Plan</div>
+            <div style="font-size:14px;line-height:1.6;white-space:pre-line;background:var(--surface);padding:10px 12px;border-radius:6px;border:1px solid var(--border);">${Utils.escapeHtml(r.work_plan)}</div>
+          </div>
+        ` : ''}
+        ${r.cancellation_reason ? `
+          <div style="margin-bottom:14px;padding:10px 12px;border-radius:6px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--warning);letter-spacing:.05em;margin-bottom:4px;">Cancellation Reason</div>
+            <div style="font-size:14px;line-height:1.6;">${Utils.escapeHtml(r.cancellation_reason)}</div>
+          </div>
+        ` : ''}
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="Utils.closeModal()">Close</button>
+        ${isCancPend ? `
+          <button class="btn btn--ghost" id="md-deny-cancel" style="color:var(--danger);">Deny Cancellation</button>
+          <button class="btn btn--success" id="md-approve-cancel">Approve Cancellation</button>
+        ` : `
+          <button class="btn btn--danger" id="md-reject">Reject</button>
+          <button class="btn btn--success" id="md-approve">Approve</button>
+        `}
+      </div>
+    `)
+
+    // Wire up modal action buttons
+    document.getElementById('md-approve')?.addEventListener('click', () => {
+      Utils.closeModal(); _approveRequest(id, type)
+    })
+    document.getElementById('md-reject')?.addEventListener('click', () => {
+      Utils.closeModal(); _openRejectModal(id, type)
+    })
+    document.getElementById('md-approve-cancel')?.addEventListener('click', () => {
+      Utils.closeModal(); _approveCancellation(id, type)
+    })
+    document.getElementById('md-deny-cancel')?.addEventListener('click', () => {
+      Utils.closeModal(); _denyCancellation(id, type)
     })
   }
 
