@@ -154,8 +154,11 @@ const App = (() => {
       return
     }
 
-    // Phase 8: Block the entire app until the employee completes their profile
-    if (currentUser.profile_completed === false) {
+    // Block the app until the employee completes their onboarding profile.
+    // Use falsy check (not === false) so NULL also triggers the wizard —
+    // the create-employee Edge Function may not set profile_completed explicitly,
+    // leaving it NULL in the DB rather than the boolean false.
+    if (!currentUser.profile_completed) {
       _showProfileCompletionWizard(currentUser)
       return
     }
