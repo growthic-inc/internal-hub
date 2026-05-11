@@ -1099,6 +1099,28 @@ const API = (() => {
       .order('created_at', { ascending: true })
   }
 
+  async function getApprovalHistoryLeave(approverId) {
+    // All leave requests this manager has already acted on (approved / rejected)
+    return supabase
+      .from('leave_requests')
+      .select('*, leave_types(name), employee:employees!employee_id(id, name, department, profile_image_url)')
+      .eq('approver_id', approverId)
+      .in('status', ['approved', 'rejected', 'cancelled'])
+      .order('acted_at', { ascending: false })
+      .limit(100)
+  }
+
+  async function getApprovalHistoryWfh(approverId) {
+    // All WFH requests this manager has already acted on (approved / rejected)
+    return supabase
+      .from('wfh_requests')
+      .select('*, employee:employees!employee_id(id, name, department, profile_image_url)')
+      .eq('approver_id', approverId)
+      .in('status', ['approved', 'rejected', 'cancelled'])
+      .order('acted_at', { ascending: false })
+      .limit(100)
+  }
+
   async function getHRLeaveQueue() {
     // Requests with no approver (top-level employees) — for HR
     return supabase
@@ -1541,6 +1563,7 @@ const API = (() => {
     getLeaveTypes, createLeaveType, updateLeaveType, deleteLeaveType,
     getLeaveCredits, getAllLeaveCredits, addLeaveCredit, deleteLeaveCredit,
     getMyLeaveRequests, getPendingLeaveApprovals, getHRLeaveQueue, getAllLeaveRequests,
+    getApprovalHistoryLeave, getApprovalHistoryWfh,
     createLeaveRequest, updateLeaveRequest,
     getMyWfhRequests, getPendingWfhApprovals, getHRWfhQueue, getAllWfhRequests,
     createWfhRequest, updateWfhRequest,

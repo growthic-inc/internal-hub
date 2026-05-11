@@ -17,8 +17,10 @@ const LeaveTracker = (() => {
   let _leaveCredits    = []
   let _holidays        = []
   let _events          = []
-  let _pendingApprovals = []
-  let _pendingWfh      = []
+  let _pendingApprovals  = []
+  let _pendingWfh        = []
+  let _historyLeave      = []
+  let _historyWfh        = []
   let _isManager          = false
   let _isHR               = false   // can manage settings/holidays/quotas
   let _canApproveLeave    = false   // can approve team leave/WFH requests
@@ -207,14 +209,18 @@ const LeaveTracker = (() => {
     _holidays      = holRes.data || []
     _events        = evtRes.data || []
 
-    // Fetch pending approvals if manager, HR, or has approve_leave access
+    // Fetch pending approvals + history if manager, HR, or has approve_leave access
     if (_isManager || _isHR || _canApproveLeave) {
-      const [paRes, pwRes] = await Promise.all([
+      const [paRes, pwRes, hlRes, hwRes] = await Promise.all([
         API.getPendingLeaveApprovals(_user.id),
         API.getPendingWfhApprovals(_user.id),
+        API.getApprovalHistoryLeave(_user.id),
+        API.getApprovalHistoryWfh(_user.id),
       ])
       _pendingApprovals = paRes.data || []
       _pendingWfh       = pwRes.data || []
+      _historyLeave     = hlRes.data || []
+      _historyWfh       = hwRes.data || []
 
       if (_isHR) {
         const [hrLRes, hrWRes] = await Promise.all([
@@ -1257,7 +1263,7 @@ const LeaveTracker = (() => {
         </div>
       </div>
 
-      <div class="section-card">
+      <div class="section-card mb-4">
         <div class="section-card-header">
           <h3>WFH Approvals</h3>
           <span class="badge badge--warning">${_pendingWfh.length}</span>
@@ -1266,9 +1272,32 @@ const LeaveTracker = (() => {
           ${_renderApprovalCards(_pendingWfh, 'wfh')}
         </div>
       </div>
+
+      <div class="section-card">
+        <div class="section-card-header" style="cursor:pointer;user-select:none;" id="lt-history-header">
+          <h3>Approval History</h3>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:12px;color:var(--text-muted);">${_historyLeave.length + _historyWfh.length} decisions</span>
+            <svg id="lt-history-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition:transform .2s;"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+        </div>
+        <div class="section-card-body" id="lt-history-body" style="display:none;padding:0;">
+          ${_renderApprovalHistory()}
+        </div>
+      </div>
     `
 
     _bindApprovalCardActions()
+
+    // Collapsible history section
+    document.getElementById('lt-history-header')?.addEventListener('click', () => {
+      const body    = document.getElementById('lt-history-body')
+      const chevron = document.getElementById('lt-history-chevron')
+      if (!body) return
+      const open = body.style.display !== 'none'
+      body.style.display    = open ? 'none' : 'block'
+      if (chevron) chevron.style.transform = open ? '' : 'rotate(180deg)'
+    })
   }
 
   function _renderApprovalCards(requests, type) {
@@ -1329,6 +1358,67 @@ const LeaveTracker = (() => {
     }).join('')
   }
 
+  function _renderApprovalHistory() {
+    // Merge leave + WFH history, sort by acted_at desc
+    const leaveRows = _historyLeave.map(r => ({
+      ...r, _kind: 'leave', typeName: r.leave_types?.name || 'Leave'
+    }))
+    const wfhRows = _historyWfh.map(r => ({
+      ...r, _kind: 'wfh', typeName: 'WFH'
+    }))
+    const all = [...leaveRows, ...wfhRows].sort((a, b) => {
+      const da = a.acted_at ? new Date(a.acted_at) : new Date(a.created_at)
+      const db = b.acted_at ? new Date(b.acted_at) : new Date(b.created_at)
+      return db - da
+    })
+
+    if (!all.length) return '<p class="empty-state" style="padding:20px 16px;">No decisions yet.</p>'
+
+    const rows = all.map(r => {
+      const emp       = r.employee || {}
+      const dateRange = r.start_date === r.end_date
+        ? Utils.formatDate(r.start_date)
+        : `${Utils.formatDate(r.start_date)} – ${Utils.formatDate(r.end_date)}`
+      const decidedAt = r.acted_at
+        ? new Date(r.acted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+        : '—'
+      const avatarHtml = emp.profile_image_url
+        ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" alt="" style="width:28px;height:28px;border-radius:50%;object-fit:cover;">`
+        : `<div style="width:28px;height:28px;border-radius:50%;background:var(--primary-light,#e8f0fe);color:var(--primary);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;">${Utils.getInitials(emp.name || '?')}</div>`
+
+      return `<tr style="cursor:pointer;" class="lt-history-row" data-history-id="${r.id}" data-history-kind="${r._kind}">
+        <td>
+          <div style="display:flex;align-items:center;gap:8px;">
+            ${avatarHtml}
+            <div>
+              <div style="font-weight:500;font-size:13px;">${Utils.escapeHtml(emp.name || '—')}</div>
+              <div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(emp.department || '—')}</div>
+            </div>
+          </div>
+        </td>
+        <td style="font-size:13px;">${Utils.escapeHtml(r.typeName)}</td>
+        <td style="font-size:13px;white-space:nowrap;">${dateRange}</td>
+        <td style="font-size:13px;text-align:center;">${r.days} day${Number(r.days) === 1 ? '' : 's'}</td>
+        <td>${STATUS_BADGE[r.status] || r.status}</td>
+        <td style="font-size:12px;color:var(--text-muted);white-space:nowrap;">${decidedAt}</td>
+      </tr>`
+    }).join('')
+
+    return `<table class="data-table">
+      <thead>
+        <tr>
+          <th>Employee</th>
+          <th>Type</th>
+          <th>Dates</th>
+          <th style="text-align:center;">Days</th>
+          <th>Decision</th>
+          <th>Decided On</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`
+  }
+
   function _bindApprovalCardActions() {
     document.querySelectorAll('[data-action]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1350,11 +1440,22 @@ const LeaveTracker = (() => {
         _openLeaveDetailModal(id, type)
       })
     })
+
+    // Clicking a history row opens a read-only detail modal
+    document.querySelectorAll('.lt-history-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const id   = row.dataset.historyId
+        const kind = row.dataset.historyKind  // 'leave' or 'wfh'
+        _openLeaveDetailModal(id, kind, true)
+      })
+    })
   }
 
-  function _openLeaveDetailModal(id, type) {
-    const arr = type === 'leave' ? _pendingApprovals : _pendingWfh
-    const r   = arr.find(x => x.id === id)
+  function _openLeaveDetailModal(id, type, readOnly = false) {
+    // Search pending arrays first, then history arrays
+    const pendingArr = type === 'leave' ? _pendingApprovals : _pendingWfh
+    const historyArr = type === 'leave' ? _historyLeave     : _historyWfh
+    const r = pendingArr.find(x => x.id === id) || historyArr.find(x => x.id === id)
     if (!r) return
 
     const emp      = r.employee || {}
@@ -1396,6 +1497,10 @@ const LeaveTracker = (() => {
             <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:3px;">Status</div>
             <div style="font-size:14px;">${STATUS_BADGE[r.status] || r.status}</div>
           </div>
+          ${r.acted_at ? `<div style="grid-column:1/-1;">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:3px;">Decided On</div>
+            <div style="font-size:14px;font-weight:500;">${new Date(r.acted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+          </div>` : ''}
         </div>
         ${r.reason ? `
           <div style="margin-bottom:14px;">
@@ -1418,13 +1523,13 @@ const LeaveTracker = (() => {
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="Utils.closeModal()">Close</button>
-        ${isCancPend ? `
+        ${!readOnly ? (isCancPend ? `
           <button class="btn btn--ghost" id="md-deny-cancel" style="color:var(--danger);">Deny Cancellation</button>
           <button class="btn btn--success" id="md-approve-cancel">Approve Cancellation</button>
         ` : `
           <button class="btn btn--danger" id="md-reject">Reject</button>
           <button class="btn btn--success" id="md-approve">Approve</button>
-        `}
+        `) : ''}
       </div>
     `)
 
@@ -1588,12 +1693,16 @@ const LeaveTracker = (() => {
   }
 
   async function _refreshApprovalData() {
-    const [paRes, pwRes] = await Promise.all([
+    const [paRes, pwRes, hlRes, hwRes] = await Promise.all([
       API.getPendingLeaveApprovals(_user.id),
       API.getPendingWfhApprovals(_user.id),
+      API.getApprovalHistoryLeave(_user.id),
+      API.getApprovalHistoryWfh(_user.id),
     ])
     _pendingApprovals = paRes.data || []
     _pendingWfh       = pwRes.data || []
+    _historyLeave     = hlRes.data || []
+    _historyWfh       = hwRes.data || []
 
     if (_isHR) {
       const [hrLRes, hrWRes] = await Promise.all([
