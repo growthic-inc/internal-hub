@@ -148,11 +148,11 @@ const App = (() => {
     if (!session) return
 
     // ── ClickUp OAuth callback ──────────────────────────────────
-    // ClickUp redirects back to /home?clickup_code=xxx after the user
-    // approves the OAuth connection. Intercept it here, exchange the
-    // code for a token via the Edge Function, then clean the URL.
+    // ClickUp uses the standard OAuth2 ?code= parameter (not ?clickup_code=).
+    // Intercept it here, exchange for a token via the Edge Function, then
+    // clean the URL so a refresh doesn't re-trigger the exchange.
     const _urlParams      = new URLSearchParams(window.location.search)
-    const _clickupCode    = _urlParams.get('clickup_code')
+    const _clickupCode    = _urlParams.get('code') || _urlParams.get('clickup_code')
     const _clickupError   = _urlParams.get('error')
     if (_clickupCode) {
       // Strip the query param immediately so a refresh doesn't re-trigger
