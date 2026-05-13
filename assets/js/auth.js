@@ -32,7 +32,10 @@ const Auth = (() => {
   async function requireGuest() {
     const session = await getSession()
     if (session) {
-      window.location.href = '/home'
+      // Preserve query params (e.g. ?clickup_code=) so app.js can handle
+      // OAuth callbacks that land on the login page instead of /home
+      const qs = window.location.search
+      window.location.href = '/home' + qs
     }
   }
 
