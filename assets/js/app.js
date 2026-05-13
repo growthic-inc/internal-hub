@@ -147,6 +147,33 @@ const App = (() => {
     const session = await Auth.requireAuth()
     if (!session) return
 
+    // ── ClickUp OAuth callback ──────────────────────────────────
+    // ClickUp redirects back to /home?clickup_code=xxx after the user
+    // approves the OAuth connection. Intercept it here, exchange the
+    // code for a token via the Edge Function, then clean the URL.
+    const _urlParams      = new URLSearchParams(window.location.search)
+    const _clickupCode    = _urlParams.get('clickup_code')
+    const _clickupError   = _urlParams.get('error')
+    if (_clickupCode) {
+      // Strip the query param immediately so a refresh doesn't re-trigger
+      const cleanUrl = window.location.pathname + window.location.hash
+      window.history.replaceState({}, '', cleanUrl)
+      try {
+        const result = await ClickUpAPI.exchangeCode(_clickupCode)
+        if (result.ok) {
+          // Patch currentUser so the Tasks module sees the connection right away
+          if (currentUser) currentUser.clickup_user_id = result.clickup_user_id
+          Utils.showToast('ClickUp connected successfully!', 'success')
+        }
+      } catch (e) {
+        console.error('[ClickUp OAuth]', e)
+        Utils.showToast('ClickUp connection failed. Please try again.', 'error')
+      }
+    } else if (_clickupError) {
+      window.history.replaceState({}, '', window.location.pathname + window.location.hash)
+      Utils.showToast('ClickUp authorisation was cancelled.', 'error')
+    }
+
     currentUser = await Auth.getCurrentUser()
     if (!currentUser) {
       await Auth.signOut()

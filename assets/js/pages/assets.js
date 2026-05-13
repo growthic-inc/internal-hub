@@ -895,11 +895,11 @@ const Assets = (() => {
                     return `<tr>
                       <td><strong>${Utils.escapeHtml(asset?.name || '—')}</strong></td>
                       <td><span class="badge badge--muted">${r.type === 'repair' ? 'Repair' : 'Issue'}</span></td>
-                      <td class="text-sm">${Utils.escapeHtml(Utils.truncate(r.description, 55))}</td>
+                      <td class="text-sm" style="white-space:pre-wrap;word-break:break-word;max-width:220px;">${Utils.escapeHtml(r.description)}</td>
                       <td class="text-sm text-muted">${Utils.escapeHtml(r.reported_by_emp?.name || '—')}</td>
                       <td>${_repairBadge(r.status)}</td>
-                      <td class="text-sm text-muted" style="max-width:160px;">
-                        ${Utils.escapeHtml(Utils.truncate(r.resolution_notes || '—', 50))}
+                      <td class="text-sm text-muted" style="max-width:200px;white-space:pre-wrap;word-break:break-word;">
+                        ${Utils.escapeHtml(r.resolution_notes || '—')}
                       </td>
                       <td class="text-sm text-muted">${Utils.formatDate(r.created_at)}</td>
                       <td style="white-space:nowrap;">
@@ -1293,7 +1293,7 @@ const Assets = (() => {
             ${(repairs || []).filter(r => r.status !== 'resolved').map(r => `
               <div style="display:flex;gap:10px;padding:8px 12px;background:var(--surface);border-radius:6px;margin-bottom:6px;">
                 <div style="flex:1;">
-                  <div style="font-size:13px;font-weight:500;">${Utils.escapeHtml(Utils.truncate(r.description, 80))}</div>
+                  <div style="font-size:13px;font-weight:500;white-space:pre-wrap;word-break:break-word;">${Utils.escapeHtml(r.description)}</div>
                   ${r.resolution_notes ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Update: ${Utils.escapeHtml(r.resolution_notes)}</div>` : ''}
                 </div>
                 ${_repairBadge(r.status)}

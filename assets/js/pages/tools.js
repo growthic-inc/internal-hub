@@ -256,7 +256,7 @@ const Tools = (() => {
                 <tr>
                   <td>${Utils.escapeHtml(r.tools?.name || r.tool_name_requested || '—')}</td>
                   <td>${r.request_type === 'access' ? 'Access Request' : 'New Tool Request'}</td>
-                  <td>${Utils.escapeHtml(Utils.truncate(r.reason || '—', 60))}</td>
+                  <td style="white-space:pre-wrap;word-break:break-word;max-width:220px;">${Utils.escapeHtml(r.reason || '—')}</td>
                   <td>${STATUS_BADGE[r.status] || r.status}</td>
                   <td>${Utils.formatDate(r.created_at)}</td>
                 </tr>
@@ -306,7 +306,7 @@ const Tools = (() => {
                   </td>
                   <td>${Utils.escapeHtml(r.tools?.name || r.tool_name_requested || '—')}</td>
                   <td>${r.request_type === 'access' ? 'Access' : '<span class="badge badge--warning">New Purchase</span>'}</td>
-                  <td>${Utils.escapeHtml(Utils.truncate(r.reason || '—', 60))}</td>
+                  <td style="white-space:pre-wrap;word-break:break-word;max-width:220px;">${Utils.escapeHtml(r.reason || '—')}</td>
                   <td>${Utils.formatDate(r.created_at)}</td>
                   <td>
                     <button class="btn btn--xs btn--success" data-approve-req="${r.id}">Approve</button>

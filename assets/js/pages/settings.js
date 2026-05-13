@@ -130,13 +130,23 @@ const Settings = (() => {
         </div>
 
         <!-- Notification Preferences -->
-        <div class="section-card">
+        <div class="section-card mb-4">
           <div class="section-card-header">
             <h3>Notification Preferences</h3>
             <span class="text-muted text-sm">Control which in-app notifications you receive</span>
           </div>
           <div class="section-card-body" id="notif-prefs-body">
             <p class="loading-text">Loading preferences…</p>
+          </div>
+        </div>
+
+        <!-- ClickUp Integration -->
+        <div class="section-card">
+          <div class="section-card-header">
+            <h3>Integrations</h3>
+          </div>
+          <div class="section-card-body" id="settings-integrations-body">
+            <p class="loading-text">Loading…</p>
           </div>
         </div>
 
@@ -150,6 +160,7 @@ const Settings = (() => {
     _bindChangePassword()
     _loadKyc()
     _loadNotifPrefs()
+    _loadIntegrations()
   }
 
   /* ── Change Password ─────────────────────────────────────── */
@@ -354,6 +365,76 @@ const Settings = (() => {
     _prefs[`${module}:${eventType}`] = enabled
     const { error } = await API.upsertNotificationPreference(_user.id, module, eventType, enabled)
     if (error) Utils.showToast('Failed to save preference.', 'error')
+  }
+
+  /* ── Integrations ────────────────────────────────────────── */
+  function _loadIntegrations() {
+    const body = document.getElementById('settings-integrations-body')
+    if (!body) return
+    _renderClickUpRow(body)
+  }
+
+  function _renderClickUpRow(body) {
+    const connected = !!_user.clickup_user_id
+    body.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:4px 0;">
+        <div style="display:flex;align-items:center;gap:14px;">
+          <div style="width:36px;height:36px;border-radius:8px;background:#7B68EE;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg width="20" height="20" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4.5 20.5L8.9 17c1.3 1.6 2.7 2.3 4.3 2.3 1.6 0 3-.7 4.3-2.3l4.4 3.5C19.6 23.5 16.9 25 13.2 25c-3.7 0-6.4-1.5-8.7-4.5z" fill="white"/>
+              <path d="M4.5 11.8l4.4 3.4c1.2-1.5 2.6-2.2 4.3-2.2 1.7 0 3.1.7 4.3 2.2l4.4-3.4C19.5 8.5 16.7 7 13.2 7 9.7 7 6.9 8.5 4.5 11.8z" fill="white" opacity=".7"/>
+            </svg>
+          </div>
+          <div>
+            <div style="font-size:14px;font-weight:600;">ClickUp</div>
+            <div style="font-size:12px;color:var(--text-muted);">
+              ${connected
+                ? `<span style="color:var(--success);">✓ Connected</span> — your tasks sync with Growthic`
+                : 'Connect your account to view and manage tasks'}
+            </div>
+          </div>
+        </div>
+        <div>
+          ${connected
+            ? `<button class="btn btn--ghost btn--sm" id="cu-disconnect-btn" style="color:var(--danger);">Disconnect</button>`
+            : `<button class="btn btn--primary btn--sm" id="cu-connect-btn">Connect ClickUp</button>`}
+        </div>
+      </div>
+    `
+
+    if (connected) {
+      document.getElementById('cu-disconnect-btn')?.addEventListener('click', _disconnectClickUp)
+    } else {
+      document.getElementById('cu-connect-btn')?.addEventListener('click', _connectClickUp)
+    }
+  }
+
+  function _connectClickUp() {
+    if (!Config.CLICKUP_CLIENT_ID) {
+      Utils.showToast('ClickUp Client ID not configured. Contact your admin.', 'error')
+      return
+    }
+    const redirectUri = encodeURIComponent(window.location.origin + '/home')
+    window.location.href =
+      `https://app.clickup.com/api?client_id=${Config.CLICKUP_CLIENT_ID}&redirect_uri=${redirectUri}`
+  }
+
+  async function _disconnectClickUp() {
+    const btn = document.getElementById('cu-disconnect-btn')
+    if (!btn) return
+    btn.disabled    = true
+    btn.textContent = 'Disconnecting…'
+    try {
+      await ClickUpAPI.disconnect()
+      _user.clickup_user_id = null
+      const body = document.getElementById('settings-integrations-body')
+      if (body) _renderClickUpRow(body)
+      Utils.showToast('ClickUp disconnected.', 'success')
+    } catch (e) {
+      btn.disabled    = false
+      btn.textContent = 'Disconnect'
+      Utils.showToast('Failed to disconnect. Please try again.', 'error')
+    }
   }
 
   return { render, init }

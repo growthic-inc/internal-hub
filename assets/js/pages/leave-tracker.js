@@ -724,9 +724,9 @@ const LeaveTracker = (() => {
               <td>${r.days}</td>
               <td>
                 ${STATUS_BADGE[r.status] || r.status}
-                ${r.approver_comment ? `<div class="text-sm text-muted" style="margin-top:2px;">${Utils.escapeHtml(Utils.truncate(r.approver_comment, 40))}</div>` : ''}
+                ${r.approver_comment ? `<div class="text-sm text-muted" style="margin-top:2px;white-space:pre-wrap;word-break:break-word;">${Utils.escapeHtml(r.approver_comment)}</div>` : ''}
               </td>
-              <td class="text-muted" style="font-size:12px;">${Utils.escapeHtml(Utils.truncate(r.reason || '—', 50))}</td>
+              <td class="text-muted" style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-width:220px;">${Utils.escapeHtml(r.reason || '—')}</td>
               <td style="white-space:nowrap;">
                 ${r.status === 'pending' ? `<button class="btn btn--xs btn--ghost" data-cancel-leave="${r.id}" style="color:var(--danger);">Cancel</button>` : ''}
                 ${r.status === 'approved' ? `<button class="btn btn--xs btn--ghost" data-cancel-request="${r.id}" style="color:var(--warning);">Request Cancel</button>` : ''}
@@ -1030,10 +1030,10 @@ const LeaveTracker = (() => {
               <td>${r.days}</td>
               <td>
                 ${STATUS_BADGE[r.status] || r.status}
-                ${r.approver_comment ? `<div class="text-sm text-muted" style="margin-top:2px;">${Utils.escapeHtml(Utils.truncate(r.approver_comment, 40))}</div>` : ''}
+                ${r.approver_comment ? `<div class="text-sm text-muted" style="margin-top:2px;white-space:pre-wrap;word-break:break-word;">${Utils.escapeHtml(r.approver_comment)}</div>` : ''}
               </td>
-              <td class="text-muted" style="font-size:12px;">${Utils.escapeHtml(Utils.truncate(r.reason || '—', 50))}</td>
-              <td style="font-size:12px;max-width:200px;">${r.work_plan ? Utils.escapeHtml(Utils.truncate(r.work_plan, 80)) : '<span class="text-muted">—</span>'}</td>
+              <td class="text-muted" style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-width:220px;">${Utils.escapeHtml(r.reason || '—')}</td>
+              <td style="font-size:12px;max-width:220px;white-space:pre-wrap;word-break:break-word;">${r.work_plan ? Utils.escapeHtml(r.work_plan) : '<span class="text-muted">—</span>'}</td>
               <td style="font-size:12px;">${Utils.escapeHtml(r.approver?.name || '—')}</td>
               <td style="white-space:nowrap;">
                 ${r.status === 'pending' ? `<button class="btn btn--xs btn--ghost" data-cancel-wfh="${r.id}" style="color:var(--danger);">Cancel</button>` : ''}
@@ -1841,7 +1841,7 @@ const LeaveTracker = (() => {
               <td>${Utils.escapeHtml(r.leave_types?.name || 'WFH')}</td>
               <td style="white-space:nowrap;font-size:12px;">${Utils.formatDate(r.start_date)} – ${Utils.formatDate(r.end_date)}</td>
               <td>${r.days}</td>
-              <td class="text-muted" style="font-size:12px;">${Utils.escapeHtml(Utils.truncate(r.reason || '—', 50))}</td>
+              <td class="text-muted" style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-width:220px;">${Utils.escapeHtml(r.reason || '—')}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -2286,7 +2286,7 @@ const LeaveTracker = (() => {
               <td style="white-space:nowrap;font-size:12px;">
                 ${Utils.formatDate(ev.start_date)}${ev.end_date && ev.end_date !== ev.start_date ? ' – ' + Utils.formatDate(ev.end_date) : ''}
               </td>
-              <td class="text-muted" style="font-size:12px;">${Utils.escapeHtml(Utils.truncate(ev.description || '—', 60))}</td>
+              <td class="text-muted" style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-width:200px;">${Utils.escapeHtml(ev.description || '—')}</td>
               <td style="white-space:nowrap;">
                 <button class="btn btn--xs btn--ghost" data-edit-event="${ev.id}"
                   data-title="${Utils.escapeHtml(ev.title)}"

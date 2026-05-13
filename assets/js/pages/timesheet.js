@@ -67,6 +67,10 @@ const Timesheet = (() => {
     _teamWeek  = _getMondayOf(new Date())
     _activeTab = 'mine'
 
+    // Consume any deep-link tab request (e.g. from home page "Review" button)
+    const _requestedTab = sessionStorage.getItem('timesheet:tab') || null
+    if (_requestedTab) sessionStorage.removeItem('timesheet:tab')
+
     const [{ data: clients }, { data: internalProjects }] = await Promise.all([
       API.getClients(false),
       API.getInternalProjects(),
@@ -81,7 +85,18 @@ const Timesheet = (() => {
     }
 
     _bindTabs()
-    _loadTab('mine')
+
+    // If a valid tab was requested (e.g. "team" from home Review button) and
+    // the user has the right permissions, navigate there instead of "mine"
+    if (_requestedTab === 'team' && _p.can_approve) {
+      _activeTab = 'team'
+      document.querySelectorAll('#ts-tabs .tab-btn').forEach(btn => {
+        btn.classList.toggle('tab-btn--active', btn.dataset.tab === 'team')
+      })
+      _loadTab('team')
+    } else {
+      _loadTab('mine')
+    }
   }
 
   /* ── Tab management ─────────────────────────────────────── */
@@ -304,7 +319,7 @@ const Timesheet = (() => {
           ${lateIcon}
         </div>
         ${entityName ? `<div class="ts-card-entity">${Utils.escapeHtml(entityName)}</div>` : ''}
-        ${desc ? `<div class="ts-card-desc">${Utils.escapeHtml(Utils.truncate(desc, 70))}</div>` : ''}
+        ${desc ? `<div class="ts-card-desc" style="white-space:pre-wrap;word-break:break-word;">${Utils.escapeHtml(desc)}</div>` : ''}
         <div class="ts-card-footer">
           <span class="ts-card-hours">${parseFloat(e.hours).toFixed(1)}h</span>
           <span class="badge ${STATUS[e.status]?.cls || 'badge--muted'}">${STATUS[e.status]?.label || e.status}</span>
@@ -313,6 +328,12 @@ const Timesheet = (() => {
           <div class="ts-card-rejection">
             <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             ${Utils.escapeHtml(e.rejection_comment)}
+          </div>
+        ` : ''}
+        ${e.approval_comment ? `
+          <div class="ts-card-rejection" style="background:var(--success-light,#D1FAE5);color:#065F46;border-color:#6EE7B7;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            ${Utils.escapeHtml(e.approval_comment)}
           </div>
         ` : ''}
         ${canAct ? `
@@ -875,7 +896,7 @@ const Timesheet = (() => {
     `
 
     content.querySelectorAll('.ts-approve-entry').forEach(btn =>
-      btn.addEventListener('click', () => _approveEntry(btn.dataset.id))
+      btn.addEventListener('click', () => _openApproveModal(btn.dataset.id))
     )
     content.querySelectorAll('.ts-reject-entry').forEach(btn =>
       btn.addEventListener('click', () => _openRejectModal(btn.dataset.id))
@@ -924,9 +945,9 @@ const Timesheet = (() => {
       const lateFlag   = e.is_late ? `<span title="Logged late" style="margin-left:4px;font-size:11px;">🕐</span>` : ''
 
       return `
-        <tr>
-          <td style="white-space:nowrap;font-size:12px;color:var(--text-muted);">${Utils.formatDate(e.date)}</td>
-          <td>
+        <tr style="vertical-align:top;">
+          <td style="white-space:nowrap;font-size:12px;color:var(--text-muted);padding-top:14px;">${Utils.formatDate(e.date)}</td>
+          <td style="padding-top:14px;">
             ${isInternal
               ? `<span class="ts-card-type-badge ts-card-type-badge--internal" style="margin-right:4px;">Internal</span>`
               : `<span class="ts-card-type-badge ts-card-type-badge--client" style="margin-right:4px;">Client</span>`
@@ -936,17 +957,19 @@ const Timesheet = (() => {
             ${lateFlag}
             ${areaName ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${Utils.escapeHtml(areaName)}</div>` : ''}
           </td>
-          <td style="max-width:220px;">
-            <div style="font-size:12px;" title="${Utils.escapeHtml(desc)}">${Utils.escapeHtml(Utils.truncate(desc, 55))}</div>
+          <td style="padding-top:14px;">
+            <div style="font-size:12px;white-space:pre-wrap;word-break:break-word;line-height:1.6;">${Utils.escapeHtml(desc)}</div>
           </td>
-          <td style="text-align:right;font-weight:700;white-space:nowrap;">${parseFloat(e.hours).toFixed(1)}h</td>
-          <td>${_statusBadge(e.status)}</td>
-          <td style="white-space:nowrap;">
+          <td style="text-align:right;font-weight:700;white-space:nowrap;padding-top:14px;">${parseFloat(e.hours).toFixed(1)}h</td>
+          <td style="padding-top:14px;">${_statusBadge(e.status)}</td>
+          <td style="white-space:nowrap;padding-top:14px;">
             ${e.status === 'submitted' && e.employee_id !== _user.id ? `
               <button class="btn btn--xs btn--secondary ts-approve-entry" data-id="${e.id}" style="margin-right:4px;">Approve</button>
               <button class="btn btn--xs btn--danger ts-reject-entry"  data-id="${e.id}">Reject</button>
             ` : e.status === 'rejected' && e.rejection_comment ? `
-              <span style="font-size:11px;color:var(--text-muted);max-width:120px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${Utils.escapeHtml(e.rejection_comment)}">↳ ${Utils.escapeHtml(e.rejection_comment)}</span>
+              <span style="font-size:11px;color:var(--text-muted);white-space:pre-wrap;word-break:break-word;display:block;">↳ ${Utils.escapeHtml(e.rejection_comment)}</span>
+            ` : e.status === 'approved' && e.approval_comment ? `
+              <span style="font-size:11px;color:#065F46;white-space:pre-wrap;word-break:break-word;display:block;">✓ ${Utils.escapeHtml(e.approval_comment)}</span>
             ` : ''}
           </td>
         </tr>
@@ -995,16 +1018,57 @@ const Timesheet = (() => {
     return `<span class="badge ${cfg.cls}">${cfg.label}</span>`
   }
 
-  async function _approveEntry(entryId) {
+  function _openApproveModal(entryId) {
     const entry = _teamEntries.find(e => e.id === entryId)
     if (entry?.employee_id === _user.id) {
       Utils.showToast('You cannot approve your own timesheet entries.', 'error')
       return
     }
 
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">Approve Entry</h3>
+        <button class="modal-close" onclick="Utils.closeModal()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Comment <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+          <textarea class="form-input" id="ts-approve-comment" rows="3"
+            placeholder="e.g. Looks good, keep it up!"
+            style="resize:vertical;"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
+        <button class="btn btn--primary" id="ts-approve-confirm">Approve</button>
+      </div>
+    `)
+
+    document.getElementById('ts-approve-confirm')?.addEventListener('click', async () => {
+      const comment = document.getElementById('ts-approve-comment').value.trim()
+      const btn     = document.getElementById('ts-approve-confirm')
+      btn.disabled    = true
+      btn.textContent = 'Approving…'
+      await _approveEntry(entryId, comment)
+      btn.disabled    = false
+      btn.textContent = 'Approve'
+    })
+  }
+
+  async function _approveEntry(entryId, comment = '') {
+    const entry = _teamEntries.find(e => e.id === entryId)
+
     const { error } = await Config.supabase
       .from('timesheets')
-      .update({ status: 'approved', approved_by: _user.id, acted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .update({
+        status:           'approved',
+        approved_by:      _user.id,
+        approval_comment: comment || null,
+        acted_at:         new Date().toISOString(),
+        updated_at:       new Date().toISOString(),
+      })
       .eq('id', entryId)
       .eq('status', 'submitted')
 
@@ -1015,11 +1079,12 @@ const Timesheet = (() => {
         API.createNotification({
           recipient_employee_id: entry.employee_id,
           type: 'approval',
-          message: 'Your timesheet entry has been approved.',
+          message: `Your timesheet entry has been approved${comment ? ': ' + comment : '.'}`,
           module: 'timesheet',
           record_id: entryId,
         })
       }
+      Utils.closeModal()
       Utils.showToast('Entry approved.', 'success')
       _fetchTeamWeek()
     }

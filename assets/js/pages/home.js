@@ -78,21 +78,27 @@ const HomeModule = (() => {
 
   /* ── Section: Hero ───────────────────────────────────────── */
 
-  function _renderHero(user, todayEntries, whoIsOut, pendingLeaveCount, pendingTsCount) {
+  function _renderHero(user, todayEntries, whoIsOut, whoIsWfh, pendingLeaveCount, pendingTsCount) {
     const firstName   = Utils.escapeHtml((user.name || '').split(' ')[0])
     const totalHours  = (todayEntries || []).reduce((s, e) => s + Number(e.hours || 0), 0)
     const draftCount  = (todayEntries || []).filter(e => e.status === 'draft').length
     const outCount    = (whoIsOut || []).filter(r => r.employees && r.employees.id !== user.id).length
+    const wfhCount    = (whoIsWfh || []).filter(r => r.employees && r.employees.id !== user.id).length
     const pendingTotal = (pendingLeaveCount || 0) + (pendingTsCount || 0)
 
     const hoursLabel = totalHours
       ? `⏱ ${totalHours.toFixed(1)}h logged${draftCount ? ` (${draftCount} draft)` : ''}`
       : `⏱ No hours logged yet`
 
+    const absenceParts = [
+      outCount > 0 ? `${outCount} out` : '',
+      wfhCount > 0 ? `${wfhCount} WFH` : '',
+    ].filter(Boolean)
+
     const stats = [
       { label: hoursLabel,                        href: '#timesheet'     },
       pendingTotal > 0 ? { label: `📋 ${pendingTotal} pending review`, href: '#leave-tracker' } : null,
-      outCount > 0    ? { label: `👤 ${outCount} out today`,           href: '#leave-tracker' } : null,
+      absenceParts.length ? { label: `👤 ${absenceParts.join(', ')} today`, href: '#leave-tracker' } : null,
     ].filter(Boolean)
 
     return `
@@ -162,13 +168,13 @@ const HomeModule = (() => {
   function _renderPendingApprovals(leaveCount, tsCount) {
     const items = []
     if (leaveCount > 0) items.push({ label: `${leaveCount} leave/WFH request${leaveCount > 1 ? 's' : ''}`, hash: 'leave-tracker' })
-    if (tsCount    > 0) items.push({ label: `${tsCount} timesheet entr${tsCount > 1 ? 'ies' : 'y'}`, hash: 'timesheet' })
+    if (tsCount    > 0) items.push({ label: `${tsCount} timesheet entr${tsCount > 1 ? 'ies' : 'y'}`, hash: 'timesheet', deepTab: 'team' })
     if (!items.length) return ''
 
     const rows = items.map(item => `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--warning-light);">
         <span style="font-size:13px;font-weight:500;">⏳ <strong>${item.label}</strong> awaiting your review</span>
-        <a href="#${item.hash}" class="btn btn--primary btn--sm">Review</a>
+        <a href="#${item.hash}" class="btn btn--primary btn--sm"${item.deepTab ? ` data-deep-tab="${item.deepTab}"` : ''}>Review</a>
       </div>`).join('')
 
     return `
@@ -183,30 +189,47 @@ const HomeModule = (() => {
 
   /* ── Section: Who's out today ─────────────────────────────── */
 
-  function _renderWhoIsOut(rows, currentUserId) {
-    const people = (rows || [])
+  function _renderWhoIsOut(outRows, wfhRows, currentUserId) {
+    const oooList = (outRows || [])
       .map(r => r.employees)
       .filter(emp => emp && emp.id !== currentUserId)
 
-    const body = people.length
-      ? `<div class="home-chip-row">
-          ${people.map(emp => `
-            <div class="home-person-chip" title="${Utils.escapeHtml(emp.name)} — Out today">
-              ${_avatarHtml(emp)}
-              <div style="min-width:0;">
-                <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;">${Utils.escapeHtml(emp.name)}</div>
-                ${emp.designation ? `<div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(emp.designation)}</div>` : ''}
-              </div>
-              <span class="badge badge--warning" style="font-size:10px;margin-left:2px;">OOO</span>
-            </div>`).join('')}
-        </div>`
-      : `<p class="empty-state-text" style="margin:0;padding:4px 0;">👍 Everyone's in today.</p>`
+    const wfhList = (wfhRows || [])
+      .map(r => r.employees)
+      .filter(emp => emp && emp.id !== currentUserId)
+
+    const totalCount = oooList.length + wfhList.length
+
+    const chips = [
+      ...oooList.map(emp => `
+        <div class="home-person-chip" title="${Utils.escapeHtml(emp.name)} — Out today">
+          ${_avatarHtml(emp)}
+          <div style="min-width:0;">
+            <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;">${Utils.escapeHtml(emp.name)}</div>
+            ${emp.designation ? `<div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(emp.designation)}</div>` : ''}
+          </div>
+          <span class="badge badge--warning" style="font-size:10px;margin-left:2px;">OOO</span>
+        </div>`),
+      ...wfhList.map(emp => `
+        <div class="home-person-chip" title="${Utils.escapeHtml(emp.name)} — Working from home">
+          ${_avatarHtml(emp)}
+          <div style="min-width:0;">
+            <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;">${Utils.escapeHtml(emp.name)}</div>
+            ${emp.designation ? `<div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(emp.designation)}</div>` : ''}
+          </div>
+          <span class="badge badge--primary" style="font-size:10px;margin-left:2px;">WFH</span>
+        </div>`),
+    ]
+
+    const body = totalCount
+      ? `<div class="home-chip-row">${chips.join('')}</div>`
+      : `<p class="empty-state-text" style="margin:0;padding:4px 0;">👍 Everyone's in the office today.</p>`
 
     return `
       <div class="section-card home-hover-card" style="margin-bottom:14px;">
         <div class="section-card-header">
-          <h3>Who's Out Today</h3>
-          ${people.length ? `<span class="badge badge--muted">${people.length}</span>` : ''}
+          <h3>Out & WFH Today</h3>
+          ${totalCount ? `<span class="badge badge--muted">${totalCount}</span>` : ''}
         </div>
         <div class="section-card-body">${body}</div>
       </div>`
@@ -388,6 +411,15 @@ const HomeModule = (() => {
       item.addEventListener('click', toggle)
       item.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(e) } })
     })
+
+    // Deep-link: when a Review button targets a specific module tab, store
+    // the desired tab in sessionStorage so the module opens on it.
+    document.querySelectorAll('a[data-deep-tab]').forEach(a => {
+      a.addEventListener('click', () => {
+        const module = a.getAttribute('href').slice(1)   // e.g. "timesheet"
+        sessionStorage.setItem(`${module}:tab`, a.dataset.deepTab)
+      })
+    })
   }
 
   /* ── render ──────────────────────────────────────────────── */
@@ -568,6 +600,7 @@ const HomeModule = (() => {
     const [
       { data: todayEntries },
       { data: whoIsOut },
+      { data: whoIsWfh },
       pendingLeaveCount,
       pendingTsCount,
       { data: upcomingEventsData },
@@ -577,6 +610,7 @@ const HomeModule = (() => {
     ] = await Promise.all([
       API.getTimesheetEntries(user.id, todayISO, todayISO),
       API.getWhoIsOutToday(),
+      API.getWhoIsWfhToday(),
       API.getPendingApprovalsCount(user.id),
       API.getPendingTimesheetApprovalsCount(user.id),
       API.getUpcomingEventsData(30),
@@ -586,13 +620,13 @@ const HomeModule = (() => {
     ])
 
     const html = `
-      ${_renderHero(user, todayEntries, whoIsOut, pendingLeaveCount, pendingTsCount)}
+      ${_renderHero(user, todayEntries, whoIsOut, whoIsWfh, pendingLeaveCount, pendingTsCount)}
       ${_renderTimesheetNudge(todayEntries)}
       ${_renderPendingApprovals(pendingLeaveCount, pendingTsCount)}
 
       <div class="home-content-row" style="margin-top:14px;">
         <div style="flex:1.5;min-width:0;display:flex;flex-direction:column;gap:14px;">
-          ${_renderWhoIsOut(whoIsOut, user.id)}
+          ${_renderWhoIsOut(whoIsOut, whoIsWfh, user.id)}
           ${_renderAnnouncements(announcements || [])}
         </div>
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px;">

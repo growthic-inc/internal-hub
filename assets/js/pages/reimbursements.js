@@ -48,7 +48,7 @@ const Reimbursements = (() => {
             <span class="badge badge--success">Approved by HR</span>
             ${approver    ? `<div class="text-sm text-muted" style="margin-top:3px;">by ${Utils.escapeHtml(approver)}</div>` : ''}
             ${approvedAmt ? `<div class="text-sm" style="margin-top:2px;font-weight:600;color:var(--success,#1D9E75);">${Utils.formatCurrency(approvedAmt)}</div>` : ''}
-            ${remarks     ? `<div class="text-sm text-muted" style="margin-top:3px;font-style:italic;">💬 "${Utils.escapeHtml(Utils.truncate(remarks, 60))}"</div>` : ''}
+            ${remarks     ? `<div class="text-sm text-muted" style="margin-top:3px;font-style:italic;white-space:pre-wrap;word-break:break-word;">💬 "${Utils.escapeHtml(remarks)}"</div>` : ''}
           </div>`
       }
 
@@ -57,7 +57,7 @@ const Reimbursements = (() => {
         return `
           <div>
             <span class="badge badge--danger">Rejected</span>
-            ${reason ? `<div class="text-sm text-muted" style="margin-top:3px;">${Utils.escapeHtml(Utils.truncate(reason, 45))}</div>` : ''}
+            ${reason ? `<div class="text-sm text-muted" style="margin-top:3px;white-space:pre-wrap;word-break:break-word;">${Utils.escapeHtml(reason)}</div>` : ''}
           </div>`
       }
 
@@ -225,7 +225,7 @@ const Reimbursements = (() => {
               <td>${Utils.formatCurrency(r.estimated_amount)}</td>
               <td>${Utils.formatDate(r.expected_date)}</td>
               <td>${STATUS_BADGE[r.status] || r.status}</td>
-              <td class="text-muted">${Utils.escapeHtml(Utils.truncate(r.reason || '—', 50))}</td>
+              <td class="text-muted" style="white-space:pre-wrap;word-break:break-word;max-width:220px;">${Utils.escapeHtml(r.reason || '—')}</td>
               ${showActions
                 ? canAct
                   ? `<td><button class="btn btn--xs btn--primary" data-approve="${r.id}">Review</button></td>`
@@ -271,7 +271,7 @@ const Reimbursements = (() => {
                   ? `<div class="text-sm text-muted" style="margin-top:2px;">Submitted: ${Utils.formatCurrency(r.amount)}</div>`
                   : ''}
                 ${r.hr_remarks
-                  ? `<div class="text-sm text-muted" style="margin-top:3px;font-style:italic;">💬 "${Utils.escapeHtml(Utils.truncate(r.hr_remarks, 50))}"</div>`
+                  ? `<div class="text-sm text-muted" style="margin-top:3px;font-style:italic;white-space:pre-wrap;word-break:break-word;">💬 "${Utils.escapeHtml(r.hr_remarks)}"</div>`
                   : ''}`
             } else if (isMineView && r.hr_approved_amount && ['approved', 'paid'].includes(r.status)) {
               // My Requests view: once HR approved / Finance paid, show approved amount as primary

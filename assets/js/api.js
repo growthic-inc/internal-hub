@@ -983,6 +983,16 @@ const API = (() => {
       .gte('end_date', today)
   }
 
+  async function getWhoIsWfhToday() {
+    const today = new Date().toISOString().split('T')[0]
+    return supabase
+      .from('wfh_requests')
+      .select('employees!employee_id(id, name, profile_image_url, designation, department)')
+      .eq('status', 'approved')
+      .lte('start_date', today)
+      .gte('end_date', today)
+  }
+
   async function getPendingTimesheetApprovalsCount(employeeId) {
     const res = await supabase
       .from('timesheets')
@@ -1555,7 +1565,7 @@ const API = (() => {
     createEmployee, updateOwnProfile, uploadAvatar,
     getHomeLeaveData, getUpcomingHolidays, getUpcomingEventsData, getRecentAnnouncements,
     getPendingApprovalsCount, getWorkAnniversaries,
-    getWhoIsOutToday, getPendingTimesheetApprovalsCount, getBirthdayEmployees,
+    getWhoIsOutToday, getWhoIsWfhToday, getPendingTimesheetApprovalsCount, getBirthdayEmployees,
     // Phase 7
     getDepartments, addDepartment, deleteDepartment,
     getEmployeesFull, updateEmployeeFull, getEmployeeKyc,
