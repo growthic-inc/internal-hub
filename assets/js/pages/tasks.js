@@ -101,14 +101,14 @@ const Tasks = (() => {
   async function _bootstrapWorkspace() {
     const teamsData = await ClickUpAPI.getTeams()
     if (!teamsData.teams?.length) throw new Error('No ClickUp workspace found.')
-    _workspaceId = teamsData.teams[0].id
+    const team   = teamsData.teams[0]
+    _workspaceId = team.id
 
-    const [spacesData, membersData] = await Promise.all([
-      ClickUpAPI.getSpaces(_workspaceId),
-      ClickUpAPI.getMembers(_workspaceId),
-    ])
-    _spaces  = spacesData.spaces  || []
-    _members = (membersData.members || []).map(m => m.user || m)
+    // Members come back in the /team response — no separate API call needed.
+    _members = (team.members || []).map(m => m.user || m)
+
+    const spacesData = await ClickUpAPI.getSpaces(_workspaceId)
+    _spaces = spacesData.spaces || []
   }
 
   /* ── Shell layout ───────────────────────────────────────── */
