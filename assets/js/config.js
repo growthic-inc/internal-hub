@@ -21,7 +21,6 @@ const Config = (() => {
   return {
     supabase,
     SUPABASE_URL,
-    SUPABASE_ANON_KEY,
     APP_NAME: 'Growthic One',
     VERSION: '0.1.0',
   }

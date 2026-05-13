@@ -32,10 +32,7 @@ const Auth = (() => {
   async function requireGuest() {
     const session = await getSession()
     if (session) {
-      // Preserve query params (e.g. ?clickup_code=) so app.js can handle
-      // OAuth callbacks that land on the login page instead of /home
-      const qs = window.location.search
-      window.location.href = '/home' + qs
+      window.location.href = '/home'
     }
   }
 
@@ -54,7 +51,7 @@ const Auth = (() => {
     // is case-sensitive in PostgreSQL, so it returns 0 rows → 406 error.
     const { data: rows, error } = await supabase
       .from('employees')
-      .select('id, name, email, role, department, status, manager_id, profile_completed, profile_image_url, joining_date, date_of_birth, clickup_user_id')
+      .select('id, name, email, role, department, status, manager_id, profile_completed, profile_image_url, joining_date, date_of_birth')
       .ilike('email', session.user.email)
       .order('id', { ascending: true })
       .limit(1)
