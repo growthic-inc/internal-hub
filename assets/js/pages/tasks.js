@@ -534,36 +534,43 @@ const Tasks = (() => {
   ══════════════════════════════════════════════════════════ */
   function _buildListView() {
     const rows = _tasks.map(t => {
-      const assignees = (t.assignees || []).slice(0, 3)
-      const dueDate   = t.due_date ? _formatDate(Number(t.due_date)) : '—'
-      const priority  = PRIORITY[t.priority?.priority || t.priority] || null
-      const status    = t.status || {}
-      const isOverdue = t.due_date && Number(t.due_date) < Date.now() && status.type !== 'closed'
+      const assignees     = (t.assignees || []).slice(0, 3)
+      const extraAssign   = (t.assignees || []).length - 3
+      const dueDate       = t.due_date ? _formatDate(Number(t.due_date)) : null
+      const priority      = PRIORITY[t.priority?.priority || t.priority] || null
+      const status        = t.status || {}
+      const sc            = status.color || '#9d9d9d'
+      const isOverdue     = t.due_date && Number(t.due_date) < Date.now() && status.type !== 'closed'
+      const isClosed      = status.type === 'closed'
 
       return `
-        <div class="cu-task-row" data-task-id="${t.id}" style="cursor:pointer;">
-          <div class="cu-task-row-name">
-            <div class="cu-status-dot" style="background:${status.color || '#ccc'};"></div>
-            <span>${Utils.escapeHtml(t.name)}</span>
-            ${t.subtasks?.length ? `<span class="cu-subtask-badge">${t.subtasks.length}</span>` : ''}
+        <div class="cu-task-row" data-task-id="${t.id}">
+          <div class="cu-tr-status">
+            <span class="cu-status-pill" style="background:${sc}26;color:${sc};border-color:${sc}55;">
+              ${Utils.escapeHtml((status.status || '—').toUpperCase())}
+            </span>
+          </div>
+          <div class="cu-tr-name${isClosed ? ' cu-tr-name--closed' : ''}">
+            <span class="cu-tr-title">${Utils.escapeHtml(t.name)}</span>
+            ${t.subtasks?.length ? `<span class="cu-subtask-badge">↳ ${t.subtasks.length}</span>` : ''}
           </div>
           ${_myTasksMode ? `
-            <div class="cu-task-row-meta" style="font-size:12px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;">
-              ${Utils.escapeHtml(t.list?.name || t.space?.name || '')}
+            <div class="cu-tr-list">
+              <span>${Utils.escapeHtml(t.list?.name || t.space?.name || '')}</span>
             </div>` : ''}
-          <div class="cu-task-row-assignees">
+          <div class="cu-tr-assignees">
             ${assignees.map(a => _avatarSmall(a)).join('')}
+            ${extraAssign > 0 ? `<span class="cu-avatar-more">+${extraAssign}</span>` : ''}
           </div>
-          <div class="cu-task-row-due${isOverdue ? ' cu-overdue' : ''}" style="font-size:12px;white-space:nowrap;">
-            ${isOverdue ? '⚠ ' : ''}${dueDate}
+          <div class="cu-tr-due${isOverdue ? ' cu-overdue' : ''}">
+            ${dueDate ? `
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:.6;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              <span>${dueDate}</span>` : `<span style="opacity:.3;">—</span>`}
           </div>
-          <div>
-            ${priority ? `<span class="cu-priority-dot" style="background:${priority.color};" title="${priority.label}"></span>` : ''}
-          </div>
-          <div>
-            <span class="cu-status-badge" style="background:${status.color}22;color:${status.color || 'var(--text-muted)'};border:1px solid ${status.color || 'var(--border)'}44;">
-              ${Utils.escapeHtml(status.status || '—')}
-            </span>
+          <div class="cu-tr-priority">
+            ${priority
+              ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="${priority.color}" title="${priority.label}"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15" stroke="${priority.color}" stroke-width="2" stroke-linecap="round"/></svg>`
+              : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" style="opacity:.2;" title="No priority"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15" stroke-width="2"/></svg>`}
           </div>
         </div>
       `
@@ -572,12 +579,12 @@ const Tasks = (() => {
     return `
       <div class="cu-list-view">
         <div class="cu-list-header">
-          <div style="flex:1;">Task</div>
-          ${_myTasksMode ? `<div style="width:180px;">List</div>` : ''}
-          <div style="width:90px;">Assignee</div>
-          <div style="width:90px;">Due Date</div>
-          <div style="width:40px;"></div>
-          <div style="width:120px;">Status</div>
+          <div class="cu-lh-status">Status</div>
+          <div class="cu-lh-name">Name</div>
+          ${_myTasksMode ? `<div class="cu-lh-list">List</div>` : ''}
+          <div class="cu-lh-assignees">Assignees</div>
+          <div class="cu-lh-due">Due date</div>
+          <div class="cu-lh-priority">Priority</div>
         </div>
         ${rows}
       </div>
@@ -588,15 +595,16 @@ const Tasks = (() => {
      BOARD VIEW
   ══════════════════════════════════════════════════════════ */
   function _buildBoardView() {
-    // Derive columns from list statuses (preferred) or from tasks
-    let statuses = _listStatuses.length
+    const statuses = _listStatuses.length
       ? _listStatuses
       : [...new Map(_tasks.map(t => [t.status?.status, t.status])).values()].filter(Boolean)
 
     const columns = statuses.map(s => {
+      const sc       = s.color || '#aaaaaa'
       const colTasks = _tasks.filter(t =>
         (t.status?.status || '').toLowerCase() === (s.status || '').toLowerCase()
       )
+
       const cards = colTasks.map(t => {
         const assignees = (t.assignees || []).slice(0, 3)
         const dueDate   = t.due_date ? _formatDate(Number(t.due_date)) : null
@@ -605,14 +613,16 @@ const Tasks = (() => {
 
         return `
           <div class="cu-board-card" data-task-id="${t.id}">
-            <div style="font-size:13px;font-weight:500;margin-bottom:8px;line-height:1.4;">${Utils.escapeHtml(t.name)}</div>
-            ${t.list?.name && _myTasksMode ? `<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">${Utils.escapeHtml(t.list.name)}</div>` : ''}
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
-              <div style="display:flex;gap:4px;">${assignees.map(a => _avatarSmall(a)).join('')}</div>
-              <div style="display:flex;align-items:center;gap:6px;">
-                ${priority ? `<span class="cu-priority-dot" style="background:${priority.color};" title="${priority.label}"></span>` : ''}
-                ${dueDate ? `<span style="font-size:11px;color:${isOverdue ? 'var(--danger)' : 'var(--text-muted)'};">${isOverdue ? '⚠ ' : ''}${dueDate}</span>` : ''}
-                ${t.subtasks?.length ? `<span class="cu-subtask-badge">${t.subtasks.length}</span>` : ''}
+            <div class="cu-card-top">
+              <div class="cu-card-name">${Utils.escapeHtml(t.name)}</div>
+              ${priority ? `<svg class="cu-card-priority" width="12" height="12" viewBox="0 0 24 24" fill="${priority.color}" title="${priority.label}"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15" stroke="${priority.color}" stroke-width="2" stroke-linecap="round"/></svg>` : ''}
+            </div>
+            ${t.list?.name && _myTasksMode ? `<div class="cu-card-list-label">${Utils.escapeHtml(t.list.name)}</div>` : ''}
+            <div class="cu-card-footer">
+              <div class="cu-card-assignees">${assignees.map(a => _avatarSmall(a)).join('')}</div>
+              <div style="display:flex;align-items:center;gap:5px;">
+                ${t.subtasks?.length ? `<span class="cu-subtask-badge">↳ ${t.subtasks.length}</span>` : ''}
+                ${dueDate ? `<span class="cu-card-due${isOverdue ? ' cu-overdue' : ''}">${dueDate}</span>` : ''}
               </div>
             </div>
           </div>
@@ -620,14 +630,14 @@ const Tasks = (() => {
       }).join('')
 
       return `
-        <div class="cu-board-col">
+        <div class="cu-board-col" style="--col-color:${sc};">
           <div class="cu-board-col-header">
-            <span class="cu-col-dot" style="background:${s.color || '#ccc'};"></span>
-            <span>${Utils.escapeHtml(s.status || '—')}</span>
-            <span class="cu-list-count" style="margin-left:auto;">${colTasks.length}</span>
+            <span class="cu-col-dot" style="background:${sc};"></span>
+            <span class="cu-col-name">${Utils.escapeHtml((s.status || '—').toUpperCase())}</span>
+            <span class="cu-col-count">${colTasks.length}</span>
           </div>
           <div class="cu-board-col-body">
-            ${cards || `<div style="font-size:12px;color:var(--text-muted);padding:8px 4px;">No tasks</div>`}
+            ${cards || `<div class="cu-col-empty">No tasks</div>`}
           </div>
         </div>
       `
