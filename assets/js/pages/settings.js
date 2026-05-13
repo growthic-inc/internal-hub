@@ -409,14 +409,18 @@ const Settings = (() => {
     }
   }
 
-  function _connectClickUp() {
-    if (!Config.CLICKUP_CLIENT_ID) {
-      Utils.showToast('ClickUp Client ID not configured. Contact your admin.', 'error')
-      return
+  async function _connectClickUp() {
+    const btn = document.getElementById('cu-connect-btn')
+    if (btn) { btn.disabled = true; btn.textContent = 'Connecting…' }
+    try {
+      const { client_id } = await ClickUpAPI.getClientId()
+      const redirectUri = encodeURIComponent(window.location.origin + '/home')
+      window.location.href =
+        `https://app.clickup.com/api?client_id=${client_id}&redirect_uri=${redirectUri}`
+    } catch (e) {
+      Utils.showToast('Could not start ClickUp login. Please try again.', 'error')
+      if (btn) { btn.disabled = false; btn.textContent = 'Connect' }
     }
-    const redirectUri = encodeURIComponent(window.location.origin + '/home')
-    window.location.href =
-      `https://app.clickup.com/api?client_id=${Config.CLICKUP_CLIENT_ID}&redirect_uri=${redirectUri}`
   }
 
   async function _disconnectClickUp() {

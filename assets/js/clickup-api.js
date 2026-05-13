@@ -28,6 +28,7 @@ const ClickUpAPI = (() => {
   }
 
   /* ── Auth ────────────────────────────────────────────────── */
+  const getClientId  = ()      => _call({ action: 'get_client_id' })
   const exchangeCode = (code)  => _call({ action: 'oauth_exchange', code })
   const disconnect   = ()      => _call({ action: 'disconnect' })
 
@@ -74,7 +75,7 @@ const ClickUpAPI = (() => {
   // For now attachments are read-only (fetched as part of task detail).
 
   return {
-    exchangeCode, disconnect,
+    getClientId, exchangeCode, disconnect,
     api,
     getTeams, getMembers,
     getSpaces, getFolders, getSpaceLists, getFolderLists, getList,

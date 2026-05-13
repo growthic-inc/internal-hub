@@ -18,18 +18,11 @@ const Config = (() => {
 
   const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-  // ClickUp OAuth — CLIENT_ID is public (safe in frontend).
-  // Set this to the Client ID from your ClickUp OAuth app
-  // (ClickUp Settings → Apps → your OAuth app → Client ID).
-  // The Client Secret stays in Supabase as CLICKUP_CLIENT_SECRET_ID.
-  const CLICKUP_CLIENT_ID = ''   // ← paste your ClickUp OAuth Client ID here
-
   return {
     supabase,
     SUPABASE_URL,
     SUPABASE_ANON_KEY,
     APP_NAME: 'Growthic One',
     VERSION: '0.1.0',
-    CLICKUP_CLIENT_ID,
   }
 })()

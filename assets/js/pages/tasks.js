@@ -83,10 +83,14 @@ const Tasks = (() => {
         </div>
       </div>
     `
-    document.getElementById('tasks-connect-btn')?.addEventListener('click', () => {
-      if (!Config.CLICKUP_CLIENT_ID) { Utils.showToast('ClickUp not configured yet.', 'error'); return }
-      const redirectUri = encodeURIComponent(window.location.origin + '/home')
-      window.location.href = `https://app.clickup.com/api?client_id=${Config.CLICKUP_CLIENT_ID}&redirect_uri=${redirectUri}`
+    document.getElementById('tasks-connect-btn')?.addEventListener('click', async () => {
+      try {
+        const { client_id } = await ClickUpAPI.getClientId()
+        const redirectUri = encodeURIComponent(window.location.origin + '/home')
+        window.location.href = `https://app.clickup.com/api?client_id=${client_id}&redirect_uri=${redirectUri}`
+      } catch (e) {
+        Utils.showToast('Could not start ClickUp login. Please try again.', 'error')
+      }
     })
   }
 
