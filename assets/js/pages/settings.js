@@ -418,7 +418,8 @@ const Settings = (() => {
       window.location.href =
         `https://app.clickup.com/api?client_id=${client_id}&redirect_uri=${redirectUri}`
     } catch (e) {
-      Utils.showToast('Could not start ClickUp login. Please try again.', 'error')
+      console.error('[ClickUp connect]', e)
+      Utils.showToast('ClickUp: ' + (e.message || 'Unknown error'), 'error')
       if (btn) { btn.disabled = false; btn.textContent = 'Connect' }
     }
   }
