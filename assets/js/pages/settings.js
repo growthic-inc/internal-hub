@@ -414,7 +414,9 @@ const Settings = (() => {
     if (btn) { btn.disabled = true; btn.textContent = 'Connecting…' }
     try {
       const { client_id } = await ClickUpAPI.getClientId()
-      const redirectUri = encodeURIComponent(window.location.origin + '/home')
+      const redirectUri = encodeURIComponent(
+        (window.location.origin + window.location.pathname).replace(/\/$/, '') || window.location.origin
+      )
       window.location.href =
         `https://app.clickup.com/api?client_id=${client_id}&redirect_uri=${redirectUri}`
     } catch (e) {
