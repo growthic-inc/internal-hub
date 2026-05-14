@@ -8,6 +8,11 @@
   <link rel="icon" type="image/png" sizes="32x32" href="../assets/img/favicon/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="../assets/img/favicon/favicon-16x16.png">
   <link rel="apple-touch-icon" sizes="180x180" href="../assets/img/favicon/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Growthic One">
   <!-- Prevent flash of wrong theme: apply saved preference before CSS paints -->
   <script>(function(){var t=localStorage.getItem('theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');})()</script>
   <link rel="stylesheet" href="../assets/css/style.css">
@@ -103,6 +108,14 @@
   <!-- Phase 8 -->
   <script src="../assets/js/pages/home.js"></script>
   <script src="../assets/js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .catch(err => console.warn('[SW] Registration failed:', err))
+      })
+    }
+  </script>
 
 </body>
 </html>
