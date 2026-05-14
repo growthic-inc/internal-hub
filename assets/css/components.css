@@ -6380,3 +6380,227 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   color: var(--text-muted);
   line-height: 1.4;
 }
+
+/* ============================================================
+   TIMESHEET — Team two-panel layout + Insights tab
+   ============================================================ */
+
+/* Team tab two-panel layout */
+.ts-team-layout {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  overflow: hidden;
+}
+.ts-team-sidebar {
+  width: 230px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  background: var(--surface, var(--bg));
+  padding: 8px;
+}
+.ts-team-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  min-width: 0;
+}
+
+/* Employee card in sidebar */
+.ts-emp-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s;
+  margin-bottom: 2px;
+}
+.ts-emp-card:hover { background: var(--primary-light, #EEF4FF); }
+.ts-emp-card--active {
+  background: var(--primary-light, #EEF4FF);
+  font-weight: 600;
+}
+.ts-emp-card-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 12px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.ts-emp-card-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.ts-emp-card-info { min-width: 0; flex: 1; }
+.ts-emp-card-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ts-emp-card-dept { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ts-emp-card-meta { text-align: right; flex-shrink: 0; }
+.ts-emp-card-hours { font-size: 12px; font-weight: 700; color: var(--primary); display: block; }
+.ts-emp-card-pending { font-size: 10px; color: #F59E0B; display: block; }
+
+/* "All Submissions" item in sidebar */
+.ts-sidebar-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  transition: background 0.12s;
+}
+.ts-sidebar-all:hover { background: var(--primary-light, #EEF4FF); }
+.ts-sidebar-all--active { background: var(--primary-light, #EEF4FF); }
+.ts-sidebar-divider {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding: 4px 12px 6px;
+}
+
+/* Person header in team main area */
+.ts-person-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* Sub-tabs inside person view */
+.ts-sub-tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--border);
+  border-radius: 8px;
+  padding: 3px;
+}
+.ts-sub-tab-btn {
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.ts-sub-tab-btn:hover { color: var(--text); }
+.ts-sub-tab-btn--active {
+  background: var(--bg, #fff);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+/* Person week-view read-only cards (approve/reject inline) */
+.ts-card-approve-bar {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px 2px;
+}
+.ts-card-approve-bar .btn { flex: 1; font-size: 11px; padding: 3px 0; }
+
+/* History / Monthly table styles */
+.ts-history-week-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.ts-history-week-label { font-size: 13px; font-weight: 600; min-width: 160px; }
+.ts-history-week-hours { font-size: 13px; font-weight: 700; color: var(--primary); min-width: 50px; }
+.ts-history-badges { display: flex; gap: 4px; flex-wrap: wrap; }
+
+/* Monthly summary card */
+.ts-month-card {
+  background: var(--surface, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 12px;
+}
+.ts-month-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.ts-month-name { font-size: 15px; font-weight: 700; }
+.ts-month-total { font-size: 20px; font-weight: 800; color: var(--primary); }
+.ts-month-approved { font-size: 12px; color: #1D9E75; }
+.ts-month-breakdown { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.ts-month-proj-pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--primary-light, #EEF4FF);
+  color: var(--primary);
+  font-weight: 500;
+}
+
+/* ── Insights Tab ─────────────────────────────────────────── */
+.ts-insights-section-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 20px 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ts-insights-section-title:first-child { margin-top: 0; }
+
+.ts-chart-card {
+  background: var(--surface, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px;
+  margin-bottom: 16px;
+}
+.ts-chart-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+.ts-chart-wrap {
+  position: relative;
+  height: 200px;
+}
+.ts-chart-wrap--donut {
+  height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+.ts-donut-legend { flex: 1; min-width: 0; }
+.ts-donut-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.ts-donut-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.ts-donut-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ts-donut-val { font-weight: 600; }

@@ -1,7 +1,7 @@
 /* ============================================================
    TIMESHEET — Phase 10 Redesign
    Calendar week view + per-day submission + entity support
-   Two tabs: My Timesheet · Team's Timesheet (managers)
+   Tabs: My Timesheet · Team's Timesheet (managers) · Insights
    ============================================================ */
 
 const Timesheet = (() => {
@@ -20,6 +20,14 @@ const Timesheet = (() => {
   let _teamEntries       = []
   let _teamWeek          = null
   let _teamEmpId         = ''
+  // Team drill-down state
+  let _teamView          = 'list'       // 'list' | 'person'
+  let _teamSelEmpObj     = null         // selected employee object
+  let _teamPersonTab     = 'week'       // 'week' | 'history' | 'monthly'
+  let _teamPersonWeek    = null         // Date (Monday) for person week view
+  let _teamPersonEntries = []           // entries for person drill-down
+  // Insights tab
+  let _insightsCharts    = []
 
   /* ── Constants ──────────────────────────────────────────── */
   const CHART_COLORS = [
@@ -39,6 +47,7 @@ const Timesheet = (() => {
     const showTeam = App.hasAccess('timesheet', 'approve_timesheets', 'can_approve')
     const tabs = [{ id:'mine', label:'My Timesheet' }]
     if (showTeam) tabs.push({ id:'team', label:"Team's Timesheet" })
+    tabs.push({ id:'insights', label:'Insights' })
 
     return `
       <div class="page-inner">
@@ -115,9 +124,13 @@ const Timesheet = (() => {
     const toolbar = document.getElementById('ts-toolbar-actions')
     if (toolbar) toolbar.innerHTML = ''
     if (_sideChart) { _sideChart.destroy(); _sideChart = null }
+    // Destroy any insights charts
+    _insightsCharts.forEach(c => { try { c.destroy() } catch(_) {} })
+    _insightsCharts = []
     switch (tab) {
-      case 'mine': return _loadMineTab()
-      case 'team': return _loadTeamTab()
+      case 'mine':     return _loadMineTab()
+      case 'team':     return _loadTeamTab()
+      case 'insights': return _loadInsightsTab()
     }
   }
 
@@ -802,17 +815,45 @@ const Timesheet = (() => {
   }
 
   /* ══════════════════════════════════════════════════════════
-     TEAM'S TIMESHEET TAB
+     TEAM'S TIMESHEET TAB — two-panel layout
   ══════════════════════════════════════════════════════════ */
   async function _loadTeamTab() {
+    // Reset drill-down state each time the tab loads fresh
+    _teamView       = 'list'
+    _teamSelEmpObj  = null
+    _teamPersonTab  = 'week'
+    _teamPersonWeek = _getMondayOf(new Date())
+
+    _updateTeamToolbar()
+
+    // Scaffold the two-panel layout
+    const content = document.getElementById('ts-content')
+    if (content) {
+      content.innerHTML = `
+        <div class="ts-team-layout">
+          <div class="ts-team-sidebar" id="ts-team-sidebar-panel"></div>
+          <div class="ts-team-main" id="ts-team-main-panel">
+            <p class="loading-text">Loading…</p>
+          </div>
+        </div>
+      `
+    }
+
+    await _fetchTeamWeek()
+  }
+
+  /* Update toolbar: week nav in list mode, person week nav in person mode */
+  function _updateTeamToolbar() {
     const toolbar = document.getElementById('ts-toolbar-actions')
-    if (toolbar) {
+    if (!toolbar) return
+
+    if (_teamView === 'list') {
       toolbar.innerHTML = `
         <div style="display:flex;align-items:center;gap:6px;">
           <button class="btn btn--ghost btn--sm" id="ts-team-prev">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
-          <span id="ts-team-week-label" style="font-size:13px;font-weight:600;min-width:180px;text-align:center;">—</span>
+          <span id="ts-team-week-label" style="font-size:13px;font-weight:600;min-width:180px;text-align:center;">${_weekLabel(_teamWeek)}</span>
           <button class="btn btn--ghost btn--sm" id="ts-team-next">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
@@ -824,16 +865,18 @@ const Timesheet = (() => {
       document.getElementById('ts-team-next')?.addEventListener('click', () => {
         _teamWeek.setDate(_teamWeek.getDate() + 7); _fetchTeamWeek()
       })
+    } else {
+      // Person mode: toolbar is empty; week nav is inside the person view header
+      toolbar.innerHTML = ''
     }
-    _fetchTeamWeek()
   }
 
   async function _fetchTeamWeek() {
     const label = document.getElementById('ts-team-week-label')
     if (label) label.textContent = _weekLabel(_teamWeek)
 
-    const content = document.getElementById('ts-content')
-    if (content) content.innerHTML = '<p class="loading-text">Loading team submissions…</p>'
+    const mainPanel = document.getElementById('ts-team-main-panel')
+    if (mainPanel) mainPanel.innerHTML = '<p class="loading-text">Loading team submissions…</p>'
 
     const from = _toISO(_teamWeek)
     const to   = _toISO(_weekEnd(_teamWeek))
@@ -842,30 +885,111 @@ const Timesheet = (() => {
     const { data, error } = await API.getTeamTimesheetEntries(from, to, _teamEmpId || null, reporteeIds.length ? reporteeIds : null, _user.id)
     if (error) { Utils.showToast('Failed to load team data.', 'error'); return }
     _teamEntries = data || []
-    _renderTeamView()
+
+    _renderTeamSidebar()
+    _renderTeamAllView()
   }
 
-  function _renderTeamView() {
-    const content = document.getElementById('ts-content')
-    if (!content) return
+  /* ── Sidebar ─────────────────────────────────────────────── */
+  function _renderTeamSidebar() {
+    const sidebar = document.getElementById('ts-team-sidebar-panel')
+    if (!sidebar) return
 
-    // Group by employee
+    // Build per-employee summaries for the sidebar from _teamEntries
+    const empMap = {}
+    _teamEntries.forEach(e => {
+      const empId = e.employee_id
+      if (!empMap[empId]) empMap[empId] = { emp: e.employees, hours: 0, pending: 0 }
+      empMap[empId].hours   += parseFloat(e.hours || 0)
+      if (e.status === 'submitted') empMap[empId].pending++
+    })
+
+    // Also include direct reports with no entries this week (so we can drill in)
+    _directReports.forEach(dr => {
+      if (!empMap[dr.id]) empMap[dr.id] = { emp: dr, hours: 0, pending: 0 }
+    })
+
+    const isAllActive = _teamView === 'list'
+
+    const empCards = Object.values(empMap).map(({ emp, hours, pending }) => {
+      const name    = emp?.name || 'Unknown'
+      const dept    = emp?.department ? emp.department.replace(/_/g, ' ') : ''
+      const imgUrl  = emp?.profile_image_url || null
+      const empId   = emp?.id || ''
+      const isActive = _teamView === 'person' && _teamSelEmpObj?.id === empId
+
+      return `
+        <div class="ts-emp-card${isActive ? ' ts-emp-card--active' : ''}" data-emp-id="${empId}">
+          <div class="ts-emp-card-avatar">
+            ${imgUrl ? `<img src="${Utils.escapeHtml(imgUrl)}" alt="">` : Utils.getInitials(name)}
+          </div>
+          <div class="ts-emp-card-info">
+            <div class="ts-emp-card-name">${Utils.escapeHtml(name)}</div>
+            ${dept ? `<div class="ts-emp-card-dept">${Utils.escapeHtml(dept)}</div>` : ''}
+          </div>
+          <div class="ts-emp-card-meta">
+            <span class="ts-emp-card-hours">${hours.toFixed(1)}h</span>
+            ${pending ? `<span class="ts-emp-card-pending">${pending} pend.</span>` : ''}
+          </div>
+        </div>
+      `
+    }).join('')
+
+    sidebar.innerHTML = `
+      <div class="ts-sidebar-all${isAllActive ? ' ts-sidebar-all--active' : ''}" id="ts-sidebar-all-btn">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        All Submissions
+      </div>
+      <div class="ts-sidebar-divider">Team Members</div>
+      ${empCards}
+    `
+
+    // Bind "All Submissions"
+    sidebar.querySelector('#ts-sidebar-all-btn')?.addEventListener('click', () => {
+      _teamView      = 'list'
+      _teamSelEmpObj = null
+      _updateTeamToolbar()
+      _renderTeamSidebar()
+      _renderTeamAllView()
+    })
+
+    // Bind employee cards
+    sidebar.querySelectorAll('.ts-emp-card[data-emp-id]').forEach(card => {
+      card.addEventListener('click', () => {
+        const empId  = card.dataset.empId
+        const empObj = _teamEntries.find(e => e.employee_id === empId)?.employees
+                    || _directReports.find(e => e.id === empId)
+        if (!empObj) return
+        _teamView       = 'person'
+        _teamSelEmpObj  = empObj
+        _teamPersonTab  = 'week'
+        _teamPersonWeek = _getMondayOf(new Date())
+        _updateTeamToolbar()
+        _renderTeamSidebar()
+        _loadPersonWeek()
+      })
+    })
+  }
+
+  /* ── All Submissions view (existing accordion/table) ─────── */
+  function _renderTeamAllView() {
+    const mainPanel = document.getElementById('ts-team-main-panel')
+    if (!mainPanel) return
+
     const empMap = {}
     _teamEntries.forEach(e => {
       const empId = e.employee_id
       if (!empMap[empId]) empMap[empId] = { emp: e.employees, entries: [] }
       empMap[empId].entries.push(e)
     })
-
     const groups = Object.values(empMap)
 
-    // Summary row
     const submitted = _teamEntries.filter(e => e.status === 'submitted').length
     const approved  = _teamEntries.filter(e => e.status === 'approved').length
     const rejected  = _teamEntries.filter(e => e.status === 'rejected').length
     const totalHrs  = _teamEntries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
 
-    content.innerHTML = `
+    mainPanel.innerHTML = `
       <div class="grid-4 mb-4">
         <div class="stat-card">
           <div class="stat-label">Total Hours</div>
@@ -895,26 +1019,333 @@ const Timesheet = (() => {
       }
     `
 
-    content.querySelectorAll('.ts-approve-entry').forEach(btn =>
+    mainPanel.querySelectorAll('.ts-approve-entry').forEach(btn =>
       btn.addEventListener('click', () => _openApproveModal(btn.dataset.id))
     )
-    content.querySelectorAll('.ts-reject-entry').forEach(btn =>
+    mainPanel.querySelectorAll('.ts-reject-entry').forEach(btn =>
       btn.addEventListener('click', () => _openRejectModal(btn.dataset.id))
     )
-
-    // Bind accordion toggles
-    content.querySelectorAll('.ts-acc-header').forEach(header => {
+    mainPanel.querySelectorAll('.ts-acc-header').forEach(header => {
       header.addEventListener('click', () => {
         const bodyId  = header.dataset.target
         const body    = document.getElementById(bodyId)
         const chevron = header.querySelector('.ts-acc-chevron')
         if (!body) return
         const isOpen = body.style.display !== 'none'
-        body.style.display    = isOpen ? 'none' : ''
-        header.dataset.open   = isOpen ? 'false' : 'true'
+        body.style.display  = isOpen ? 'none' : ''
+        header.dataset.open = isOpen ? 'false' : 'true'
         if (chevron) chevron.style.transform = isOpen ? 'rotate(-90deg)' : 'rotate(0deg)'
       })
     })
+  }
+
+  /* ── Person drill-down: fetch + render person week ────────── */
+  async function _loadPersonWeek() {
+    const mainPanel = document.getElementById('ts-team-main-panel')
+    if (!mainPanel) return
+    mainPanel.innerHTML = '<p class="loading-text">Loading…</p>'
+
+    const from = _toISO(_teamPersonWeek)
+    const to   = _toISO(_weekEnd(_teamPersonWeek))
+    const { data, error } = await API.getTimesheetEntries(_teamSelEmpObj.id, from, to)
+    if (error) { Utils.showToast('Failed to load entries.', 'error'); return }
+    _teamPersonEntries = data || []
+    _renderPersonView()
+  }
+
+  function _renderPersonView() {
+    const mainPanel = document.getElementById('ts-team-main-panel')
+    if (!mainPanel || !_teamSelEmpObj) return
+
+    const emp     = _teamSelEmpObj
+    const name    = emp.name || 'Unknown'
+    const dept    = emp.department ? emp.department.replace(/_/g, ' ') : ''
+    const imgUrl  = emp.profile_image_url || null
+
+    mainPanel.innerHTML = `
+      <div class="ts-person-header">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:40px;height:40px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0;overflow:hidden;">
+            ${imgUrl ? `<img src="${Utils.escapeHtml(imgUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;">` : Utils.getInitials(name)}
+          </div>
+          <div>
+            <div style="font-weight:700;font-size:15px;">${Utils.escapeHtml(name)}</div>
+            ${dept ? `<div style="font-size:12px;color:var(--text-muted);text-transform:capitalize;">${Utils.escapeHtml(dept)}</div>` : ''}
+          </div>
+        </div>
+        <div class="ts-sub-tabs" id="ts-person-sub-tabs">
+          <button class="ts-sub-tab-btn${_teamPersonTab==='week'?' ts-sub-tab-btn--active':''}" data-ptab="week">Week View</button>
+          <button class="ts-sub-tab-btn${_teamPersonTab==='history'?' ts-sub-tab-btn--active':''}" data-ptab="history">History</button>
+          <button class="ts-sub-tab-btn${_teamPersonTab==='monthly'?' ts-sub-tab-btn--active':''}" data-ptab="monthly">Monthly Summary</button>
+        </div>
+      </div>
+      <div id="ts-person-tab-body"></div>
+    `
+
+    mainPanel.querySelectorAll('.ts-sub-tab-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        mainPanel.querySelectorAll('.ts-sub-tab-btn').forEach(b => b.classList.remove('ts-sub-tab-btn--active'))
+        btn.classList.add('ts-sub-tab-btn--active')
+        _teamPersonTab = btn.dataset.ptab
+        await _renderPersonTabBody()
+      })
+    })
+
+    _renderPersonTabBody()
+  }
+
+  async function _renderPersonTabBody() {
+    const body = document.getElementById('ts-person-tab-body')
+    if (!body) return
+
+    if (_teamPersonTab === 'week') {
+      _renderPersonWeekView(body)
+    } else if (_teamPersonTab === 'history') {
+      body.innerHTML = '<p class="loading-text">Loading history…</p>'
+      const from = _toISO((() => { const d = new Date(); d.setMonth(d.getMonth() - 3); return _getMondayOf(d) })())
+      const to   = _toISO(new Date())
+      const { data } = await API.getTimesheetEntries(_teamSelEmpObj.id, from, to)
+      _renderPersonHistory(body, data || [])
+    } else if (_teamPersonTab === 'monthly') {
+      body.innerHTML = '<p class="loading-text">Loading summary…</p>'
+      const from = _toISO((() => { const d = new Date(); d.setMonth(d.getMonth() - 6); return _getMondayOf(d) })())
+      const to   = _toISO(new Date())
+      const { data } = await API.getTimesheetEntries(_teamSelEmpObj.id, from, to)
+      _renderPersonMonthly(body, data || [])
+    }
+  }
+
+  /* ── Person: Week View sub-tab ───────────────────────────── */
+  function _renderPersonWeekView(container) {
+    const days = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(_teamPersonWeek)
+      d.setDate(d.getDate() + i)
+      return d
+    })
+
+    const weekEntries = _teamPersonEntries
+
+    container.innerHTML = `
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:16px;">
+        <button class="btn btn--ghost btn--sm" id="ts-person-prev">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span style="font-size:13px;font-weight:600;min-width:180px;text-align:center;">${_weekLabel(_teamPersonWeek)}</span>
+        <button class="btn btn--ghost btn--sm" id="ts-person-next">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+      <div class="ts-day-grid" style="flex:1;">
+        ${days.map(d => _renderPersonDayCol(d, weekEntries)).join('')}
+      </div>
+    `
+
+    container.querySelector('#ts-person-prev')?.addEventListener('click', async () => {
+      _teamPersonWeek.setDate(_teamPersonWeek.getDate() - 7)
+      await _loadPersonWeek()
+    })
+    container.querySelector('#ts-person-next')?.addEventListener('click', async () => {
+      _teamPersonWeek.setDate(_teamPersonWeek.getDate() + 7)
+      await _loadPersonWeek()
+    })
+
+    // Approve/Reject inline
+    container.querySelectorAll('.ts-person-approve').forEach(btn =>
+      btn.addEventListener('click', () => _openApproveModal(btn.dataset.id, true))
+    )
+    container.querySelectorAll('.ts-person-reject').forEach(btn =>
+      btn.addEventListener('click', () => _openRejectModal(btn.dataset.id, true))
+    )
+  }
+
+  function _renderPersonDayCol(day, weekEntries) {
+    const iso        = _toISO(day)
+    const today      = _toISO(new Date())
+    const dayEntries = weekEntries.filter(e => e.date === iso)
+    const isToday    = iso === today
+    const dayHours   = dayEntries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+
+    const drafts    = dayEntries.filter(e => e.status === 'draft').length
+    const submitted = dayEntries.filter(e => e.status === 'submitted').length
+    const approved  = dayEntries.filter(e => e.status === 'approved').length
+    const rejected  = dayEntries.filter(e => e.status === 'rejected').length
+
+    let headerIcon = ''
+    if (dayEntries.length && approved === dayEntries.length) {
+      headerIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1D9E75" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`
+    } else if (submitted > 0 && drafts === 0 && rejected === 0) {
+      headerIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`
+    } else if (rejected > 0) {
+      headerIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`
+    }
+
+    return `
+      <div class="ts-col${isToday ? ' ts-col--today' : ''}">
+        <div class="ts-col-header">
+          <div class="ts-col-top">
+            <span class="ts-col-weekday">${day.toLocaleDateString('en-IN', { weekday:'short' }).toUpperCase()}</span>
+            <span class="ts-col-status-icon">${headerIcon}</span>
+          </div>
+          <span class="ts-col-date${isToday ? ' ts-col-date--today' : ''}">${day.getDate()}</span>
+          ${dayHours > 0 ? `<span class="ts-col-hours">${dayHours.toFixed(1)}h</span>` : ''}
+        </div>
+        <div class="ts-col-body">
+          ${dayEntries.map(e => _renderPersonCard(e)).join('')}
+        </div>
+      </div>
+    `
+  }
+
+  function _renderPersonCard(e) {
+    const isInternal = e.work_type === 'internal'
+    const projName   = isInternal ? (e.internal_project?.name || 'Internal') : (e.clients?.client_name || null)
+    const projCode   = isInternal ? (e.internal_project?.project_code || null) : (e.clients?.project_code || null)
+    const entityName = isInternal ? (e.internal_entity?.entity_name || null) : (e.entity?.entity_name || null)
+    const desc       = e.work_description || e.task_description || ''
+    const lateIcon   = e.is_late ? `<span title="Logged late" style="color:#F59E0B;font-size:11px;">🕐</span>` : ''
+
+    const approveRejectBar = e.status === 'submitted' && e.employee_id !== _user.id ? `
+      <div class="ts-card-approve-bar">
+        <button class="btn btn--xs btn--secondary ts-person-approve" data-id="${e.id}">Approve</button>
+        <button class="btn btn--xs btn--danger ts-person-reject" data-id="${e.id}">Reject</button>
+      </div>
+    ` : ''
+
+    return `
+      <div class="ts-card ts-card--${e.status}">
+        <div class="ts-card-client">
+          ${isInternal ? `<span class="ts-card-type-badge ts-card-type-badge--internal">Internal</span>` : ''}
+          <span class="ts-card-client-name">${Utils.escapeHtml(projName || '—')}</span>
+          ${projCode ? `<span class="ts-card-code">${Utils.escapeHtml(projCode)}</span>` : ''}
+          ${lateIcon}
+        </div>
+        ${entityName ? `<div class="ts-card-entity">${Utils.escapeHtml(entityName)}</div>` : ''}
+        ${desc ? `<div class="ts-card-desc" style="white-space:pre-wrap;word-break:break-word;">${Utils.escapeHtml(desc)}</div>` : ''}
+        <div class="ts-card-footer">
+          <span class="ts-card-hours">${parseFloat(e.hours).toFixed(1)}h</span>
+          <span class="badge ${STATUS[e.status]?.cls || 'badge--muted'}">${STATUS[e.status]?.label || e.status}</span>
+        </div>
+        ${e.rejection_comment ? `
+          <div class="ts-card-rejection">
+            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            ${Utils.escapeHtml(e.rejection_comment)}
+          </div>
+        ` : ''}
+        ${e.approval_comment ? `
+          <div class="ts-card-rejection" style="background:var(--success-light,#D1FAE5);color:#065F46;border-color:#6EE7B7;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            ${Utils.escapeHtml(e.approval_comment)}
+          </div>
+        ` : ''}
+        ${approveRejectBar}
+      </div>
+    `
+  }
+
+  /* ── Person: History sub-tab ─────────────────────────────── */
+  function _renderPersonHistory(container, entries) {
+    if (!entries.length) {
+      container.innerHTML = `<p class="empty-state">No entries in the last 3 months.</p>`
+      return
+    }
+
+    // Group by ISO week start (Monday)
+    const weekMap = {}
+    entries.forEach(e => {
+      const ws = _toISO(_getMondayOf(new Date(e.date)))
+      if (!weekMap[ws]) weekMap[ws] = []
+      weekMap[ws].push(e)
+    })
+
+    const weeks = Object.keys(weekMap).sort((a, b) => b.localeCompare(a))
+
+    const rowsHtml = weeks.map(ws => {
+      const we      = weekMap[ws]
+      const wsDate  = new Date(ws + 'T00:00:00')
+      const label   = _weekLabel(wsDate)
+      const total   = we.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+      const aCount  = we.filter(e => e.status === 'approved').length
+      const pCount  = we.filter(e => e.status === 'submitted').length
+      const rCount  = we.filter(e => e.status === 'rejected').length
+      const dCount  = we.filter(e => e.status === 'draft').length
+
+      const badges = [
+        aCount ? `<span class="badge badge--success" style="font-size:10px;">${aCount} approved</span>` : '',
+        pCount ? `<span class="badge badge--warning" style="font-size:10px;">${pCount} pending</span>`  : '',
+        rCount ? `<span class="badge badge--danger"  style="font-size:10px;">${rCount} rejected</span>` : '',
+        dCount ? `<span class="badge badge--muted"   style="font-size:10px;">${dCount} draft</span>`    : '',
+      ].filter(Boolean).join('')
+
+      return `
+        <div class="ts-history-week-row">
+          <div class="ts-history-week-label">${label}</div>
+          <div class="ts-history-week-hours">${total.toFixed(1)}h</div>
+          <div class="ts-history-badges">${badges}</div>
+        </div>
+      `
+    }).join('')
+
+    container.innerHTML = `
+      <div class="section-card">
+        <div class="section-card-body" style="padding:0 18px;">
+          ${rowsHtml}
+        </div>
+      </div>
+    `
+  }
+
+  /* ── Person: Monthly Summary sub-tab ─────────────────────── */
+  function _renderPersonMonthly(container, entries) {
+    if (!entries.length) {
+      container.innerHTML = `<p class="empty-state">No entries in the last 6 months.</p>`
+      return
+    }
+
+    // Group by YYYY-MM
+    const monthMap = {}
+    entries.forEach(e => {
+      const ym = e.date.slice(0, 7)
+      if (!monthMap[ym]) monthMap[ym] = []
+      monthMap[ym].push(e)
+    })
+
+    const months = Object.keys(monthMap).sort((a, b) => b.localeCompare(a))
+
+    const cardsHtml = months.map(ym => {
+      const me      = monthMap[ym]
+      const total   = me.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+      const approved = me.filter(e => e.status === 'approved').reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+      const [y, m]  = ym.split('-')
+      const monthName = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-IN', { month:'long', year:'numeric' })
+
+      // Breakdown by project/client
+      const projMap = {}
+      me.forEach(e => {
+        const key = e.work_type === 'internal'
+          ? (e.internal_project?.name || 'Internal')
+          : (e.clients?.client_name || 'Internal')
+        projMap[key] = (projMap[key] || 0) + parseFloat(e.hours || 0)
+      })
+
+      const pills = Object.entries(projMap).map(([proj, hrs]) =>
+        `<span class="ts-month-proj-pill">${Utils.escapeHtml(proj)}: ${hrs.toFixed(1)}h</span>`
+      ).join('')
+
+      return `
+        <div class="ts-month-card">
+          <div class="ts-month-card-header">
+            <div>
+              <div class="ts-month-name">${monthName}</div>
+              <div class="ts-month-approved">${approved.toFixed(1)}h approved</div>
+            </div>
+            <div class="ts-month-total">${total.toFixed(1)}h</div>
+          </div>
+          <div class="ts-month-breakdown">${pills}</div>
+        </div>
+      `
+    }).join('')
+
+    container.innerHTML = cardsHtml
   }
 
   function _renderTeamEmployeeGroup({ emp, entries }) {
@@ -1013,13 +1444,246 @@ const Timesheet = (() => {
     `
   }
 
+  /* ══════════════════════════════════════════════════════════
+     INSIGHTS TAB
+  ══════════════════════════════════════════════════════════ */
+  async function _loadInsightsTab() {
+    const content = document.getElementById('ts-content')
+    if (content) content.innerHTML = '<p class="loading-text">Loading insights…</p>'
+
+    // Date ranges
+    const now         = new Date()
+    const monthStart  = new Date(now.getFullYear(), now.getMonth(), 1)
+    const lastMonthS  = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const lastMonthE  = new Date(now.getFullYear(), now.getMonth(), 0)
+    const eightWeeksAgo = _getMondayOf((() => { const d = new Date(); d.setDate(d.getDate() - 49); return d })())
+
+    // Personal data: last 8 weeks + current month
+    const [{ data: weekData }, { data: monthData }, { data: lastMonthData }] = await Promise.all([
+      API.getTimesheetEntries(_user.id, _toISO(eightWeeksAgo), _toISO(now)),
+      API.getTimesheetEntries(_user.id, _toISO(monthStart), _toISO(now)),
+      API.getTimesheetEntries(_user.id, _toISO(lastMonthS), _toISO(lastMonthE)),
+    ])
+
+    const allPersonal  = weekData || []
+    const thisMonth    = monthData || []
+    const lastMonth    = lastMonthData || []
+
+    // Stat cards
+    const thisMonthHrs  = thisMonth.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+    const lastMonthHrs  = lastMonth.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+    const submitted     = allPersonal.filter(e => ['submitted','approved','rejected'].includes(e.status))
+    const approved      = allPersonal.filter(e => e.status === 'approved')
+    const approvedRate  = submitted.length ? Math.round((approved.length / submitted.length) * 100) : 0
+    const onTime        = allPersonal.filter(e => !e.is_late && ['submitted','approved','rejected'].includes(e.status))
+    const onTimeRate    = submitted.length ? Math.round((onTime.length / submitted.length) * 100) : 0
+
+    // Weekly trend: last 8 weeks
+    const weeks = []
+    for (let i = 7; i >= 0; i--) {
+      const ws = _getMondayOf((() => { const d = new Date(); d.setDate(d.getDate() - i * 7); return d })())
+      const we = _weekEnd(ws)
+      const entries = allPersonal.filter(e => e.date >= _toISO(ws) && e.date <= _toISO(we))
+      weeks.push({
+        label:    ws.toLocaleDateString('en-IN', { month:'short', day:'numeric' }),
+        approved: entries.filter(e => e.status === 'approved').reduce((s, e) => s + parseFloat(e.hours || 0), 0),
+        pending:  entries.filter(e => e.status === 'submitted').reduce((s, e) => s + parseFloat(e.hours || 0), 0),
+        draft:    entries.filter(e => e.status === 'draft').reduce((s, e) => s + parseFloat(e.hours || 0), 0),
+      })
+    }
+
+    // Donut: hours by project/client this month
+    const projMap = {}
+    thisMonth.forEach(e => {
+      const key = e.work_type === 'internal'
+        ? (e.internal_project?.name || 'Internal')
+        : (e.clients?.client_name || 'Internal')
+      projMap[key] = (projMap[key] || 0) + parseFloat(e.hours || 0)
+    })
+
+    // Team section (managers)
+    let teamHtml = ''
+    let teamBarData = null
+    if (_p.can_approve && _directReports.length) {
+      const reporteeIds = _directReports.map(e => e.id)
+      const { data: teamMonthData } = await API.getTeamTimesheetEntries(
+        _toISO(monthStart), _toISO(now), null,
+        reporteeIds.length ? reporteeIds : null, _user.id
+      )
+      const teamEntries = teamMonthData || []
+
+      // Per-person hours + pending
+      const personMap = {}
+      _directReports.forEach(dr => { personMap[dr.id] = { name: dr.name || 'Unknown', hours: 0, pending: 0 } })
+      teamEntries.forEach(e => {
+        if (!personMap[e.employee_id]) return
+        personMap[e.employee_id].hours   += parseFloat(e.hours || 0)
+        if (e.status === 'submitted') personMap[e.employee_id].pending++
+      })
+
+      teamBarData = Object.values(personMap)
+
+      const pendingRows = teamBarData.filter(p => p.pending > 0).map(p => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
+          <span style="font-size:13px;font-weight:600;">${Utils.escapeHtml(p.name)}</span>
+          <span class="badge badge--warning">${p.pending} pending</span>
+        </div>
+      `).join('')
+
+      teamHtml = `
+        <div class="ts-insights-section-title">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Team — This Month
+        </div>
+        <div class="ts-chart-card">
+          <div class="ts-chart-title">Hours by Team Member</div>
+          <div class="ts-chart-wrap"><canvas id="ts-insights-team-bar"></canvas></div>
+        </div>
+        ${pendingRows ? `
+          <div class="ts-chart-card">
+            <div class="ts-chart-title">Pending Approvals</div>
+            ${pendingRows || '<p style="color:var(--text-muted);font-size:13px;">All caught up — no pending entries.</p>'}
+          </div>
+        ` : ''}
+      `
+    }
+
+    if (!content) return
+    content.innerHTML = `
+      <div>
+        <div class="ts-insights-section-title">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Personal
+        </div>
+
+        <div class="grid-4 mb-4">
+          <div class="stat-card">
+            <div class="stat-label">This Month</div>
+            <div class="stat-value">${thisMonthHrs.toFixed(1)}h</div>
+            <div class="stat-delta">${thisMonth.length} entries</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Last Month</div>
+            <div class="stat-value">${lastMonthHrs.toFixed(1)}h</div>
+            <div class="stat-delta">${lastMonth.length} entries</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Approved Rate</div>
+            <div class="stat-value stat-value--positive">${approvedRate}%</div>
+            <div class="stat-delta">${approved.length} / ${submitted.length} submitted</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">On-Time Rate</div>
+            <div class="stat-value${onTimeRate < 70 ? ' stat-value--warning' : ' stat-value--positive'}">${onTimeRate}%</div>
+            <div class="stat-delta">${onTime.length} on time</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px;">
+          <div class="ts-chart-card">
+            <div class="ts-chart-title">Weekly Hours — Last 8 Weeks</div>
+            <div class="ts-chart-wrap"><canvas id="ts-insights-weekly-bar"></canvas></div>
+          </div>
+          <div class="ts-chart-card">
+            <div class="ts-chart-title">This Month by Project</div>
+            <div class="ts-chart-wrap--donut" id="ts-insights-donut-wrap">
+              <canvas id="ts-insights-donut" width="160" height="160"></canvas>
+              <div class="ts-donut-legend" id="ts-insights-donut-legend"></div>
+            </div>
+          </div>
+        </div>
+
+        ${teamHtml}
+      </div>
+    `
+
+    // ── Render charts (next tick so DOM is ready) ─────────────
+    setTimeout(() => {
+      if (typeof Chart === 'undefined') return
+
+      // Weekly stacked bar
+      const weeklyCanvas = document.getElementById('ts-insights-weekly-bar')
+      if (weeklyCanvas) {
+        const c = new Chart(weeklyCanvas, {
+          type: 'bar',
+          data: {
+            labels: weeks.map(w => w.label),
+            datasets: [
+              { label: 'Approved', data: weeks.map(w => w.approved), backgroundColor: '#1D9E75', stack: 'a' },
+              { label: 'Pending',  data: weeks.map(w => w.pending),  backgroundColor: '#F59E0B', stack: 'a' },
+              { label: 'Draft',    data: weeks.map(w => w.draft),    backgroundColor: '#94A3B8', stack: 'a' },
+            ],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'top', labels: { boxWidth: 10, font: { size: 11 } } }, tooltip: { mode: 'index' } },
+            scales: { x: { stacked: true, ticks: { font: { size: 10 } } }, y: { stacked: true, ticks: { font: { size: 10 } }, beginAtZero: true } },
+          },
+        })
+        _insightsCharts.push(c)
+      }
+
+      // Project donut
+      const donutCanvas = document.getElementById('ts-insights-donut')
+      const donutLegend = document.getElementById('ts-insights-donut-legend')
+      const projLabels  = Object.keys(projMap)
+      const projVals    = Object.values(projMap)
+      if (donutCanvas && projLabels.length) {
+        const c = new Chart(donutCanvas, {
+          type: 'doughnut',
+          data: {
+            labels: projLabels,
+            datasets: [{ data: projVals, backgroundColor: CHART_COLORS.slice(0, projVals.length), borderWidth: 2, borderColor: '#fff' }],
+          },
+          options: {
+            cutout: '65%',
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed.toFixed(1)}h` } } },
+          },
+        })
+        _insightsCharts.push(c)
+        if (donutLegend) {
+          donutLegend.innerHTML = projLabels.map((l, i) => `
+            <div class="ts-donut-legend-row">
+              <span class="ts-donut-dot" style="background:${CHART_COLORS[i % CHART_COLORS.length]};"></span>
+              <span class="ts-donut-name">${Utils.escapeHtml(l)}</span>
+              <span class="ts-donut-val">${(projVals[i] || 0).toFixed(1)}h</span>
+            </div>
+          `).join('')
+        }
+      } else if (donutLegend) {
+        donutLegend.innerHTML = '<p style="font-size:12px;color:var(--text-muted);">No entries this month.</p>'
+      }
+
+      // Team horizontal bar
+      const teamBarCanvas = document.getElementById('ts-insights-team-bar')
+      if (teamBarCanvas && teamBarData) {
+        const c = new Chart(teamBarCanvas, {
+          type: 'bar',
+          data: {
+            labels: teamBarData.map(p => p.name),
+            datasets: [{ label: 'Hours', data: teamBarData.map(p => p.hours), backgroundColor: '#0F4799', borderRadius: 4 }],
+          },
+          options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.x.toFixed(1)}h` } } },
+            scales: { x: { beginAtZero: true, ticks: { font: { size: 10 } } }, y: { ticks: { font: { size: 11 } } } },
+          },
+        })
+        _insightsCharts.push(c)
+      }
+    }, 0)
+  }
+
   function _statusBadge(status) {
     const cfg = STATUS[status] || { label: status, cls: 'badge--muted' }
     return `<span class="badge ${cfg.cls}">${cfg.label}</span>`
   }
 
-  function _openApproveModal(entryId) {
+  function _openApproveModal(entryId, personMode = false) {
+    // Look in both team entries and person entries
     const entry = _teamEntries.find(e => e.id === entryId)
+               || _teamPersonEntries.find(e => e.id === entryId)
     if (entry?.employee_id === _user.id) {
       Utils.showToast('You cannot approve your own timesheet entries.', 'error')
       return
@@ -1051,14 +1715,15 @@ const Timesheet = (() => {
       const btn     = document.getElementById('ts-approve-confirm')
       btn.disabled    = true
       btn.textContent = 'Approving…'
-      await _approveEntry(entryId, comment)
+      await _approveEntry(entryId, comment, personMode)
       btn.disabled    = false
       btn.textContent = 'Approve'
     })
   }
 
-  async function _approveEntry(entryId, comment = '') {
+  async function _approveEntry(entryId, comment = '', personMode = false) {
     const entry = _teamEntries.find(e => e.id === entryId)
+               || _teamPersonEntries.find(e => e.id === entryId)
 
     const { error } = await Config.supabase
       .from('timesheets')
@@ -1086,12 +1751,13 @@ const Timesheet = (() => {
       }
       Utils.closeModal()
       Utils.showToast('Entry approved.', 'success')
-      _fetchTeamWeek()
+      if (personMode) { _loadPersonWeek() } else { _fetchTeamWeek() }
     }
   }
 
-  function _openRejectModal(entryId) {
+  function _openRejectModal(entryId, personMode = false) {
     const entry = _teamEntries.find(e => e.id === entryId)
+               || _teamPersonEntries.find(e => e.id === entryId)
     if (entry?.employee_id === _user.id) {
       Utils.showToast('You cannot reject your own timesheet entries.', 'error')
       return
@@ -1148,7 +1814,7 @@ const Timesheet = (() => {
         }
         Utils.closeModal()
         Utils.showToast('Entry rejected.', 'success')
-        _fetchTeamWeek()
+        if (personMode) { _loadPersonWeek() } else { _fetchTeamWeek() }
       }
     })
   }
