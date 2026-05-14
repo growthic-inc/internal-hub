@@ -1452,33 +1452,41 @@ const Timesheet = (() => {
     if (content) content.innerHTML = '<p class="loading-text">Loading insights…</p>'
 
     // Date ranges
-    const now         = new Date()
-    const monthStart  = new Date(now.getFullYear(), now.getMonth(), 1)
-    const lastMonthS  = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    const lastMonthE  = new Date(now.getFullYear(), now.getMonth(), 0)
+    const now           = new Date()
+    const monthStart    = new Date(now.getFullYear(), now.getMonth(), 1)
+    const lastMonthS    = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const lastMonthE    = new Date(now.getFullYear(), now.getMonth(), 0)
     const eightWeeksAgo = _getMondayOf((() => { const d = new Date(); d.setDate(d.getDate() - 49); return d })())
+    const sixMonthsAgo  = new Date(now.getFullYear(), now.getMonth() - 5, 1)
 
-    // Personal data: last 8 weeks + current month
-    const [{ data: weekData }, { data: monthData }, { data: lastMonthData }] = await Promise.all([
+    // Personal data fetches
+    const [{ data: weekData }, { data: monthData }, { data: lastMonthData }, { data: sixMonthData }] = await Promise.all([
       API.getTimesheetEntries(_user.id, _toISO(eightWeeksAgo), _toISO(now)),
       API.getTimesheetEntries(_user.id, _toISO(monthStart), _toISO(now)),
       API.getTimesheetEntries(_user.id, _toISO(lastMonthS), _toISO(lastMonthE)),
+      API.getTimesheetEntries(_user.id, _toISO(sixMonthsAgo), _toISO(now)),
     ])
 
-    const allPersonal  = weekData || []
-    const thisMonth    = monthData || []
-    const lastMonth    = lastMonthData || []
+    const allPersonal   = weekData     || []
+    const thisMonth     = monthData    || []
+    const lastMonth     = lastMonthData || []
+    const sixMonthsData = sixMonthData || []
 
-    // Stat cards
-    const thisMonthHrs  = thisMonth.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
-    const lastMonthHrs  = lastMonth.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
-    const submitted     = allPersonal.filter(e => ['submitted','approved','rejected'].includes(e.status))
-    const approved      = allPersonal.filter(e => e.status === 'approved')
-    const approvedRate  = submitted.length ? Math.round((approved.length / submitted.length) * 100) : 0
-    const onTime        = allPersonal.filter(e => !e.is_late && ['submitted','approved','rejected'].includes(e.status))
-    const onTimeRate    = submitted.length ? Math.round((onTime.length / submitted.length) * 100) : 0
+    // Helper: consistent project name from an entry
+    const _getProjName = e => e.work_type === 'internal'
+      ? (e.internal_project?.name || 'Internal')
+      : (e.clients?.client_name   || 'Client')
 
-    // Weekly trend: last 8 weeks
+    // ── Stat cards ────────────────────────────────────────────
+    const thisMonthHrs = thisMonth.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+    const lastMonthHrs = lastMonth.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+    const submitted    = allPersonal.filter(e => ['submitted','approved','rejected'].includes(e.status))
+    const approved     = allPersonal.filter(e => e.status === 'approved')
+    const approvedRate = submitted.length ? Math.round((approved.length / submitted.length) * 100) : 0
+    const onTime       = allPersonal.filter(e => !e.is_late && ['submitted','approved','rejected'].includes(e.status))
+    const onTimeRate   = submitted.length ? Math.round((onTime.length / submitted.length) * 100) : 0
+
+    // ── Weekly trend: last 8 weeks ────────────────────────────
     const weeks = []
     for (let i = 7; i >= 0; i--) {
       const ws = _getMondayOf((() => { const d = new Date(); d.setDate(d.getDate() - i * 7); return d })())
@@ -1492,16 +1500,108 @@ const Timesheet = (() => {
       })
     }
 
-    // Donut: hours by project/client this month
+    // ── Donut: hours by project this month ────────────────────
     const projMap = {}
     thisMonth.forEach(e => {
-      const key = e.work_type === 'internal'
-        ? (e.internal_project?.name || 'Internal')
-        : (e.clients?.client_name || 'Internal')
+      const key = _getProjName(e)
       projMap[key] = (projMap[key] || 0) + parseFloat(e.hours || 0)
     })
 
-    // Team section (managers)
+    // ── 6-month allocation: build month buckets ───────────────
+    const months6 = []
+    for (let i = 5; i >= 0; i--) {
+      const s = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const e = new Date(now.getFullYear(), now.getMonth() - i + 1, 0)
+      months6.push({
+        label: s.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' }),
+        start: _toISO(s),
+        end:   _toISO(e),
+      })
+    }
+
+    // { monthLabel: { projName: hours } }
+    const monthlyProjMap = {}
+    months6.forEach(m => { monthlyProjMap[m.label] = {} })
+    sixMonthsData.forEach(e => {
+      const proj  = _getProjName(e)
+      const month = months6.find(m => e.date >= m.start && e.date <= m.end)
+      if (!month) return
+      monthlyProjMap[month.label][proj] = (monthlyProjMap[month.label][proj] || 0) + parseFloat(e.hours || 0)
+    })
+
+    // Top 7 projects by 6-month total; remainder → "Other"
+    const projTotals6 = {}
+    sixMonthsData.forEach(e => {
+      const p = _getProjName(e)
+      projTotals6[p] = (projTotals6[p] || 0) + parseFloat(e.hours || 0)
+    })
+    let allProjs6 = Object.keys(projTotals6).sort((a, b) => projTotals6[b] - projTotals6[a])
+    const MAX_PROJS = 7
+    if (allProjs6.length > MAX_PROJS) {
+      const keep = allProjs6.slice(0, MAX_PROJS)
+      months6.forEach(m => {
+        let other = 0
+        Object.keys(monthlyProjMap[m.label]).forEach(p => {
+          if (!keep.includes(p)) { other += monthlyProjMap[m.label][p]; delete monthlyProjMap[m.label][p] }
+        })
+        if (other > 0) monthlyProjMap[m.label]['Other'] = other
+      })
+      allProjs6 = [...keep, 'Other']
+    }
+
+    // Chart.js datasets for stacked bar
+    const stackedDatasets = allProjs6.map((proj, i) => ({
+      label:           proj,
+      data:            months6.map(m => +(monthlyProjMap[m.label][proj] || 0).toFixed(1)),
+      backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+      stack:           'a',
+      borderRadius:    3,
+    }))
+
+    // ── Delta table: this month vs last month ─────────────────
+    const lastMonthProjMap = {}
+    lastMonth.forEach(e => {
+      const key = _getProjName(e)
+      lastMonthProjMap[key] = (lastMonthProjMap[key] || 0) + parseFloat(e.hours || 0)
+    })
+
+    const deltaProjects = [...new Set([...Object.keys(projMap), ...Object.keys(lastMonthProjMap)])]
+      .sort((a, b) => (projMap[b] || 0) - (projMap[a] || 0))
+
+    const lastMonthName = lastMonthS.toLocaleDateString('en-IN', { month: 'long' })
+    const thisMonthName = monthStart.toLocaleDateString('en-IN', { month: 'long' })
+
+    const deltaRows = deltaProjects.map(proj => {
+      const cur  = projMap[proj]         || 0
+      const prev = lastMonthProjMap[proj] || 0
+      const diff = cur - prev
+      let changeHtml
+      if (prev === 0 && cur > 0) {
+        changeHtml = `<span class="ts-delta-badge ts-delta-new">New</span>`
+      } else if (cur === 0 && prev > 0) {
+        changeHtml = `<span class="ts-delta-badge ts-delta-down">Dropped off</span>`
+      } else {
+        const pct   = prev > 0 ? Math.round((diff / prev) * 100) : 0
+        const arrow = diff > 0 ? '↑' : diff < 0 ? '↓' : '—'
+        const cls   = diff > 0 ? 'ts-delta-up' : diff < 0 ? 'ts-delta-down' : 'ts-delta-flat'
+        changeHtml  = `<span class="ts-delta-badge ${cls}">${arrow} ${Math.abs(pct)}%</span>`
+      }
+      const dotColor = CHART_COLORS[allProjs6.indexOf(proj) % CHART_COLORS.length] || '#94A3B8'
+      return `
+        <tr>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="ts-delta-dot" style="background:${dotColor};"></span>
+              ${Utils.escapeHtml(proj)}
+            </div>
+          </td>
+          <td><strong>${cur.toFixed(1)}h</strong></td>
+          <td style="color:var(--text-muted);">${prev > 0 ? prev.toFixed(1) + 'h' : '—'}</td>
+          <td>${changeHtml}</td>
+        </tr>`
+    }).join('')
+
+    // ── Team section (managers) ───────────────────────────────
     let teamHtml = ''
     let teamBarData = null
     if (_p.can_approve && _directReports.length) {
@@ -1512,7 +1612,6 @@ const Timesheet = (() => {
       )
       const teamEntries = teamMonthData || []
 
-      // Per-person hours + pending
       const personMap = {}
       _directReports.forEach(dr => { personMap[dr.id] = { name: dr.name || 'Unknown', hours: 0, pending: 0 } })
       teamEntries.forEach(e => {
@@ -1542,7 +1641,7 @@ const Timesheet = (() => {
         ${pendingRows ? `
           <div class="ts-chart-card">
             <div class="ts-chart-title">Pending Approvals</div>
-            ${pendingRows || '<p style="color:var(--text-muted);font-size:13px;">All caught up — no pending entries.</p>'}
+            ${pendingRows}
           </div>
         ` : ''}
       `
@@ -1592,6 +1691,41 @@ const Timesheet = (() => {
             </div>
           </div>
         </div>
+
+        <!-- Time Allocation -->
+        <div class="ts-insights-section-title">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          Time Allocation
+        </div>
+
+        ${sixMonthsData.length ? `
+          <div class="ts-chart-card">
+            <div class="ts-chart-title">Monthly Hours by Project — Last 6 Months</div>
+            <div class="ts-chart-wrap" style="height:260px;"><canvas id="ts-insights-alloc-bar"></canvas></div>
+          </div>
+          <div class="ts-chart-card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+              <div class="ts-chart-title" style="margin:0;">${thisMonthName} vs ${lastMonthName}</div>
+            </div>
+            ${deltaProjects.length ? `
+              <table class="ts-delta-table">
+                <thead>
+                  <tr>
+                    <th>Project / Client</th>
+                    <th>${thisMonthName}</th>
+                    <th>${lastMonthName}</th>
+                    <th>Change</th>
+                  </tr>
+                </thead>
+                <tbody>${deltaRows}</tbody>
+              </table>
+            ` : `<p style="color:var(--text-muted);font-size:13px;margin:0;">No entries in the last two months.</p>`}
+          </div>
+        ` : `
+          <div class="ts-chart-card">
+            <p style="color:var(--text-muted);font-size:13px;margin:0;">No timesheet data yet — come back after logging some entries.</p>
+          </div>
+        `}
 
         ${teamHtml}
       </div>
@@ -1652,6 +1786,33 @@ const Timesheet = (() => {
         }
       } else if (donutLegend) {
         donutLegend.innerHTML = '<p style="font-size:12px;color:var(--text-muted);">No entries this month.</p>'
+      }
+
+      // 6-month stacked allocation bar
+      const allocCanvas = document.getElementById('ts-insights-alloc-bar')
+      if (allocCanvas && stackedDatasets.length) {
+        const c = new Chart(allocCanvas, {
+          type: 'bar',
+          data: {
+            labels: months6.map(m => m.label),
+            datasets: stackedDatasets,
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'top', labels: { boxWidth: 10, font: { size: 11 } } },
+              tooltip: {
+                mode: 'index',
+                callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}h` },
+              },
+            },
+            scales: {
+              x: { stacked: true, ticks: { font: { size: 11 } } },
+              y: { stacked: true, beginAtZero: true, ticks: { font: { size: 10 } } },
+            },
+          },
+        })
+        _insightsCharts.push(c)
       }
 
       // Team horizontal bar
