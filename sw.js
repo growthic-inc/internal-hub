@@ -4,6 +4,7 @@
    - Navigation (HTML): network-first, cache fallback
    - Static assets (JS/CSS/images): cache-first, then network
    - Supabase API + external: always network (no caching)
+   - Push notifications: show + handle tap to open correct page
    ============================================================ */
 
 const CACHE = 'growthic-v1'
@@ -61,6 +62,36 @@ self.addEventListener('fetch', e => {
         if (res.ok) caches.open(CACHE).then(c => c.put(req, res.clone()))
         return res
       })
+    })
+  )
+})
+
+// ── Push notifications ────────────────────────────────────────
+self.addEventListener('push', e => {
+  let data = { title: 'Growthic One', body: 'You have a new notification.', url: '/home' }
+  try { if (e.data) data = { ...data, ...JSON.parse(e.data.text()) } } catch {}
+
+  e.waitUntil(
+    self.registration.showNotification(data.title, {
+      body:    data.body,
+      icon:    '/assets/img/favicon/android-chrome-192x192.png',
+      badge:   '/assets/img/favicon/favicon-32x32.png',
+      data:    { url: data.url },
+      vibrate: [100, 50, 100],
+    })
+  )
+})
+
+// Open / focus the relevant page when a notification is tapped
+self.addEventListener('notificationclick', e => {
+  e.notification.close()
+  const url = e.notification.data?.url || '/home'
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      // Focus an existing window if open
+      const match = list.find(c => c.url.includes(self.location.origin))
+      if (match) return match.focus().then(w => w.navigate(url))
+      return clients.openWindow(url)
     })
   )
 })

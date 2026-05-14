@@ -423,9 +423,50 @@ const API = (() => {
   }
 
   async function createNotification({ recipient_employee_id, type, message, module, record_id = null }) {
-    return supabase.from('notifications').insert({
+    const result = await supabase.from('notifications').insert({
       recipient_employee_id, type, message, module, record_id,
     })
+
+    // Fire push notification — non-blocking, best-effort
+    ;(async () => {
+      try {
+        const { data: { session } } = await Config.supabase.auth.getSession()
+        if (!session) return
+        await fetch(`${Config.SUPABASE_URL}/functions/v1/send-push`, {
+          method:  'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+            'apikey':        Config.SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({
+            employee_id: recipient_employee_id,
+            title:       _pushTitle(type, module),
+            body:        message,
+            url:         _pushUrl(module),
+          }),
+        })
+      } catch { /* push is non-critical */ }
+    })()
+
+    return result
+  }
+
+  function _pushTitle(type, module) {
+    const mod  = { timesheet: 'Timesheet', leave: 'Leave', wfh: 'WFH', reimbursements: 'Reimbursement', assets: 'Assets', tools: 'Tools', people: 'People' }[module] || 'Growthic One'
+    const kind = { approval: '✓ Approved', rejection: '✗ Rejected', submission: 'New submission', info: 'Update' }[type] || 'Update'
+    return `${mod} — ${kind}`
+  }
+
+  function _pushUrl(module) {
+    return { timesheet: '/home?page=timesheet', leave: '/home?page=leave', wfh: '/home?page=wfh', reimbursements: '/home?page=reimbursements', assets: '/home?page=assets', tools: '/home?page=tools' }[module] || '/home'
+  }
+
+  async function savePushSubscription({ employee_id, endpoint, p256dh, auth }) {
+    return supabase.from('push_subscriptions').upsert(
+      { employee_id, endpoint, p256dh, auth },
+      { onConflict: 'employee_id,endpoint' }
+    )
   }
 
   async function getRecentNotifications(employeeId, limit = 25) {
@@ -1551,7 +1592,7 @@ const API = (() => {
     getPendingApprovals, updateApproval,
     getTools, getToolAccess, getMyToolAccess, getToolRequests, getMyToolRequests,
     getUnreadNotifications, markNotificationRead, markAllNotificationsRead,
-    createNotification, getRecentNotifications,
+    createNotification, getRecentNotifications, savePushSubscription,
     getPerformanceData,
     getClientDashboard, updateClientStatus,
     getMasterFolderFiles,

@@ -176,6 +176,9 @@ const App = (() => {
     _initThemeToggle()
     _initAccessMatrixLiveSync()
 
+    // Initialise push notifications (asks for permission after 4s if not yet granted)
+    if (typeof Push !== 'undefined') Push.init(currentUser)
+
     router()
     window.addEventListener('hashchange', router)
   }
