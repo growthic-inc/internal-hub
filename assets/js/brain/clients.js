@@ -1,0 +1,105 @@
+/* ============================================================
+   Brain — Client list with health scores
+   ============================================================ */
+const BrainClients = (() => {
+
+  async function render(user) {
+    const main = document.getElementById('brain-main')
+    if (!main) return
+    main.innerHTML = '<p class="loading-text">Loading clients…</p>'
+
+    // Fetch clients + their brain data in parallel
+    const [
+      { data: clients },
+      { data: healthScores },
+      { data: lastThreads },
+      { data: openItems },
+    ] = await Promise.all([
+      Config.supabase.from('clients').select('id, client_name, client_domain, client_contacts').order('client_name'),
+      Config.supabase.from('brain_health_scores').select('client_id, score, scored_at').order('scored_at', { ascending: false }),
+      Config.supabase.from('brain_threads').select('client_id, last_date').order('last_date', { ascending: false }),
+      Config.supabase.from('brain_intelligence').select('client_id').eq('category', 'open_item'),
+    ])
+
+    // Build lookup maps (first entry wins — already sorted desc)
+    const latestScore  = {}
+    const latestThread = {}
+    const openCount    = {}
+
+    ;(healthScores || []).forEach(h => { if (!latestScore[h.client_id])  latestScore[h.client_id] = h.score })
+    ;(lastThreads  || []).forEach(t => { if (!latestThread[t.client_id]) latestThread[t.client_id] = t.last_date })
+    ;(openItems    || []).forEach(o => { openCount[o.client_id] = (openCount[o.client_id] || 0) + 1 })
+
+    const connected   = (clients || []).filter(c => c.client_domain || c.client_contacts?.length)
+    const unconnected = (clients || []).filter(c => !c.client_domain && !c.client_contacts?.length)
+
+    main.innerHTML = `
+      <div class="brain-page-header">
+        <div>
+          <h1 class="brain-page-title">Client Intelligence</h1>
+          <p class="brain-subtitle">${connected.length} client${connected.length !== 1 ? 's' : ''} connected · syncs daily</p>
+        </div>
+      </div>
+
+      ${connected.length ? `
+        <div class="brain-clients-grid">
+          ${connected.map(c => _clientCard(c, latestScore[c.id], latestThread[c.id], openCount[c.id] || 0)).join('')}
+        </div>
+      ` : ''}
+
+      ${unconnected.length ? `
+        <div class="brain-section-label">Not yet connected — add a domain or contact email to enable Brain</div>
+        <div class="brain-clients-grid brain-clients-grid--dim">
+          ${unconnected.map(c => _clientCard(c, null, null, 0, true)).join('')}
+        </div>
+      ` : ''}
+    `
+
+    main.querySelectorAll('.brain-client-card[data-id]').forEach(card => {
+      card.addEventListener('click', () => {
+        window.location.href = `/brain?client=${card.dataset.id}`
+      })
+    })
+  }
+
+  function _clientCard(client, score, lastDate, openCount, dim = false) {
+    const hasScore   = score !== null && score !== undefined
+    const scoreCls   = !hasScore
+      ? 'brain-health-ring--none'
+      : score >= 70
+        ? 'brain-health-ring--good'
+        : score >= 40
+          ? 'brain-health-ring--ok'
+          : 'brain-health-ring--bad'
+    const lastContact = lastDate ? _relativeDate(new Date(lastDate)) : 'No data yet'
+
+    return `
+      <div class="brain-client-card${dim ? ' brain-client-card--dim' : ''}" data-id="${client.id}">
+        <div class="brain-card-top">
+          <div class="brain-health-ring ${scoreCls}">
+            ${hasScore ? score : '—'}
+          </div>
+          <div class="brain-card-info">
+            <div class="brain-client-name">${Utils.escapeHtml(client.client_name)}</div>
+            <div class="brain-client-domain">${Utils.escapeHtml(client.client_domain || (client.client_contacts?.[0] || 'Not connected'))}</div>
+          </div>
+        </div>
+        <div class="brain-card-meta">
+          <span>Last contact: ${lastContact}</span>
+          ${openCount ? `<span class="brain-open-badge">${openCount} open</span>` : ''}
+        </div>
+      </div>
+    `
+  }
+
+  function _relativeDate(date) {
+    const days = Math.floor((Date.now() - date.getTime()) / 86400000)
+    if (days === 0) return 'Today'
+    if (days === 1) return 'Yesterday'
+    if (days < 7)  return `${days} days ago`
+    if (days < 30) return `${Math.floor(days / 7)} weeks ago`
+    return date.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
+  }
+
+  return { render }
+})()

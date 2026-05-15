@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brain — Growthic One</title>
+  <link rel="icon" type="image/x-icon" href="../assets/img/favicon/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="../assets/img/favicon/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="../assets/img/favicon/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="../assets/img/favicon/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0F4799">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Brain">
+  <!-- Prevent flash of wrong theme -->
+  <script>(function(){var t=localStorage.getItem('theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');})()</script>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <link rel="stylesheet" href="../assets/css/brain.css">
+</head>
+<body class="brain-body">
+  <div class="brain-shell">
+    <header class="brain-header">
+      <div class="brain-header-left">
+        <span class="brain-logo">Brain</span>
+        <span class="brain-logo-sub">by Growthic One</span>
+      </div>
+      <div class="brain-header-right">
+        <a href="/home" class="brain-back-link">← Back to Growthic One</a>
+        <div class="brain-user-chip" id="brain-user-chip"></div>
+      </div>
+    </header>
+    <main class="brain-main" id="brain-main">
+      <p class="loading-text">Loading…</p>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="../assets/js/config.js"></script>
+  <script src="../assets/js/auth.js"></script>
+  <script src="../assets/js/utils.js"></script>
+  <script src="../assets/js/api.js"></script>
+  <script src="../assets/js/brain/clients.js"></script>
+  <script src="../assets/js/brain/client-detail.js"></script>
+  <script src="../assets/js/brain/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}))
+    }
+  </script>
+</body>
+</html>
