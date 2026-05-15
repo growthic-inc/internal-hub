@@ -11,7 +11,7 @@ const API = (() => {
   async function getClients(includeArchived = false) {
     let query = supabase
       .from('clients')
-      .select('id, client_name, project_code, category, status, created_at, am_id, overview, account_manager:employees!am_id(name, profile_image_url), client_entities(id, entity_name), client_platforms(id, platform_name)')
+      .select('id, client_name, project_code, category, status, created_at, am_id, overview, client_domain, client_contacts, account_manager:employees!am_id(name, profile_image_url), client_entities(id, entity_name), client_platforms(id, platform_name)')
       .order('client_name')
     if (!includeArchived) query = query.neq('status', 'archived')
     return query
@@ -1526,10 +1526,12 @@ const API = (() => {
       .eq('id', id)
   }
 
-  async function updateClientProjectDetails(clientId, { project_description, category }) {
+  async function updateClientProjectDetails(clientId, { project_description, category, client_domain, client_contacts }) {
     const updates = {}
     if (project_description !== undefined) updates.project_description = project_description || null
     if (category            !== undefined) updates.category            = category || null
+    if (client_domain       !== undefined) updates.client_domain       = client_domain || null
+    if (client_contacts     !== undefined) updates.client_contacts     = client_contacts  // array or []
     return Config.supabase.from('clients').update(updates).eq('id', clientId)
   }
 

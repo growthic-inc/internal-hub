@@ -1214,10 +1214,11 @@ const ClientDirectory = (() => {
       </tr>`
   }
 
-  /* ── Edit client project details (category + description) ── */
+  /* ── Edit client project details (category + description + Brain) ── */
   function _openClientEditModal(client) {
     const cats = ['Shark', 'Dolphin', 'Turtle', 'Snail']
     const curCat = _cap(client.category || '')
+    const curContacts = (client.client_contacts || []).join(', ')
 
     Utils.openModal(`
       <div class="modal-header">
@@ -1236,12 +1237,33 @@ const ClientDirectory = (() => {
             ${cats.map(c => `<option value="${c.toLowerCase()}" ${curCat === c ? 'selected' : ''}>${c}</option>`).join('')}
           </select>
         </div>
-        <div class="form-group" style="margin-bottom:0;">
+        <div class="form-group">
           <label class="form-label">Description</label>
           <span class="form-hint" style="display:block;margin-bottom:6px;">Guidance for employees logging time to this project</span>
           <textarea class="form-input" id="pc-client-desc" rows="4"
             placeholder="e.g. Log hours here for any work related to this client…"
             style="resize:vertical;">${Utils.escapeHtml(client.project_description || '')}</textarea>
+        </div>
+
+        <div style="margin:20px 0 16px;padding-top:16px;border-top:1px solid var(--border-light);">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;">
+            <span style="font-size:13px;font-weight:700;color:var(--primary);">Brain Intelligence</span>
+            <span style="font-size:11px;color:var(--text-muted);font-weight:400;">— Gmail matching for this client</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Client Domain</label>
+            <span class="form-hint" style="display:block;margin-bottom:6px;">For clients with a custom domain (e.g. <code>clientname.com</code>). Brain will match all emails from this domain.</span>
+            <input class="form-input" id="pc-client-domain" type="text"
+              placeholder="e.g. clientname.com"
+              value="${Utils.escapeHtml(client.client_domain || '')}">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Contact Emails</label>
+            <span class="form-hint" style="display:block;margin-bottom:6px;">For clients on Gmail / Yahoo — add specific email addresses, comma-separated.</span>
+            <textarea class="form-input" id="pc-client-contacts" rows="2"
+              placeholder="e.g. founder@gmail.com, marketing@yahoo.com"
+              style="resize:vertical;">${Utils.escapeHtml(curContacts)}</textarea>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
@@ -1251,19 +1273,32 @@ const ClientDirectory = (() => {
     `)
 
     document.getElementById('pc-client-save')?.addEventListener('click', async () => {
-      const btn  = document.getElementById('pc-client-save')
-      const cat  = document.getElementById('pc-client-cat').value
-      const desc = document.getElementById('pc-client-desc').value.trim()
+      const btn      = document.getElementById('pc-client-save')
+      const cat      = document.getElementById('pc-client-cat').value
+      const desc     = document.getElementById('pc-client-desc').value.trim()
+      const domain   = document.getElementById('pc-client-domain').value.trim().toLowerCase()
+      const contacts = document.getElementById('pc-client-contacts').value
+        .split(',').map(e => e.trim().toLowerCase()).filter(Boolean)
 
       btn.disabled = true; btn.textContent = 'Saving…'
-      const { error } = await API.updateClientProjectDetails(client.id, { project_description: desc, category: cat || null })
+      const { error } = await API.updateClientProjectDetails(client.id, {
+        project_description: desc,
+        category:            cat || null,
+        client_domain:       domain,
+        client_contacts:     contacts,
+      })
       btn.disabled = false; btn.textContent = 'Save Changes'
 
       if (error) { Utils.showToast('Failed to save changes', 'error'); return }
 
       // Update local cache
       const c = _clients.find(x => x.id === client.id)
-      if (c) { c.project_description = desc || null; c.category = cat || null }
+      if (c) {
+        c.project_description = desc || null
+        c.category            = cat || null
+        c.client_domain       = domain || null
+        c.client_contacts     = contacts
+      }
       Utils.closeModal()
       Utils.showToast('Project details updated', 'success')
       _renderProjectCodesTable()
