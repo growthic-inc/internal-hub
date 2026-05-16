@@ -689,6 +689,28 @@ const ClientDirectory = (() => {
           </div>
         </div>
 
+        <!-- BRAIN INTELLIGENCE -->
+        <div class="cd-form-section">
+          <div class="cd-form-section-title" style="display:flex;align-items:center;gap:6px;">
+            <span style="color:var(--primary);">Brain Intelligence</span>
+            <span style="font-size:11px;color:var(--text-muted);font-weight:400;">— Gmail matching for this client</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Client Domain</label>
+            <input class="form-input" id="cdf-domain" type="text"
+                   placeholder="e.g. clientname.com"
+                   value="${Utils.escapeHtml(client?.client_domain || '')}">
+            <span class="form-hint">For clients with a custom domain — Brain matches all emails from this domain</span>
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Contact Emails</label>
+            <textarea class="form-input" id="cdf-contacts" rows="2"
+                      placeholder="e.g. founder@gmail.com, cmo@yahoo.com"
+                      style="resize:vertical;">${Utils.escapeHtml((client?.client_contacts || []).join(', '))}</textarea>
+            <span class="form-hint">For Gmail / Yahoo clients — add specific emails, comma-separated</span>
+          </div>
+        </div>
+
         <!-- ENTITIES -->
         <div class="cd-form-section" style="border-bottom:none;padding-bottom:0;">
           <div class="cd-form-section-title" style="display:flex;align-items:center;justify-content:space-between;">
@@ -905,6 +927,11 @@ const ClientDirectory = (() => {
     const price = _canCommercial() ? (document.getElementById('cdf-price')?.value || null) : null
     const type  = _canCommercial() ? (document.getElementById('cdf-type')?.value  || null) : null
 
+    // Brain Intelligence fields
+    const domain   = (document.getElementById('cdf-domain')?.value   || '').trim().toLowerCase() || null
+    const contacts = (document.getElementById('cdf-contacts')?.value || '')
+      .split(',').map(e => e.trim().toLowerCase()).filter(Boolean)
+
     errEl.style.display = 'none'
 
     if (!code || !name) {
@@ -951,6 +978,8 @@ const ClientDirectory = (() => {
         overview,
         sow_notes:            sow,
         brand_guidelines_url: bgUrl,
+        client_domain:        domain,
+        client_contacts:      contacts,
       }
 
       // Only write commercial fields if the user has that permission
