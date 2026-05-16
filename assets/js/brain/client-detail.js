@@ -38,7 +38,7 @@ const BrainClientDetail = (() => {
     const byCategory = {
       decision:      (intelligence || []).filter(i => i.category === 'decision'),
       preference:    (intelligence || []).filter(i => i.category === 'preference'),
-      contact:       (intelligence || []).filter(i => i.category === 'contact'),
+      contact:       _dedupeContacts((intelligence || []).filter(i => i.category === 'contact')),
       open_item:     (intelligence || []).filter(i => i.category === 'open_item'),
       health_signal: (intelligence || []).filter(i => i.category === 'health_signal'),
     }
@@ -184,6 +184,23 @@ const BrainClientDetail = (() => {
         </div>
       ` : ''}
     `
+  }
+
+  function _dedupeContacts(contacts) {
+    const seen = new Map()
+    for (const c of contacts) {
+      // content format: "Name — Role — email" or "Name — email"
+      const emailMatch = c.content.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/)
+      const key = emailMatch ? emailMatch[0].toLowerCase() : c.content.toLowerCase()
+      const existing = seen.get(key)
+      // keep the entry with the most recent source_date
+      if (!existing || (c.source_date && (!existing.source_date || c.source_date > existing.source_date))) {
+        seen.set(key, c)
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) =>
+      (b.source_date ?? '').localeCompare(a.source_date ?? '')
+    )
   }
 
   function _renderItems(items, emptyMsg) {
