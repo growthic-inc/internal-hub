@@ -175,51 +175,52 @@ serve(async (req: Request) => {
 
     const affectedClients = new Set<string>()
     let processed = 0
+    const errors: string[] = []
 
     for (const thread of threads) {
       try {
         const prompt = buildPrompt(thread)
         const result = await callGemini(prompt, GEMINI_KEY)
 
-        // Update thread with data_class and mark processed
-        await db.from('brain_threads').update({
-          data_class: result.data_class ?? 'general',
-          processed:  true,
-        }).eq('id', thread.id)
-
-        const clientId    = thread.client_id
-        const sourceDate  = thread.last_date
-        const dataClass   = result.data_class ?? 'general'
+        const clientId   = thread.client_id
+        const sourceDate = thread.last_date
+        const dataClass  = result.data_class ?? 'general'
 
         const intelRows: any[] = []
 
         for (const d of (result.decisions ?? [])) {
-          if (d?.content) intelRows.push({ client_id: clientId, data_class: dataClass, category: 'decision',  content: d.content,                        source_thread_id: thread.id, source_date: d.date ?? sourceDate })
+          if (d?.content) intelRows.push({ client_id: clientId, data_class: dataClass, category: 'decision',     content: d.content,                                            source_thread_id: thread.id, source_date: d.date ?? sourceDate })
         }
         for (const p of (result.preferences ?? [])) {
-          if (p?.content) intelRows.push({ client_id: clientId, data_class: dataClass, category: 'preference', content: p.content,                        source_thread_id: thread.id, source_date: sourceDate })
+          if (p?.content) intelRows.push({ client_id: clientId, data_class: dataClass, category: 'preference',   content: p.content,                                            source_thread_id: thread.id, source_date: sourceDate })
         }
         for (const c of (result.contacts ?? [])) {
-          if (c?.name)    intelRows.push({ client_id: clientId, data_class: dataClass, category: 'contact',    content: [c.name, c.role, c.email].filter(Boolean).join(' — '), source_thread_id: thread.id, source_date: sourceDate })
+          if (c?.name)    intelRows.push({ client_id: clientId, data_class: dataClass, category: 'contact',      content: [c.name, c.role, c.email].filter(Boolean).join(' — '), source_thread_id: thread.id, source_date: sourceDate })
         }
         for (const o of (result.open_items ?? [])) {
-          if (o?.content) intelRows.push({ client_id: clientId, data_class: dataClass, category: 'open_item',  content: o.content,                        source_thread_id: thread.id, source_date: sourceDate })
+          if (o?.content) intelRows.push({ client_id: clientId, data_class: dataClass, category: 'open_item',    content: o.content,                                            source_thread_id: thread.id, source_date: sourceDate })
         }
         for (const h of (result.health_signals ?? [])) {
-          if (h?.signal)  intelRows.push({ client_id: clientId, data_class: dataClass, category: 'health_signal', content: `${h.signal}: ${h.reason ?? ''}`, source_thread_id: thread.id, source_date: sourceDate })
+          if (h?.signal)  intelRows.push({ client_id: clientId, data_class: dataClass, category: 'health_signal', content: `${h.signal}: ${h.reason ?? ''}`,                   source_thread_id: thread.id, source_date: sourceDate })
         }
 
         if (intelRows.length) {
           await db.from('brain_intelligence').insert(intelRows)
         }
 
+        // Only mark processed AFTER successfully writing intelligence
+        await db.from('brain_threads').update({
+          data_class: dataClass,
+          processed:  true,
+        }).eq('id', thread.id)
+
         if (clientId) affectedClients.add(clientId)
         processed++
 
       } catch (err) {
-        console.error(`[brain-process] Failed to process thread ${thread.id}:`, err)
-        // Mark as processed anyway to avoid infinite retry on bad threads
-        await db.from('brain_threads').update({ processed: true }).eq('id', thread.id)
+        const msg = err instanceof Error ? err.message : String(err)
+        errors.push(`thread ${thread.id.slice(0, 8)}: ${msg}`)
+        // Do NOT mark as processed — leave it retryable
       }
     }
 
@@ -235,6 +236,7 @@ serve(async (req: Request) => {
     return json({
       processed,
       clients_scored: affectedClients.size,
+      ...(errors.length ? { errors } : {}),
     })
 
   } catch (e: unknown) {
