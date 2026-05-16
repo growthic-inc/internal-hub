@@ -1,20 +1,22 @@
 // ============================================================
 // Brain — Intelligence Processing Edge Function
 //
-// Reads unprocessed brain_threads, calls Gemini to classify
-// and extract intelligence, then recalculates health scores.
+// Reads unprocessed brain_threads, calls Groq (Llama 3.3 70B)
+// to classify and extract intelligence, then recalculates
+// health scores.
 //
 // Body: { limit?: number } — default 20 threads per call
 //
 // Deploy: supabase functions deploy brain-process
+// Secrets: GROQ_API_KEY — get a free key at console.groq.com
 // ============================================================
 
 import { serve }        from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const SB_URL     = Deno.env.get('SUPABASE_URL')             ?? ''
+const SB_URL    = Deno.env.get('SUPABASE_URL')             ?? ''
 const SB_SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-const GEMINI_KEY = Deno.env.get('GEM_AI_BRAIN')             ?? ''
+const GROQ_KEY  = Deno.env.get('GROQ_API_KEY')             ?? ''
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -28,22 +30,24 @@ const json = (data: unknown, status = 200) =>
     headers: { ...CORS, 'Content-Type': 'application/json' },
   })
 
-// ── Gemini API call (pure fetch, no npm) ─────────────────────
-async function callGemini(prompt: string, apiKey: string): Promise<any> {
-  const resp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-    {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
-        contents:       [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
-      }),
+// ── Groq API call (OpenAI-compatible, JSON mode) ─────────────
+async function callGroq(prompt: string, apiKey: string): Promise<any> {
+  const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method:  'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type':  'application/json',
     },
-  )
+    body: JSON.stringify({
+      model:           'llama-3.3-70b-versatile',
+      messages:        [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+      temperature:     0.1,
+    }),
+  })
   const data = await resp.json()
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-  if (!text) throw new Error(`Gemini empty response: ${JSON.stringify(data)}`)
+  const text = data.choices?.[0]?.message?.content
+  if (!text) throw new Error(`Groq empty response: ${JSON.stringify(data)}`)
   return JSON.parse(text)
 }
 
@@ -155,7 +159,7 @@ serve(async (req: Request) => {
     const { data: { user }, error: authErr } = await userClient.auth.getUser()
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401)
 
-    if (!GEMINI_KEY) return json({ error: 'GEM_AI_BRAIN not configured' }, 500)
+    if (!GROQ_KEY) return json({ error: 'GROQ_API_KEY not configured' }, 500)
 
     const db   = createClient(SB_URL, SB_SERVICE)
     const body = await req.json().catch(() => ({}))
@@ -180,7 +184,7 @@ serve(async (req: Request) => {
     for (const thread of threads) {
       try {
         const prompt = buildPrompt(thread)
-        const result = await callGemini(prompt, GEMINI_KEY)
+        const result = await callGroq(prompt, GROQ_KEY)
 
         const clientId   = thread.client_id
         const sourceDate = thread.last_date
