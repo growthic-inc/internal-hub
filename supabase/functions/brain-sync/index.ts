@@ -201,11 +201,14 @@ async function syncEmployee(
     return { synced: 0, matched: 0 }
   }
 
-  // Paginate threads — max 500 per sync call
+  // Cap at 100 threads per employee per call to stay within compute limits.
+  // For historical backfill run brain-sync repeatedly (last_synced_at advances each run).
+  const MAX_THREADS = 100
   const threadIds: string[] = []
   let pageToken: string | undefined
-  while (threadIds.length < 500) {
-    let listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/threads?q=${encodeURIComponent(query)}&maxResults=100`
+  while (threadIds.length < MAX_THREADS) {
+    const pageSize = Math.min(100, MAX_THREADS - threadIds.length)
+    let listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/threads?q=${encodeURIComponent(query)}&maxResults=${pageSize}`
     if (pageToken) listUrl += `&pageToken=${pageToken}`
 
     const res  = await fetch(listUrl, { headers: { Authorization: `Bearer ${token}` } })
@@ -215,7 +218,7 @@ async function syncEmployee(
     for (const t of (data.threads ?? []) as GmailThread[]) {
       threadIds.push(t.id)
     }
-    if (!data.nextPageToken || threadIds.length >= 500) break
+    if (!data.nextPageToken || threadIds.length >= MAX_THREADS) break
     pageToken = data.nextPageToken
   }
 
@@ -294,37 +297,39 @@ serve(async (req: Request) => {
       .select('id, client_name, client_domain, client_contacts')
     if (clientErr) return json({ error: clientErr.message }, 500)
 
-    // Determine which employees to sync
-    let employees: { id: string; email: string }[] = []
+    // Sync one employee per call to stay within compute limits.
+    // When employee_id is given: sync that person.
+    // When omitted: pick the employee least-recently synced so a cron
+    // cycling every ~hour naturally rotates through all 17 accounts.
+    let employee: { id: string; email: string } | null = null
+
     if (employee_id) {
       const { data: emp } = await db
         .from('employees')
         .select('id, email')
         .eq('id', employee_id)
         .maybeSingle()
-      if (emp) employees = [emp]
+      employee = emp ?? null
     } else {
+      // Left-join sync state so employees never synced sort first (null < timestamp)
       const { data: emps } = await db
         .from('employees')
-        .select('id, email')
+        .select('id, email, brain_sync_state(last_synced_at)')
         .not('email', 'is', null)
-      employees = emps ?? []
+        .order('brain_sync_state.last_synced_at', { ascending: true, nullsFirst: true })
+        .limit(1)
+      employee = emps?.[0] ?? null
     }
 
-    let totalSynced  = 0
-    let totalMatched = 0
+    if (!employee?.email) return json({ synced: 0, matched: 0, employees_processed: 0 })
 
-    for (const emp of employees) {
-      if (!emp.email) continue
-      const { synced, matched } = await syncEmployee(emp, sa, db, clients ?? [], full_sync)
-      totalSynced  += synced
-      totalMatched += matched
-    }
+    const { synced, matched } = await syncEmployee(employee, sa, db, clients ?? [], full_sync)
 
     return json({
-      synced:              totalSynced,
-      matched:             totalMatched,
-      employees_processed: employees.length,
+      synced,
+      matched,
+      employees_processed: 1,
+      employee_email:      employee.email,
     })
 
   } catch (e: unknown) {
