@@ -21,14 +21,26 @@
   <div class="brain-shell">
     <header class="brain-header">
       <div class="brain-header-left">
-        <span class="brain-logo">Brain</span>
-        <span class="brain-logo-sub">by Growthic One</span>
+        <img src="../assets/img/logo.jpg" alt="Growthic" class="brain-header-logomark">
+        <div class="brain-header-brand">
+          <span class="brain-logo">Brain</span>
+          <span class="brain-logo-dot"></span>
+          <span class="brain-logo-sub">by Growthic One</span>
+        </div>
       </div>
       <div class="brain-header-right">
-        <a href="/home" class="brain-back-link">← Back to Growthic One</a>
+        <button class="brain-sync-btn" id="brain-sync-btn" title="Sync your Gmail now">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          <span>Sync Now</span>
+        </button>
+        <a href="/home" class="brain-back-link">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          <span>Growthic One</span>
+        </a>
         <div class="brain-user-chip" id="brain-user-chip"></div>
       </div>
     </header>
+    <div class="brain-status-bar" id="brain-status-bar" style="display:none;"></div>
     <main class="brain-main" id="brain-main">
       <p class="loading-text">Loading…</p>
     </main>

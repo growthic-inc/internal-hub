@@ -33,22 +33,34 @@ const BrainClients = (() => {
     const connected   = (clients || []).filter(c => c.client_domain || c.client_contacts?.length)
     const unconnected = (clients || []).filter(c => !c.client_domain && !c.client_contacts?.length)
 
+    const totalClients = (clients || []).length
+
     main.innerHTML = `
       <div class="brain-page-header">
-        <div>
-          <h1 class="brain-page-title">Client Intelligence</h1>
-          <p class="brain-subtitle">${connected.length} client${connected.length !== 1 ? 's' : ''} connected · syncs daily</p>
-        </div>
+        <h1 class="brain-page-title">Client Intelligence</h1>
+        <p class="brain-subtitle">
+          ${connected.length} of ${totalClients} client${totalClients !== 1 ? 's' : ''} connected
+          <span style="width:3px;height:3px;border-radius:50%;background:var(--border);display:inline-block;"></span>
+          syncs daily
+        </p>
       </div>
 
       ${connected.length ? `
+        <div class="brain-section-label">
+          Connected <span class="brain-section-count">${connected.length}</span>
+        </div>
         <div class="brain-clients-grid">
           ${connected.map(c => _clientCard(c, latestScore[c.id], latestThread[c.id], openCount[c.id] || 0)).join('')}
         </div>
       ` : ''}
 
       ${unconnected.length ? `
-        <div class="brain-section-label">Not yet connected — add a domain or contact email to enable Brain</div>
+        <div class="brain-section-label">
+          Not connected <span class="brain-section-count">${unconnected.length}</span>
+        </div>
+        <p class="brain-setup-hint">
+          To enable Brain for a client, open Growthic One → Client Directory → Edit Client → add their <strong>domain</strong> (e.g. client.com) or specific <strong>contact emails</strong>.
+        </p>
         <div class="brain-clients-grid brain-clients-grid--dim">
           ${unconnected.map(c => _clientCard(c, null, null, 0, true)).join('')}
         </div>
@@ -64,15 +76,18 @@ const BrainClients = (() => {
   }
 
   function _clientCard(client, score, lastDate, openCount, dim = false) {
-    const hasScore   = score !== null && score !== undefined
-    const scoreCls   = !hasScore
-      ? 'brain-health-ring--none'
-      : score >= 70
-        ? 'brain-health-ring--good'
-        : score >= 40
-          ? 'brain-health-ring--ok'
-          : 'brain-health-ring--bad'
-    const lastContact = lastDate ? _relativeDate(new Date(lastDate)) : 'No data yet'
+    const hasScore  = score !== null && score !== undefined
+    const scoreCls  = !hasScore ? 'brain-health-ring--none'
+      : score >= 70 ? 'brain-health-ring--good'
+      : score >= 40 ? 'brain-health-ring--ok'
+      : 'brain-health-ring--bad'
+
+    const domainLine = client.client_domain
+      || client.client_contacts?.[0]
+      || (dim ? 'Not connected' : '')
+    const lastContact = lastDate ? _relativeDate(new Date(lastDate)) : null
+
+    const chevron = `<svg class="brain-card-arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`
 
     return `
       <div class="brain-client-card${dim ? ' brain-client-card--dim' : ''}" data-id="${client.id}">
@@ -82,11 +97,12 @@ const BrainClients = (() => {
           </div>
           <div class="brain-card-info">
             <div class="brain-client-name">${Utils.escapeHtml(client.client_name)}</div>
-            <div class="brain-client-domain">${Utils.escapeHtml(client.client_domain || (client.client_contacts?.[0] || 'Not connected'))}</div>
+            ${domainLine ? `<div class="brain-client-domain">${Utils.escapeHtml(domainLine)}</div>` : ''}
           </div>
+          ${!dim ? chevron : ''}
         </div>
-        <div class="brain-card-meta">
-          <span>Last contact: ${lastContact}</span>
+        <div class="brain-card-footer">
+          <span>${lastContact ? `Last contact: ${lastContact}` : '<em>No data yet</em>'}</span>
           ${openCount ? `<span class="brain-open-badge">${openCount} open</span>` : ''}
         </div>
       </div>
