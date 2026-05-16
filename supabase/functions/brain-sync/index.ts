@@ -1,19 +1,25 @@
 // ============================================================
 // Brain — Gmail Sync Edge Function
 //
-// Two modes:
+// Three modes:
 //   Incremental (default): fetches threads since last_synced_at
 //   Backfill:              paginates backwards through 2yr history
 //                          100 threads per call, stores nextPageToken
 //                          between calls. Call repeatedly until
 //                          has_more = false.
+//   Domain:                searches Gmail specifically for threads
+//                          involving a given domain (e.g. dhoomimalgallery.com)
+//                          100 threads per call, cursor stored per-domain.
+//                          Call repeatedly until has_more = false.
 //
 // Body:
-//   { employee_id?: string, backfill?: boolean }
+//   { employee_id?: string, backfill?: boolean, domain?: string }
 //   employee_id — target a specific employee; omit to pick the
 //                 least-recently synced one automatically
 //   backfill    — run one page of the historical backfill instead
 //                 of the normal incremental sync
+//   domain      — run a targeted search for a specific domain
+//                 (e.g. "dhoomimalgallery.com"); takes priority over backfill
 //
 // Deploy: supabase functions deploy brain-sync
 // ============================================================
@@ -149,10 +155,79 @@ async function upsertThread(meta: NonNullable<Awaited<ReturnType<typeof fetchThr
   }, { onConflict: 'gmail_thread_id' })
 }
 
+// ── DOMAIN-TARGETED BACKFILL ──────────────────────────────────
+// Searches Gmail specifically for threads involving the given domain.
+// Much faster than full backfill for getting data on a single client.
+// Cursor is stored per-domain in brain_sync_state.domain_cursors JSONB.
+// Call repeatedly until has_more = false.
+async function domainBackfill(
+  employee: { id: string; email: string },
+  domain: string,
+  sa: any, db: any, clients: ClientRecord[],
+): Promise<{ synced: number; matched: number; has_more: boolean }> {
+  const { data: state } = await db
+    .from('brain_sync_state')
+    .select('domain_cursors')
+    .eq('employee_id', employee.id)
+    .maybeSingle()
+
+  const cursors: Record<string, string | null> = state?.domain_cursors ?? {}
+  const cursor = cursors[domain]
+
+  // 'DONE' sentinel means this domain is fully backfilled
+  if (cursor === 'DONE') {
+    return { synced: 0, matched: 0, has_more: false }
+  }
+
+  let token: string
+  try {
+    token = await getAccessToken(employee.email, sa, 'https://www.googleapis.com/auth/gmail.readonly')
+  } catch (err) {
+    console.error(`[brain-sync] DWD failed for ${employee.email}:`, err)
+    return { synced: 0, matched: 0, has_more: false }
+  }
+
+  const twoYearsAgo = new Date(Date.now() - 2 * 365 * 86400_000)
+  const dateStr = [
+    twoYearsAgo.getFullYear(),
+    String(twoYearsAgo.getMonth() + 1).padStart(2, '0'),
+    String(twoYearsAgo.getDate()).padStart(2, '0'),
+  ].join('/')
+
+  // Gmail OR search: threads FROM or TO this domain
+  const q = encodeURIComponent(`{from:@${domain} to:@${domain}} after:${dateStr}`)
+  let listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/threads?q=${q}&maxResults=100`
+  if (cursor) listUrl += `&pageToken=${encodeURIComponent(cursor)}`
+
+  const res = await fetch(listUrl, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) return { synced: 0, matched: 0, has_more: false }
+
+  const data          = await res.json()
+  const threadIds: string[] = (data.threads ?? []).map((t: any) => t.id)
+  const nextPageToken: string | null = data.nextPageToken ?? null
+
+  let synced = 0, matched = 0
+  for (const id of threadIds) {
+    const meta = await fetchThreadMeta(id, token)
+    if (!meta) continue
+    const clientId = matchClient(meta.participants, clients)
+    if (!clientId) continue
+    matched++
+    await upsertThread(meta, clientId, db)
+    synced++
+  }
+
+  const newCursors = { ...cursors, [domain]: nextPageToken ?? 'DONE' }
+  await db.from('brain_sync_state').upsert({
+    employee_id:    employee.id,
+    domain_cursors: newCursors,
+    last_synced_at: new Date().toISOString(),
+  }, { onConflict: 'employee_id' })
+
+  return { synced, matched, has_more: !!nextPageToken }
+}
+
 // ── BACKFILL MODE ─────────────────────────────────────────────
-// Fetches one page (100 threads) of historical Gmail going back
-// 2 years, storing nextPageToken between calls. Call repeatedly
-// until has_more = false.
 async function backfillEmployee(
   employee: { id: string; email: string },
   sa: any, db: any, clients: ClientRecord[],
@@ -175,9 +250,6 @@ async function backfillEmployee(
     return { synced: 0, matched: 0, has_more: false, backfill_complete: false }
   }
 
-  // Build the list URL — use stored cursor if we have one, otherwise start
-  // from 2 years ago. Gmail returns threads newest-first; pageToken advances
-  // to progressively older threads on each successive call.
   const twoYearsAgo = new Date(Date.now() - 2 * 365 * 86400_000)
   const dateStr = [
     twoYearsAgo.getFullYear(),
@@ -206,7 +278,6 @@ async function backfillEmployee(
     synced++
   }
 
-  // No nextPageToken means we've reached the end — backfill complete
   const backfill_complete = !nextPageToken
 
   await db.from('brain_sync_state').upsert({
@@ -220,8 +291,6 @@ async function backfillEmployee(
 }
 
 // ── INCREMENTAL MODE ──────────────────────────────────────────
-// Fetches threads since last_synced_at (default: last 7 days).
-// This is the normal daily sync mode.
 async function syncEmployee(
   employee: { id: string; email: string },
   sa: any, db: any, clients: ClientRecord[],
@@ -250,7 +319,6 @@ async function syncEmployee(
     return { synced: 0, matched: 0 }
   }
 
-  // Cap at 100 threads — daily incremental syncs are small enough
   const threadIds: string[] = []
   let pageToken: string | undefined
   while (threadIds.length < 100) {
@@ -303,21 +371,18 @@ serve(async (req: Request) => {
     const db = createClient(SB_URL, SB_SERVICE)
 
     const body     = await req.json().catch(() => ({}))
-    const { employee_id, backfill = false } = body
+    const { employee_id, backfill = false, domain } = body
 
-    // Load clients with Brain matching fields
     const { data: clients, error: clientErr } = await db
       .from('clients').select('id, client_domain, client_contacts')
     if (clientErr) return json({ error: clientErr.message }, 500)
 
-    // Resolve which employee to process
     let employee: { id: string; email: string } | null = null
     if (employee_id) {
       const { data: emp } = await db
         .from('employees').select('id, email').eq('id', employee_id).maybeSingle()
       employee = emp ?? null
     } else {
-      // Pick least-recently synced employee
       const { data: emps } = await db
         .from('employees')
         .select('id, email, brain_sync_state(last_synced_at)')
@@ -329,7 +394,10 @@ serve(async (req: Request) => {
 
     if (!employee?.email) return json({ synced: 0, matched: 0, employees_processed: 0 })
 
-    if (backfill) {
+    if (domain) {
+      const result = await domainBackfill(employee, domain, sa, db, clients ?? [])
+      return json({ ...result, domain, employee_email: employee.email, employees_processed: 1 })
+    } else if (backfill) {
       const result = await backfillEmployee(employee, sa, db, clients ?? [])
       return json({ ...result, employee_email: employee.email, employees_processed: 1 })
     } else {
