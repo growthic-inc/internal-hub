@@ -3,8 +3,8 @@
    ============================================================ */
 const BrainClients = (() => {
 
-  async function render(user) {
-    const main = document.getElementById('brain-main')
+  async function render(user, container, onNavigate) {
+    const main = container || document.getElementById('brain-main')
     if (!main) return
     main.innerHTML = '<p class="loading-text">Loading clients…</p>'
 
@@ -57,7 +57,8 @@ const BrainClients = (() => {
 
     main.querySelectorAll('.brain-client-card[data-id]').forEach(card => {
       card.addEventListener('click', () => {
-        window.location.href = `/brain?client=${card.dataset.id}`
+        if (onNavigate) onNavigate(card.dataset.id)
+        else window.location.href = `/brain?client=${card.dataset.id}`
       })
     })
   }

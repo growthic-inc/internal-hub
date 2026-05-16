@@ -93,7 +93,7 @@
   justify-content: center;
 }
 
-/* ── Main content area ───────────────────────────────────── */
+/* ── Main content area (standalone /brain page) ──────────── */
 .brain-main {
   flex: 1;
   max-width: 1200px;
@@ -101,6 +101,15 @@
   padding: 32px 24px;
   width: 100%;
   box-sizing: border-box;
+}
+
+/* ── Integrated inside Growthic One page-content ─────────── */
+.page-content .brain-page-header,
+.page-content .brain-section-label,
+.page-content .brain-clients-grid,
+.page-content .brain-detail-header,
+.page-content .brain-detail-layout {
+  max-width: 1200px;
 }
 
 /* ── Page header ─────────────────────────────────────────── */

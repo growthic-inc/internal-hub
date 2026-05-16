@@ -4,8 +4,8 @@
 const BrainClientDetail = (() => {
   let _activeTab = 'summary'
 
-  async function render(clientId, user) {
-    const main = document.getElementById('brain-main')
+  async function render(clientId, user, container, onBack) {
+    const main = container || document.getElementById('brain-main')
     if (!main) return
     main.innerHTML = '<p class="loading-text">Loading client intelligence…</p>'
 
@@ -45,7 +45,10 @@ const BrainClientDetail = (() => {
 
     main.innerHTML = `
       <div class="brain-detail-header">
-        <a href="/brain" class="brain-back-btn">← All Clients</a>
+        ${onBack
+          ? `<button class="brain-back-btn" id="brain-back-btn">← All Clients</button>`
+          : `<a href="/brain" class="brain-back-btn">← All Clients</a>`
+        }
         <div class="brain-detail-title-row">
           <div>
             <h1 class="brain-page-title">${Utils.escapeHtml(client.client_name)}</h1>
@@ -91,6 +94,11 @@ const BrainClientDetail = (() => {
         </div>
       </div>
     `
+
+    // Back button (integrated mode)
+    if (onBack) {
+      main.querySelector('#brain-back-btn')?.addEventListener('click', onBack)
+    }
 
     // Tab switching
     main.querySelectorAll('.brain-intel-tab').forEach(btn => {
