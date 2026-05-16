@@ -994,12 +994,36 @@ const ClientDirectory = (() => {
           .update(clientData).eq('id', clientId)
         if (error) throw error
 
-        /* Replace platforms */
+        /* Replace client-level platforms (no external FKs — safe to wipe) */
         await Config.supabase.from('client_platforms').delete().eq('client_id', clientId)
-        /* Replace entities (cascades to entity_platforms + entity_services) */
-        const { error: delEntErr } = await Config.supabase
-          .from('client_entities').delete().eq('client_id', clientId)
-        if (delEntErr) throw delEntErr
+
+        /* Smart entity sync — never bulk-delete entities because social_metrics_daily
+           references them via FK. Instead: update existing in place, only delete
+           entities the user explicitly removed (and silently skip if FK blocks it). */
+        const formEntityIds = new Set(_formEntities.filter(e => e.id).map(e => e.id))
+
+        const { data: dbEnts } = await Config.supabase
+          .from('client_entities').select('id').eq('client_id', clientId)
+
+        for (const { id } of (dbEnts || [])) {
+          if (!formEntityIds.has(id)) {
+            // User removed this entity — clear sub-tables then try to delete
+            await Config.supabase.from('entity_platforms').delete().eq('entity_id', id)
+            await Config.supabase.from('entity_services').delete().eq('entity_id', id)
+            await Config.supabase.from('client_entities').delete().eq('id', id)
+            // Ignore any FK error (entity has analytics data) — it simply stays
+          }
+        }
+
+        // Update names and reset platforms/services on entities the user kept
+        for (const entity of _formEntities) {
+          if (entity.id) {
+            await Config.supabase.from('client_entities')
+              .update({ entity_name: entity.name.trim() }).eq('id', entity.id)
+            await Config.supabase.from('entity_platforms').delete().eq('entity_id', entity.id)
+            await Config.supabase.from('entity_services').delete().eq('entity_id', entity.id)
+          }
+        }
       } else {
         const { error } = await Config.supabase.from('clients')
           .insert({ id: clientId, ...clientData, created_by: _user.id })
@@ -1015,13 +1039,18 @@ const ClientDirectory = (() => {
 
       /* Entities → entity_platforms → entity_services */
       for (const entity of _formEntities) {
-        const { data: entRow, error: entErr } = await Config.supabase
-          .from('client_entities')
-          .insert({ client_id: clientId, entity_name: entity.name.trim() })
-          .select('id').single()
-        if (entErr) throw entErr
+        // Existing entity: already updated above, just need its ID for sub-tables
+        // New entity (id = null): insert it first
+        let eid = entity.id
+        if (!eid) {
+          const { data: entRow, error: entErr } = await Config.supabase
+            .from('client_entities')
+            .insert({ client_id: clientId, entity_name: entity.name.trim() })
+            .select('id').single()
+          if (entErr) throw entErr
+          eid = entRow.id
+        }
 
-        const eid = entRow.id
         if (entity.platforms.length) {
           await Config.supabase.from('entity_platforms').insert(
             entity.platforms.map(p => ({ entity_id: eid, platform: p }))
