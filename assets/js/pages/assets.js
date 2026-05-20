@@ -149,7 +149,8 @@ const Assets = (() => {
       can_view:            App.hasAccess('asset_management', 'view_assets',           'view_only'),
       can_view_available:  App.hasAccess('asset_management', 'view_available_assets', 'view_only'),
       can_request:         App.hasAccess('asset_management', 'request_asset',         'view_only'),
-      can_manage:          App.hasAccess('asset_management', 'manage_assets',         'can_manage'),
+      can_edit:            App.hasAccess('asset_management', 'manage_assets',         'can_edit'),   // Edit asset details + reassign
+      can_manage:          App.hasAccess('asset_management', 'manage_assets',         'can_manage'), // Add, Assign, Status change + everything above
       can_inventories:     App.hasAccess('asset_management', 'view_inventories',      'can_manage'),
       can_retire_delete:   App.hasAccess('asset_management', 'retire_delete_asset',   'can_manage'),
       can_resolve:         App.hasAccess('asset_management', 'resolve_repair',        'can_manage'),
@@ -346,7 +347,7 @@ const Assets = (() => {
                 <td>${_statusBadge(a.status)}</td>
                 <td style="white-space:nowrap;text-align:right;">
                   <button class="btn btn--xs btn--ghost ast-view" data-id="${a.id}">View</button>
-                  ${_p.can_manage
+                  ${_p.can_edit
                     ? `<button class="btn btn--xs btn--ghost ast-edit" data-id="${a.id}">Edit</button>`
                     : ''}
                   ${_p.can_manage && a.status === 'available'
@@ -1234,7 +1235,7 @@ const Assets = (() => {
     const canReturn  = (isAssignedToMe || isSuperAdmin) && asset.status === 'in_use'
     const canReport  = isAssignedToMe && asset.status !== 'pending_return'
     const canAssign  = canManage && asset.status === 'available'
-    const canEdit    = canManage
+    const canEdit    = _p.can_edit   // can_edit level (3) or higher — from access matrix
     const canRetire  = _p.can_retire_delete && asset.status !== 'retired'
     const canDelete  = _p.can_retire_delete
 
