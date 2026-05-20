@@ -346,6 +346,9 @@ const Assets = (() => {
                 <td>${_statusBadge(a.status)}</td>
                 <td style="white-space:nowrap;text-align:right;">
                   <button class="btn btn--xs btn--ghost ast-view" data-id="${a.id}">View</button>
+                  ${_p.can_manage
+                    ? `<button class="btn btn--xs btn--ghost ast-edit" data-id="${a.id}">Edit</button>`
+                    : ''}
                   ${_p.can_manage && a.status === 'available'
                     ? `<button class="btn btn--xs btn--secondary ast-assign" data-id="${a.id}">Assign</button>`
                     : ''}
@@ -368,6 +371,12 @@ const Assets = (() => {
   function _bindTableActions() {
     document.querySelectorAll('.ast-view').forEach(btn =>
       btn.addEventListener('click', () => _openDetailModal(btn.dataset.id))
+    )
+    document.querySelectorAll('.ast-edit').forEach(btn =>
+      btn.addEventListener('click', () => {
+        const a = _assets.find(x => x.id === btn.dataset.id)
+        if (a) _openEditModal(a)
+      })
     )
     document.querySelectorAll('.ast-assign').forEach(btn =>
       btn.addEventListener('click', () => {
@@ -1412,6 +1421,19 @@ const Assets = (() => {
           <textarea class="form-input" id="ast-f-notes" rows="2" style="resize:vertical;"
             placeholder="Any additional notes…">${Utils.escapeHtml(asset?.notes || '')}</textarea>
         </div>
+        ${isEdit ? `
+        <div class="form-group">
+          <label class="form-label">Assigned To</label>
+          <select class="form-select" id="ast-f-assigned">
+            <option value="">— Unassigned —</option>
+            ${_employees.map(e =>
+              `<option value="${e.id}"${asset?.assigned_to === e.id ? ' selected' : ''}>${Utils.escapeHtml(e.name)}${e.designation ? ' · ' + Utils.escapeHtml(e.designation) : ''}</option>`
+            ).join('')}
+          </select>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">
+            Changing this will update the asset's assignment and log a history entry.
+          </div>
+        </div>` : ''}
       </div>
       <div class="modal-footer">
         <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
@@ -1466,7 +1488,44 @@ const Assets = (() => {
 
       let error
       if (isEdit) {
+        // Handle assignment change
+        const newAssignedTo = document.getElementById('ast-f-assigned')?.value || null
+        const oldAssignedTo = asset.assigned_to || null
+        const assignmentChanged = newAssignedTo !== oldAssignedTo
+
+        if (assignmentChanged) {
+          if (newAssignedTo) {
+            // Assigning or re-assigning to someone
+            payload.assigned_to   = newAssignedTo
+            payload.assigned_date = new Date().toISOString().split('T')[0]
+            payload.status        = 'in_use'
+          } else {
+            // Un-assigning
+            payload.assigned_to   = null
+            payload.assigned_date = null
+            payload.status        = 'available'
+          }
+        }
+
         ;({ error } = await API.updateAsset(asset.id, payload))
+
+        // Log assignment history if changed
+        if (!error && assignmentChanged) {
+          const newEmp = newAssignedTo ? _employees.find(e => e.id === newAssignedTo) : null
+          const oldEmp = oldAssignedTo ? _employees.find(e => e.id === oldAssignedTo) : null
+          let action, notes
+          if (newAssignedTo && oldAssignedTo) {
+            action = 'reassigned'
+            notes  = `Reassigned from ${oldEmp?.name || 'unknown'} to ${newEmp?.name || 'unknown'}`
+          } else if (newAssignedTo) {
+            action = 'assigned'
+            notes  = `Assigned to ${newEmp?.name || 'unknown'}`
+          } else {
+            action = 'returned'
+            notes  = `Unassigned from ${oldEmp?.name || 'unknown'}`
+          }
+          await API.addAssetHistory({ asset_id: asset.id, action, notes, performed_by: _user.id })
+        }
       } else {
         const res = await API.createAsset({ ...payload, status: 'available' })
         error = res.error
