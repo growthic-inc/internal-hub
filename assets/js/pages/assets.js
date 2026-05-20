@@ -350,6 +350,9 @@ const Assets = (() => {
                   ${_p.can_edit
                     ? `<button class="btn btn--xs btn--ghost ast-edit" data-id="${a.id}">Edit</button>`
                     : ''}
+                  ${_p.can_edit && a.assigned_to
+                    ? `<button class="btn btn--xs btn--ghost ast-reassign" data-id="${a.id}" title="Change assigned person">Reassign</button>`
+                    : ''}
                   ${_p.can_manage && a.status === 'available'
                     ? `<button class="btn btn--xs btn--secondary ast-assign" data-id="${a.id}">Assign</button>`
                     : ''}
@@ -377,6 +380,12 @@ const Assets = (() => {
       btn.addEventListener('click', () => {
         const a = _assets.find(x => x.id === btn.dataset.id)
         if (a) _openEditModal(a)
+      })
+    )
+    document.querySelectorAll('.ast-reassign').forEach(btn =>
+      btn.addEventListener('click', () => {
+        const a = _assets.find(x => x.id === btn.dataset.id)
+        if (a) _openReassignModal(a)
       })
     )
     document.querySelectorAll('.ast-assign').forEach(btn =>
@@ -1232,12 +1241,13 @@ const Assets = (() => {
     const latestPhoto    = (history || []).find(h => h.photo_url)
 
     // Determine available actions for this user
-    const canReturn  = (isAssignedToMe || isSuperAdmin) && asset.status === 'in_use'
-    const canReport  = isAssignedToMe && asset.status !== 'pending_return'
-    const canAssign  = canManage && asset.status === 'available'
-    const canEdit    = _p.can_edit   // can_edit level (3) or higher — from access matrix
-    const canRetire  = _p.can_retire_delete && asset.status !== 'retired'
-    const canDelete  = _p.can_retire_delete
+    const canReturn   = (isAssignedToMe || isSuperAdmin) && asset.status === 'in_use'
+    const canReport   = isAssignedToMe && asset.status !== 'pending_return'
+    const canAssign   = canManage && asset.status === 'available'
+    const canEdit     = _p.can_edit                           // can_edit (3+) — edit asset details
+    const canReassign = _p.can_edit && !!asset.assigned_to   // can_edit (3+) — change assigned person
+    const canRetire   = _p.can_retire_delete && asset.status !== 'retired'
+    const canDelete   = _p.can_retire_delete
 
     Utils.openModal(`
       <div class="modal-header">
@@ -1262,14 +1272,15 @@ const Assets = (() => {
         </div>
 
         <!-- Action strip -->
-        ${canReturn || canReport || canAssign || canEdit || canRetire || canDelete ? `
+        ${canReturn || canReport || canAssign || canReassign || canEdit || canRetire || canDelete ? `
         <div style="display:flex;gap:8px;flex-wrap:wrap;padding:12px;background:var(--surface);border-radius:var(--radius);margin-bottom:20px;">
-          ${canReport  ? `<button class="btn btn--sm btn--primary" id="ast-detail-report">🔧 Report Issue</button>` : ''}
-          ${canReturn  ? `<button class="btn btn--sm btn--ghost" id="ast-detail-return" style="color:var(--text-muted);">↩ Return Asset</button>` : ''}
-          ${canAssign  ? `<button class="btn btn--sm btn--secondary" id="ast-detail-assign">Assign</button>` : ''}
-          ${canEdit    ? `<button class="btn btn--sm btn--ghost" id="ast-detail-edit">Edit</button>` : ''}
-          ${canManage  ? `<button class="btn btn--sm btn--ghost" id="ast-detail-status">Status</button>` : ''}
-          ${canRetire  ? `<button class="btn btn--sm btn--ghost" id="ast-detail-retire" style="color:var(--warning);">Retire</button>` : ''}
+          ${canReport   ? `<button class="btn btn--sm btn--primary" id="ast-detail-report">🔧 Report Issue</button>` : ''}
+          ${canReturn   ? `<button class="btn btn--sm btn--ghost" id="ast-detail-return" style="color:var(--text-muted);">↩ Return Asset</button>` : ''}
+          ${canAssign   ? `<button class="btn btn--sm btn--secondary" id="ast-detail-assign">Assign</button>` : ''}
+          ${canReassign ? `<button class="btn btn--sm btn--secondary" id="ast-detail-reassign">Reassign</button>` : ''}
+          ${canEdit     ? `<button class="btn btn--sm btn--ghost" id="ast-detail-edit">Edit</button>` : ''}
+          ${canManage   ? `<button class="btn btn--sm btn--ghost" id="ast-detail-status">Status</button>` : ''}
+          ${canRetire   ? `<button class="btn btn--sm btn--ghost" id="ast-detail-retire" style="color:var(--warning);">Retire</button>` : ''}
           ${canDelete  ? `<button class="btn btn--sm btn--ghost" id="ast-detail-delete" style="color:var(--danger);">Delete</button>` : ''}
         </div>` : ''}
 
@@ -1334,13 +1345,99 @@ const Assets = (() => {
       </div>
     `)
 
-    document.getElementById('ast-detail-report')?.addEventListener('click', () => { Utils.closeModal(); _openReportModal(asset) })
-    document.getElementById('ast-detail-return')?.addEventListener('click', () => { Utils.closeModal(); _openReturnModal(asset) })
-    document.getElementById('ast-detail-assign')?.addEventListener('click', () => { Utils.closeModal(); _openAssignModal(asset) })
-    document.getElementById('ast-detail-edit')?.addEventListener('click',   () => { Utils.closeModal(); _openEditModal(asset) })
-    document.getElementById('ast-detail-status')?.addEventListener('click', () => { Utils.closeModal(); _openStatusModal(asset) })
-    document.getElementById('ast-detail-retire')?.addEventListener('click', () => { Utils.closeModal(); _openRetireModal(asset) })
-    document.getElementById('ast-detail-delete')?.addEventListener('click', () => { Utils.closeModal(); _confirmDeleteAsset(asset) })
+    document.getElementById('ast-detail-report')?.addEventListener('click',   () => { Utils.closeModal(); _openReportModal(asset) })
+    document.getElementById('ast-detail-return')?.addEventListener('click',   () => { Utils.closeModal(); _openReturnModal(asset) })
+    document.getElementById('ast-detail-assign')?.addEventListener('click',   () => { Utils.closeModal(); _openAssignModal(asset) })
+    document.getElementById('ast-detail-reassign')?.addEventListener('click', () => { Utils.closeModal(); _openReassignModal(asset) })
+    document.getElementById('ast-detail-edit')?.addEventListener('click',     () => { Utils.closeModal(); _openEditModal(asset) })
+    document.getElementById('ast-detail-status')?.addEventListener('click',   () => { Utils.closeModal(); _openStatusModal(asset) })
+    document.getElementById('ast-detail-retire')?.addEventListener('click',   () => { Utils.closeModal(); _openRetireModal(asset) })
+    document.getElementById('ast-detail-delete')?.addEventListener('click',   () => { Utils.closeModal(); _confirmDeleteAsset(asset) })
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     REASSIGN MODAL — change assigned employee for an asset
+  ══════════════════════════════════════════════════════════ */
+
+  function _openReassignModal(asset) {
+    const currentEmp = _employees.find(e => e.id === asset.assigned_to)
+    const empOptions = _employees
+      .filter(e => e.id !== asset.assigned_to)
+      .map(e => `<option value="${e.id}">${Utils.escapeHtml(e.name)}${e.designation ? ' · ' + Utils.escapeHtml(e.designation) : ''}</option>`)
+      .join('')
+
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">Reassign Asset</h3>
+        ${_modalCloseBtn()}
+      </div>
+      <div class="modal-body">
+        <div id="ast-reassign-err" class="alert alert--danger" style="display:none;"></div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:16px;">
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Asset</div>
+          <div style="font-weight:600;">${Utils.escapeHtml(asset.name)}</div>
+          ${asset.type ? `<div style="font-size:12px;color:var(--text-muted);">${Utils.escapeHtml(asset.type)}</div>` : ''}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Currently Assigned To</label>
+          <div class="form-input" style="background:var(--surface);color:var(--text-muted);cursor:default;">
+            ${Utils.escapeHtml(currentEmp?.name || '—')}
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Reassign To <span class="required">*</span></label>
+          <select class="form-select" id="ast-reassign-emp">
+            <option value="">— Select employee —</option>
+            ${empOptions}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Reason <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+          <input class="form-input" id="ast-reassign-reason" placeholder="e.g. Assigned to wrong person by mistake">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
+        <button class="btn btn--primary" id="ast-reassign-save">Reassign</button>
+      </div>
+    `)
+
+    document.getElementById('ast-reassign-save').addEventListener('click', async () => {
+      const errEl  = document.getElementById('ast-reassign-err')
+      const btn    = document.getElementById('ast-reassign-save')
+      const newEmpId = document.getElementById('ast-reassign-emp').value
+      const reason   = document.getElementById('ast-reassign-reason').value.trim()
+
+      errEl.style.display = 'none'
+      if (!newEmpId) { errEl.textContent = 'Please select an employee.'; errEl.style.display = 'block'; return }
+
+      btn.disabled = true; btn.textContent = 'Saving…'
+
+      const today = new Date().toISOString().split('T')[0]
+      const { error } = await API.updateAsset(asset.id, {
+        assigned_to:   newEmpId,
+        assigned_date: today,
+        status:        'in_use',
+        updated_at:    new Date().toISOString(),
+      })
+
+      if (error) {
+        btn.disabled = false; btn.textContent = 'Reassign'
+        errEl.textContent = error.message; errEl.style.display = 'block'; return
+      }
+
+      const newEmp = _employees.find(e => e.id === newEmpId)
+      await API.addAssetHistory({
+        asset_id:    asset.id,
+        action:      'reassigned',
+        notes:       `Reassigned from ${currentEmp?.name || 'unknown'} to ${newEmp?.name || 'unknown'}${reason ? '. Reason: ' + reason : ''}`,
+        performed_by: _user.id,
+      })
+
+      Utils.closeModal()
+      Utils.showToast(`Asset reassigned to ${newEmp?.name || 'employee'}.`, 'success')
+      await _refresh()
+    })
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -1422,19 +1519,6 @@ const Assets = (() => {
           <textarea class="form-input" id="ast-f-notes" rows="2" style="resize:vertical;"
             placeholder="Any additional notes…">${Utils.escapeHtml(asset?.notes || '')}</textarea>
         </div>
-        ${isEdit ? `
-        <div class="form-group">
-          <label class="form-label">Assigned To</label>
-          <select class="form-select" id="ast-f-assigned">
-            <option value="">— Unassigned —</option>
-            ${_employees.map(e =>
-              `<option value="${e.id}"${asset?.assigned_to === e.id ? ' selected' : ''}>${Utils.escapeHtml(e.name)}${e.designation ? ' · ' + Utils.escapeHtml(e.designation) : ''}</option>`
-            ).join('')}
-          </select>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">
-            Changing this will update the asset's assignment and log a history entry.
-          </div>
-        </div>` : ''}
       </div>
       <div class="modal-footer">
         <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
@@ -1489,44 +1573,7 @@ const Assets = (() => {
 
       let error
       if (isEdit) {
-        // Handle assignment change
-        const newAssignedTo = document.getElementById('ast-f-assigned')?.value || null
-        const oldAssignedTo = asset.assigned_to || null
-        const assignmentChanged = newAssignedTo !== oldAssignedTo
-
-        if (assignmentChanged) {
-          if (newAssignedTo) {
-            // Assigning or re-assigning to someone
-            payload.assigned_to   = newAssignedTo
-            payload.assigned_date = new Date().toISOString().split('T')[0]
-            payload.status        = 'in_use'
-          } else {
-            // Un-assigning
-            payload.assigned_to   = null
-            payload.assigned_date = null
-            payload.status        = 'available'
-          }
-        }
-
         ;({ error } = await API.updateAsset(asset.id, payload))
-
-        // Log assignment history if changed
-        if (!error && assignmentChanged) {
-          const newEmp = newAssignedTo ? _employees.find(e => e.id === newAssignedTo) : null
-          const oldEmp = oldAssignedTo ? _employees.find(e => e.id === oldAssignedTo) : null
-          let action, notes
-          if (newAssignedTo && oldAssignedTo) {
-            action = 'reassigned'
-            notes  = `Reassigned from ${oldEmp?.name || 'unknown'} to ${newEmp?.name || 'unknown'}`
-          } else if (newAssignedTo) {
-            action = 'assigned'
-            notes  = `Assigned to ${newEmp?.name || 'unknown'}`
-          } else {
-            action = 'returned'
-            notes  = `Unassigned from ${oldEmp?.name || 'unknown'}`
-          }
-          await API.addAssetHistory({ asset_id: asset.id, action, notes, performed_by: _user.id })
-        }
       } else {
         const res = await API.createAsset({ ...payload, status: 'available' })
         error = res.error
