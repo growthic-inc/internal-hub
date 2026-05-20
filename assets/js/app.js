@@ -36,7 +36,7 @@ const App = (() => {
       roles:     ALL_ROLES,
       universal: m.universal || false,
     })),
-    // Access Control: super_admin only
+    // Access Control: super_admin + founders_office only
     { id: 'access-control', label: 'Access Control', icon: ICONS.sliders, module: () => Access, roles: ALL_ROLES, superAdminOnly: true },
     { id: 'settings', label: 'Settings', icon: ICONS.settings, module: () => Settings, roles: ALL_ROLES },
   ]
@@ -108,7 +108,7 @@ const App = (() => {
   // Uses visibilityFeature override when present; otherwise checks if
   // ANY feature in the route's module has access > no_access.
   function _canViewModule(navItem) {
-    if (navItem.superAdminOnly) return _matrix === null  // strictly super_admin
+    if (navItem.superAdminOnly) return _matrix === null || currentUser?.role === 'founders_office'
     if (navItem.universal)      return true              // visible to everyone
     if (_matrix === null) return true  // super_admin sees everything
 
