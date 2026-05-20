@@ -1560,8 +1560,11 @@ const LeaveTracker = (() => {
     if (error) {
       Utils.showToast('Failed to approve: ' + error.message, 'error')
     } else {
+      const label     = type === 'leave' ? 'leave' : 'WFH'
+      const empName   = req?.employee?.name || 'An employee'
+
+      // Notify the requester
       if (req?.employee?.id) {
-        const label = type === 'leave' ? 'leave' : 'WFH'
         API.createNotification({
           recipient_employee_id: req.employee.id,
           type: 'approval',
@@ -1570,6 +1573,24 @@ const LeaveTracker = (() => {
           record_id: id,
         })
       }
+
+      // Notify all active People & Culture members (excluding requester & current approver)
+      const pcTeam = _employees.filter(e =>
+        e.status === 'active' &&
+        e.department === 'people_culture' &&
+        e.id !== req?.employee?.id &&
+        e.id !== _user.id
+      )
+      pcTeam.forEach(e => {
+        API.createNotification({
+          recipient_employee_id: e.id,
+          type: 'info',
+          message: `${empName}'s ${label} request has been approved.`,
+          module: 'leave_tracker',
+          record_id: id,
+        })
+      })
+
       Utils.showToast('Request approved.', 'success')
       await _refreshApprovalData()
       _loadTab('pending-approvals')
