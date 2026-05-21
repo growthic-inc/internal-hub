@@ -140,6 +140,23 @@ const Settings = (() => {
           </div>
         </div>
 
+        <!-- Push Notifications -->
+        <div class="section-card mb-4" id="push-notif-card">
+          <div class="section-card-header">
+            <h3>Push Notifications</h3>
+            <span class="text-muted text-sm">Receive alerts on this device even when the app is closed</span>
+          </div>
+          <div class="section-card-body">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+              <div>
+                <div class="settings-pw-label" id="push-status-label">Checking…</div>
+                <div class="settings-pw-hint" id="push-status-hint"></div>
+              </div>
+              <button class="btn btn--primary" id="push-enable-btn" style="display:none;">Enable Notifications</button>
+            </div>
+          </div>
+        </div>
+
       </div>
     `
   }
@@ -150,6 +167,58 @@ const Settings = (() => {
     _bindChangePassword()
     _loadKyc()
     _loadNotifPrefs()
+    _initPushCard(user)
+  }
+
+  async function _initPushCard(user) {
+    const label  = document.getElementById('push-status-label')
+    const hint   = document.getElementById('push-status-hint')
+    const btn    = document.getElementById('push-enable-btn')
+    if (!label || !btn) return
+
+    if (typeof Push === 'undefined' || !('PushManager' in window)) {
+      label.textContent = 'Not supported on this browser'
+      hint.textContent  = 'Use Chrome on Android or Safari on iOS 16.4+ from the home screen.'
+      return
+    }
+
+    const s = await Push.status()
+
+    if (s === 'subscribed') {
+      label.textContent = 'Notifications are enabled'
+      hint.textContent  = 'You will receive push alerts on this device.'
+      label.style.color = 'var(--color-success, #22c55e)'
+    } else if (s === 'denied') {
+      label.textContent = 'Notifications are blocked'
+      hint.textContent  = 'Go to your browser/phone settings and allow notifications for this site, then come back here.'
+    } else if (s === 'not-supported') {
+      label.textContent = 'Not supported on this browser'
+      hint.textContent  = 'Use Chrome on Android or Safari on iOS 16.4+ from the home screen.'
+    } else {
+      // 'not-asked' or 'granted-no-sub'
+      label.textContent = s === 'granted-no-sub' ? 'Notifications allowed but not registered' : 'Notifications not enabled'
+      hint.textContent  = 'Tap the button to enable push notifications on this device.'
+      btn.style.display = 'inline-flex'
+      btn.addEventListener('click', async () => {
+        btn.disabled      = true
+        btn.textContent   = 'Setting up…'
+        await Push.enable(user)
+        // Re-check status after a short delay to let the subscribe complete
+        setTimeout(async () => {
+          const s2 = await Push.status()
+          if (s2 === 'subscribed') {
+            label.textContent = 'Notifications are enabled'
+            label.style.color = 'var(--color-success, #22c55e)'
+            hint.textContent  = 'You will receive push alerts on this device.'
+            btn.style.display = 'none'
+          } else {
+            btn.disabled    = false
+            btn.textContent = 'Try Again'
+            hint.textContent = 'Something went wrong. Check that notifications are allowed in your browser settings.'
+          }
+        }, 3000)
+      })
+    }
   }
 
   /* ── Change Password ─────────────────────────────────────── */

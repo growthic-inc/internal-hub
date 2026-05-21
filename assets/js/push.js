@@ -181,5 +181,24 @@ const Push = (() => {
     }
   }
 
-  return { init }
+  // Manually trigger the push subscription flow (called from Settings).
+  // Clears any "dismissed" flag so the banner can show again.
+  async function enable(user) {
+    sessionStorage.removeItem('push-banner-dismissed')
+    await init(user)
+  }
+
+  // Returns a plain-text status string for display in Settings.
+  async function status() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return 'not-supported'
+    if (Notification.permission === 'denied')  return 'denied'
+    if (Notification.permission === 'default') return 'not-asked'
+    try {
+      const reg = await navigator.serviceWorker.ready
+      const sub = await reg.pushManager.getSubscription()
+      return sub ? 'subscribed' : 'granted-no-sub'
+    } catch { return 'error' }
+  }
+
+  return { init, enable, status }
 })()
