@@ -65,8 +65,15 @@ const Push = (() => {
       }
 
       if (Notification.permission === 'granted') {
-        console.log('[Push] permission already granted — subscribing silently')
-        await _subscribe(reg, user.id)
+        if (_isIOSStandalone()) {
+          // iOS requires a user gesture even when permission is already granted;
+          // show the banner so the tap provides the gesture context for subscribe().
+          console.log('[Push] iOS standalone + permission granted — showing banner for user-gesture re-subscribe')
+          _showPermissionBanner(reg, user.id)
+        } else {
+          console.log('[Push] permission already granted — subscribing silently')
+          await _subscribe(reg, user.id)
+        }
         return
       }
 
@@ -149,6 +156,7 @@ const Push = (() => {
       await _save(sub, employeeId)
     } catch (err) {
       console.warn('[Push] subscribe error:', err)
+      _showError('Notification setup failed: ' + (err.message || String(err)))
     }
   }
 
@@ -160,8 +168,20 @@ const Push = (() => {
       p256dh:      json.keys.p256dh,
       auth:        json.keys.auth,
     })
-    if (error) console.warn('[Push] failed to save subscription to DB:', error)
-    else        console.log('[Push] subscription saved to DB ✓')
+    if (error) {
+      console.warn('[Push] failed to save subscription to DB:', error)
+      _showError('Notification registration failed: ' + (error.message || 'unknown error'))
+    } else {
+      console.log('[Push] subscription saved to DB ✓')
+    }
+  }
+
+  function _showError(msg) {
+    if (typeof Utils !== 'undefined' && Utils.showToast) {
+      Utils.showToast(msg, 'error')
+    } else {
+      alert('[Push Error] ' + msg)
+    }
   }
 
   return { init }
