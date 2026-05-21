@@ -453,13 +453,34 @@ const API = (() => {
   }
 
   function _pushTitle(type, module) {
-    const mod  = { timesheet: 'Timesheet', leave: 'Leave', wfh: 'WFH', reimbursements: 'Reimbursement', assets: 'Assets', tools: 'Tools', people: 'People' }[module] || 'Growthic One'
-    const kind = { approval: '✓ Approved', rejection: '✗ Rejected', submission: 'New submission', info: 'Update' }[type] || 'Update'
+    const mod  = {
+      leave_tracker:  'Leave & WFH',
+      reimbursements: 'Reimbursements',
+      assets:         'Assets',
+      tools:          'Tools',
+      people:         'People',
+      timesheet:      'Timesheet',
+      announcements:  'Announcements',
+      badges:         'Badges',
+    }[module] || 'Growthic One'
+    const kind = {
+      approval:   '✓ Approved',
+      rejection:  '✗ Rejected',
+      submission: 'New submission',
+      info:       'Update',
+    }[type] || 'Update'
     return `${mod} — ${kind}`
   }
 
   function _pushUrl(module) {
-    return { timesheet: '/home?page=timesheet', leave: '/home?page=leave', wfh: '/home?page=wfh', reimbursements: '/home?page=reimbursements', assets: '/home?page=assets', tools: '/home?page=tools' }[module] || '/home'
+    return {
+      leave_tracker:  '/home?page=leave',
+      reimbursements: '/home?page=reimbursements',
+      assets:         '/home?page=assets',
+      tools:          '/home?page=tools',
+      timesheet:      '/home?page=timesheet',
+      announcements:  '/home?page=announcements',
+    }[module] || '/home'
   }
 
   async function savePushSubscription({ employee_id, endpoint, p256dh, auth }) {
