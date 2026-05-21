@@ -52,7 +52,7 @@ const Access = (() => {
   /* ── render ──────────────────────────────────────────────── */
   function render(user) {
     _currentUser = user
-    const isSuperAdmin = user.role === 'super_admin' || user.designation === "Founder's Office"
+    const isSuperAdmin = user.role === 'super_admin'
 
     return `
       <div class="access-layout">

@@ -108,7 +108,7 @@ const App = (() => {
   // Uses visibilityFeature override when present; otherwise checks if
   // ANY feature in the route's module has access > no_access.
   function _canViewModule(navItem) {
-    if (navItem.superAdminOnly) return _matrix === null || currentUser?.designation === "Founder's Office"
+    if (navItem.superAdminOnly) return _matrix === null
     if (navItem.universal)      return true              // visible to everyone
     if (_matrix === null) return true  // super_admin sees everything
 
