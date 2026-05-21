@@ -2,12 +2,14 @@
    PUSH — Web Push subscription manager
    Requests permission via user-gesture banner (required on iOS
    PWA), saves subscription to Supabase, handles re-subscription
-   across devices/browsers.
+   across devices/browsers including after VAPID key rotation.
    ============================================================ */
 
 const Push = (() => {
 
-  // VAPID public key — safe to be in client-side code
+  // VAPID public key — safe to be in client-side code.
+  // If this key ever changes, existing subscriptions will be detected
+  // as stale and automatically re-subscribed with the new key.
   const VAPID_PUBLIC_KEY = 'BKGOJMcLo--_s-BSyRWn0CzHqMk_M8-MvlC-ljun7sdG6exM-XSnqxzP2iiZEUE80ht5M65-RSAuLi5CthtzNjk'
 
   function _urlBase64ToUint8Array(b64) {
@@ -15,6 +17,17 @@ const Push = (() => {
     const base64  = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/')
     const raw     = atob(base64)
     return Uint8Array.from([...raw].map(c => c.charCodeAt(0)))
+  }
+
+  // Returns true if the existing PushSubscription was made with the current VAPID key.
+  // If keys don't match the push service will 401-reject every message — we must
+  // unsubscribe and re-subscribe with the new key.
+  function _subscriptionKeyMatches(sub) {
+    const storedKey = sub.options?.applicationServerKey
+    if (!storedKey) return false
+    const stored  = new Uint8Array(storedKey)
+    const current = _urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    return stored.length === current.length && stored.every((b, i) => b === current[i])
   }
 
   // Detect iOS standalone (home-screen) mode
@@ -27,34 +40,43 @@ const Push = (() => {
     if (Notification.permission === 'denied') return
 
     try {
-      // Ensure SW is registered (may not be registered yet on first load)
       let reg
       try {
         reg = await navigator.serviceWorker.ready
-      } catch (swErr) {
-        console.warn('[Push] Service worker not ready, attempting registration:', swErr)
+      } catch {
         reg = await navigator.serviceWorker.register('/sw.js')
         await navigator.serviceWorker.ready
       }
 
       const existing = await reg.pushManager.getSubscription()
+
       if (existing) {
-        // Re-sync subscription on every login (handles key rotation + new devices)
-        await _save(existing, user.id)
+        if (_subscriptionKeyMatches(existing)) {
+          // Subscription is valid and current — re-sync to DB (covers new devices
+          // and ensures the row is always up to date after re-installs).
+          await _save(existing, user.id)
+          return
+        }
+        // VAPID key was rotated since this subscription was created.
+        // The push service will reject all sends with 401 until we re-subscribe.
+        await existing.unsubscribe()
+        // Fall through — permission is already granted so _subscribe() below
+        // will silently create a fresh subscription without prompting again.
+      }
+
+      // Permission is granted but no valid subscription exists (either never
+      // subscribed, or just unsubscribed above due to key rotation).
+      // Re-subscribe silently — no need to ask for permission again.
+      if (Notification.permission === 'granted') {
+        await _subscribe(reg, user.id)
         return
       }
 
-      if (Notification.permission !== 'default') return
-
-      // iOS PWA requires the permission request to be triggered by a
-      // user gesture — a setTimeout fires without gesture context and is
-      // silently ignored. Show a banner instead; clicking it triggers the
-      // real requestPermission() call.
+      // Permission not yet requested — need a user gesture on iOS PWA;
+      // auto-prompt is fine on Android / desktop.
       if (_isIOSStandalone()) {
         _showPermissionBanner(reg, user.id)
       } else {
-        // Desktop and Android: auto-prompt after brief delay (user gesture
-        // not required on these platforms)
         setTimeout(() => _requestAndSubscribe(reg, user.id), 4000)
       }
     } catch (err) {
@@ -63,9 +85,7 @@ const Push = (() => {
   }
 
   function _showPermissionBanner(reg, employeeId) {
-    // Don't show if already dismissed this session
     if (sessionStorage.getItem('push-banner-dismissed')) return
-    // Don't show if already on the page
     if (document.getElementById('push-permission-banner')) return
 
     const banner = document.createElement('div')
@@ -109,11 +129,20 @@ const Push = (() => {
     })
   }
 
+  // Called when permission hasn't been requested yet — asks first, then subscribes.
   async function _requestAndSubscribe(reg, employeeId) {
     try {
       const permission = await Notification.requestPermission()
       if (permission !== 'granted') return
+      await _subscribe(reg, employeeId)
+    } catch (err) {
+      console.warn('[Push] requestAndSubscribe error:', err)
+    }
+  }
 
+  // Called when permission is already granted — subscribes directly.
+  async function _subscribe(reg, employeeId) {
+    try {
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly:      true,
         applicationServerKey: _urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
