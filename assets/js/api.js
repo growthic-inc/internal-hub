@@ -488,10 +488,25 @@ const API = (() => {
   }
 
   async function savePushSubscription({ employee_id, endpoint, p256dh, auth }) {
-    return supabase.from('push_subscriptions').upsert(
-      { employee_id, endpoint, p256dh, auth },
-      { onConflict: 'employee_id,endpoint' }
-    )
+    // Save via the send-push edge function (service role key) to avoid
+    // the RLS "permission denied for table users" issue with direct client writes.
+    try {
+      const { data: { session } } = await Config.supabase.auth.getSession()
+      const res = await fetch(`${Config.SUPABASE_URL}/functions/v1/send-push`, {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${session?.access_token || Config.SUPABASE_ANON_KEY}`,
+          'apikey':        Config.SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ action: 'save', employee_id, endpoint, p256dh, auth }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) return { error: { message: json.error || 'save failed' } }
+      return { data: json, error: null }
+    } catch (err) {
+      return { error: { message: String(err) } }
+    }
   }
 
   async function getRecentNotifications(employeeId, limit = 25) {
