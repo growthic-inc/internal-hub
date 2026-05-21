@@ -36,8 +36,11 @@ const Push = (() => {
   }
 
   async function init(user) {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
-    if (Notification.permission === 'denied') return
+    if (!('serviceWorker' in navigator)) { console.warn('[Push] service workers not supported'); return }
+    if (!('PushManager' in window))      { console.warn('[Push] PushManager not available (iOS < 16.4 or non-standalone?)'); return }
+    if (Notification.permission === 'denied') { console.warn('[Push] permission denied'); return }
+
+    console.log('[Push] init, permission:', Notification.permission, '| iOS standalone:', _isIOSStandalone())
 
     try {
       let reg
@@ -49,34 +52,29 @@ const Push = (() => {
       }
 
       const existing = await reg.pushManager.getSubscription()
+      console.log('[Push] existing subscription:', existing ? existing.endpoint.slice(0, 60) + '…' : 'none')
 
       if (existing) {
         if (_subscriptionKeyMatches(existing)) {
-          // Subscription is valid and current — re-sync to DB (covers new devices
-          // and ensures the row is always up to date after re-installs).
+          console.log('[Push] key matches — syncing subscription to DB')
           await _save(existing, user.id)
           return
         }
-        // VAPID key was rotated since this subscription was created.
-        // The push service will reject all sends with 401 until we re-subscribe.
+        console.warn('[Push] VAPID key mismatch — unsubscribing stale subscription and re-subscribing')
         await existing.unsubscribe()
-        // Fall through — permission is already granted so _subscribe() below
-        // will silently create a fresh subscription without prompting again.
       }
 
-      // Permission is granted but no valid subscription exists (either never
-      // subscribed, or just unsubscribed above due to key rotation).
-      // Re-subscribe silently — no need to ask for permission again.
       if (Notification.permission === 'granted') {
+        console.log('[Push] permission already granted — subscribing silently')
         await _subscribe(reg, user.id)
         return
       }
 
-      // Permission not yet requested — need a user gesture on iOS PWA;
-      // auto-prompt is fine on Android / desktop.
       if (_isIOSStandalone()) {
+        console.log('[Push] iOS standalone — showing permission banner')
         _showPermissionBanner(reg, user.id)
       } else {
+        console.log('[Push] auto-prompting in 4s')
         setTimeout(() => _requestAndSubscribe(reg, user.id), 4000)
       }
     } catch (err) {
@@ -147,6 +145,7 @@ const Push = (() => {
         userVisibleOnly:      true,
         applicationServerKey: _urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
       })
+      console.log('[Push] subscribed:', sub.endpoint.slice(0, 60) + '…')
       await _save(sub, employeeId)
     } catch (err) {
       console.warn('[Push] subscribe error:', err)
@@ -154,13 +153,15 @@ const Push = (() => {
   }
 
   async function _save(sub, employeeId) {
-    const json = sub.toJSON()
-    await API.savePushSubscription({
+    const json    = sub.toJSON()
+    const { error } = await API.savePushSubscription({
       employee_id: employeeId,
       endpoint:    json.endpoint,
       p256dh:      json.keys.p256dh,
       auth:        json.keys.auth,
     })
+    if (error) console.warn('[Push] failed to save subscription to DB:', error)
+    else        console.log('[Push] subscription saved to DB ✓')
   }
 
   return { init }

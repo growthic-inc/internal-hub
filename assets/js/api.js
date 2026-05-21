@@ -431,8 +431,8 @@ const API = (() => {
     ;(async () => {
       try {
         const { data: { session } } = await Config.supabase.auth.getSession()
-        if (!session) return
-        await fetch(`${Config.SUPABASE_URL}/functions/v1/send-push`, {
+        if (!session) { console.warn('[Push] no session, skipping push'); return }
+        const res  = await fetch(`${Config.SUPABASE_URL}/functions/v1/send-push`, {
           method:  'POST',
           headers: {
             'Content-Type':  'application/json',
@@ -446,7 +446,11 @@ const API = (() => {
             url:         _pushUrl(module),
           }),
         })
-      } catch { /* push is non-critical */ }
+        const json = await res.json().catch(() => ({}))
+        console.log(`[Push] send-push → ${res.status}`, json)
+      } catch (err) {
+        console.warn('[Push] send-push error:', err)
+      }
     })()
 
     return result
