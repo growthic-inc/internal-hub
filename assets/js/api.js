@@ -478,12 +478,14 @@ const API = (() => {
 
   function _pushUrl(module) {
     return {
-      leave_tracker:  '/home?page=leave',
-      reimbursements: '/home?page=reimbursements',
-      assets:         '/home?page=assets',
-      tools:          '/home?page=tools',
-      timesheet:      '/home?page=timesheet',
-      announcements:  '/home?page=announcements',
+      leave_tracker:  '/home#leave-tracker',
+      reimbursements: '/home#reimbursements',
+      assets:         '/home#assets',
+      tools:          '/home#tools',
+      timesheet:      '/home#timesheet',
+      announcements:  '/home#announcements',
+      badges:         '/home#people',
+      people:         '/home#people',
     }[module] || '/home'
   }
 

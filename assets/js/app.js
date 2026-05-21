@@ -458,7 +458,17 @@ const App = (() => {
 
         // Navigate and close panel
         panel.style.display = 'none'
-        if (mod) window.location.hash = mod
+        const route = ({
+          leave_tracker:  'leave-tracker',
+          announcements:  'announcements',
+          assets:         'assets',
+          tools:          'tools',
+          people:         'people',
+          reimbursements: 'reimbursements',
+          timesheet:      'timesheet',
+          badges:         'people',
+        })[mod] || mod
+        if (route) window.location.hash = route
       })
     })
   }
