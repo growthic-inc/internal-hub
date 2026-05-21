@@ -1388,6 +1388,7 @@ const Assets = (() => {
           <label class="form-label">Reassign To <span class="required">*</span></label>
           <select class="form-select" id="ast-reassign-emp">
             <option value="">— Select employee —</option>
+            <option value="__none__">— None (leave unallocated) —</option>
             ${empOptions}
           </select>
         </div>
@@ -1409,12 +1410,18 @@ const Assets = (() => {
       const reason   = document.getElementById('ast-reassign-reason').value.trim()
 
       errEl.style.display = 'none'
-      if (!newEmpId) { errEl.textContent = 'Please select an employee.'; errEl.style.display = 'block'; return }
+      if (!newEmpId) { errEl.textContent = 'Please select an employee or choose None.'; errEl.style.display = 'block'; return }
 
+      const unallocate = newEmpId === '__none__'
       btn.disabled = true; btn.textContent = 'Saving…'
 
       const today = new Date().toISOString().split('T')[0]
-      const { error } = await API.updateAsset(asset.id, {
+      const { error } = await API.updateAsset(asset.id, unallocate ? {
+        assigned_to:   null,
+        assigned_date: null,
+        status:        'available',
+        updated_at:    new Date().toISOString(),
+      } : {
         assigned_to:   newEmpId,
         assigned_date: today,
         status:        'in_use',
@@ -1426,16 +1433,18 @@ const Assets = (() => {
         errEl.textContent = error.message; errEl.style.display = 'block'; return
       }
 
-      const newEmp = _employees.find(e => e.id === newEmpId)
+      const newEmp = unallocate ? null : _employees.find(e => e.id === newEmpId)
       await API.addAssetHistory({
         asset_id:    asset.id,
-        action:      'reassigned',
-        notes:       `Reassigned from ${currentEmp?.name || 'unknown'} to ${newEmp?.name || 'unknown'}${reason ? '. Reason: ' + reason : ''}`,
+        action:      unallocate ? 'returned' : 'reassigned',
+        notes:       unallocate
+          ? `Unallocated from ${currentEmp?.name || 'unknown'}${reason ? '. Reason: ' + reason : ''}`
+          : `Reassigned from ${currentEmp?.name || 'unknown'} to ${newEmp?.name || 'unknown'}${reason ? '. Reason: ' + reason : ''}`,
         performed_by: _user.id,
       })
 
       Utils.closeModal()
-      Utils.showToast(`Asset reassigned to ${newEmp?.name || 'employee'}.`, 'success')
+      Utils.showToast(unallocate ? 'Asset marked as available.' : `Asset reassigned to ${newEmp?.name}.`, 'success')
       await _refresh()
     })
   }
