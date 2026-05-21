@@ -8,7 +8,7 @@
 const Push = (() => {
 
   // VAPID public key — safe to be in client-side code
-  const VAPID_PUBLIC_KEY = 'BK7vlTayESXa8K2_9lE5yjnmXKlLRq9BMmyqSs8JMBv7s3mcHnGNMJs1Na0zYcpBjwUsG2nU5KkwwsJXpaLMwi4'
+  const VAPID_PUBLIC_KEY = 'BKGOJMcLo--_s-BSyRWn0CzHqMk_M8-MvlC-ljun7sdG6exM-XSnqxzP2iiZEUE80ht5M65-RSAuLi5CthtzNjk'
 
   function _urlBase64ToUint8Array(b64) {
     const padding = '='.repeat((4 - (b64.length % 4)) % 4)
