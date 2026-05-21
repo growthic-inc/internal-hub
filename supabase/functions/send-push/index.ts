@@ -160,7 +160,37 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const { employee_id, title, body, url = '/home' } = await req.json()
+    const body_json = await req.json()
+
+    // ── action: 'save' — store a push subscription (uses service role, bypasses RLS) ──
+    if (body_json.action === 'save') {
+      const { employee_id, endpoint, p256dh, auth } = body_json
+      if (!employee_id || !endpoint || !p256dh || !auth) {
+        return new Response(JSON.stringify({ error: 'employee_id, endpoint, p256dh, auth required' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      )
+      const { error } = await supabase.from('push_subscriptions').upsert(
+        { employee_id, endpoint, p256dh, auth },
+        { onConflict: 'employee_id,endpoint' },
+      )
+      if (error) {
+        console.error('[send-push] save subscription error:', error)
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify({ saved: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // ── action: 'send' (default) — deliver a push notification ──
+    const { employee_id, title, body, url = '/home' } = body_json
 
     if (!employee_id || !title || !body) {
       return new Response(JSON.stringify({ error: 'employee_id, title, body required' }), {
