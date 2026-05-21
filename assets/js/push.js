@@ -1,8 +1,8 @@
 /* ============================================================
    PUSH — Web Push subscription manager
    Requests permission via user-gesture banner (required on iOS
-   PWA), saves subscription to Supabase, handles re-subscription
-   across devices/browsers including after VAPID key rotation.
+   and Android), saves subscription to Supabase, handles
+   re-subscription after VAPID key rotation.
    ============================================================ */
 
 const Push = (() => {
@@ -77,13 +77,10 @@ const Push = (() => {
         return
       }
 
-      if (_isIOSStandalone()) {
-        console.log('[Push] iOS standalone — showing permission banner')
-        _showPermissionBanner(reg, user.id)
-      } else {
-        console.log('[Push] auto-prompting in 4s')
-        setTimeout(() => _requestAndSubscribe(reg, user.id), 4000)
-      }
+      // Always show the banner — Chrome on Android blocks requestPermission()
+      // without a user gesture, so the auto-timeout approach silently fails.
+      console.log('[Push] showing permission banner')
+      _showPermissionBanner(reg, user.id)
     } catch (err) {
       console.warn('[Push] init error:', err)
     }
