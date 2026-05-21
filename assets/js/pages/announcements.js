@@ -635,17 +635,15 @@ const Announcements = (() => {
         // Notify all active employees (except author)
         const { data: employees } = await API.getEmployees(true)
         if (employees?.length) {
-          const notifications = employees
-            .filter(e => e.id !== _user.id)
-            .map(e => ({
+          const targets = employees.filter(e => e.id !== _user.id)
+          if (targets.length) {
+            Promise.all(targets.map(e => API.createNotification({
               recipient_employee_id: e.id,
               type: 'info',
               message: `New announcement: "${title}"`,
               module: 'announcements',
               record_id: annData?.id || null,
-            }))
-          if (notifications.length) {
-            Config.supabase.from('notifications').insert(notifications)
+            })))
           }
         }
       }

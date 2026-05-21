@@ -680,7 +680,7 @@ const Assets = (() => {
       })
 
       // 4. Notify the employee
-      await Config.supabase.from('notifications').insert({
+      await API.createNotification({
         recipient_employee_id: req.requested_by,
         type:      'success',
         message:   `Your request for "${assetName}" has been approved and assigned to you!`,
@@ -735,7 +735,7 @@ const Assets = (() => {
 
       if (error) { Utils.showToast(error.message, 'error'); btn.disabled = false; btn.textContent = 'Reject'; return }
 
-      await Config.supabase.from('notifications').insert({
+      await API.createNotification({
         recipient_employee_id: req.requested_by,
         type:      'warning',
         message:   `Your request for "${assetName}" was not approved.${note ? ' Note: ' + note : ''}`,
@@ -796,7 +796,7 @@ const Assets = (() => {
       })
 
       // 4. Notify employee
-      await Config.supabase.from('notifications').insert({
+      await API.createNotification({
         recipient_employee_id: rr.returned_by,
         type:    'success',
         message: `Your return request for "${assetName}" has been approved. The asset has been successfully returned.`,
@@ -858,7 +858,7 @@ const Assets = (() => {
         await API.updateAsset(rr.asset_id, { status: 'in_use', updated_at: now })
 
         // Notify employee with HR comments
-        await Config.supabase.from('notifications').insert({
+        await API.createNotification({
           recipient_employee_id: rr.returned_by,
           type:    'warning',
           message: `Your return request for "${assetName}" was not approved.${note ? ' HR note: ' + note : ''}`,
@@ -1774,18 +1774,18 @@ const Assets = (() => {
         })
 
         // 4. Notify all HR / Super Admin
-        const { data: hrs } = await Config.supabase
-          .from('employees').select('id').in('role', ['super_admin', 'hr'])
-        if (hrs?.length) {
-          await Config.supabase.from('notifications').insert(
-            hrs.map(e => ({
-              recipient_employee_id: e.id,
-              type:    'info',
-              message: `${_user.name} has submitted a return request for "${asset.name}". Please review in Requests → Returns.`,
-              module:  'assets',
-              record_id: rr?.id || null,
-            }))
-          )
+        const hrEmployees = _employees.filter(e =>
+          e.status === 'active' &&
+          (e.role === 'super_admin' || e.department === 'people_culture')
+        )
+        if (hrEmployees.length) {
+          await Promise.all(hrEmployees.map(e => API.createNotification({
+            recipient_employee_id: e.id,
+            type:    'info',
+            message: `${_user.name} has submitted a return request for "${asset.name}". Please review in Requests → Returns.`,
+            module:  'assets',
+            record_id: rr?.id || null,
+          })))
         }
 
         // Refresh local state
@@ -2042,17 +2042,17 @@ const Assets = (() => {
         })
 
         // Notify all HR/Super Admin
-        const { data: hrs } = await Config.supabase
-          .from('employees').select('id').in('role', ['super_admin', 'hr'])
-        if (hrs?.length) {
-          await Config.supabase.from('notifications').insert(
-            hrs.map(e => ({
-              recipient_employee_id: e.id,
-              type:    'warning',
-              message: `${_user.name} reported a ${type} on "${asset.name}": ${Utils.truncate(desc, 80)}`,
-              module:  'assets',
-            }))
-          )
+        const hrEmployees = _employees.filter(e =>
+          e.status === 'active' &&
+          (e.role === 'super_admin' || e.department === 'people_culture')
+        )
+        if (hrEmployees.length) {
+          await Promise.all(hrEmployees.map(e => API.createNotification({
+            recipient_employee_id: e.id,
+            type:    'warning',
+            message: `${_user.name} reported a ${type} on "${asset.name}": ${Utils.truncate(desc, 80)}`,
+            module:  'assets',
+          })))
         }
       }
 
@@ -2162,7 +2162,7 @@ const Assets = (() => {
         ? `Your reported issue on "${asset?.name}" has been resolved.${notes ? ' Note: ' + notes : ''}`
         : `Update on your reported issue for "${asset?.name}": ${notes || 'Status updated to In Progress.'}`
 
-      await Config.supabase.from('notifications').insert({
+      await API.createNotification({
         recipient_employee_id: repair.reported_by,
         type:    status === 'resolved' ? 'success' : 'info',
         message: notifMsg,
@@ -2172,7 +2172,7 @@ const Assets = (() => {
       // Also notify the reporter's manager
       const reporter = _employees.find(e => e.id === repair.reported_by)
       if (reporter?.manager_id && reporter.manager_id !== repair.reported_by) {
-        await Config.supabase.from('notifications').insert({
+        await API.createNotification({
           recipient_employee_id: reporter.manager_id,
           type:    'info',
           message: `FYI: Issue on "${asset?.name}" (reported by ${reporter.name}) — status updated to ${status === 'resolved' ? 'Resolved' : 'In Progress'}.`,
@@ -2249,23 +2249,23 @@ const Assets = (() => {
           if (error) throw error
 
           // Notify all HR / Super Admin
-          const { data: hrs } = await Config.supabase
-            .from('employees').select('id').in('role', ['super_admin', 'hr'])
-          if (hrs?.length) {
-            await Config.supabase.from('notifications').insert(
-              hrs.map(e => ({
-                recipient_employee_id: e.id,
-                type:    'info',
-                message: `${_user.name} has requested asset "${btn.dataset.name}". Awaiting your approval.`,
-                module:  'assets',
-                record_id: req?.id || null,
-              }))
-            )
+          const hrEmployees = _employees.filter(e =>
+            e.status === 'active' &&
+            (e.role === 'super_admin' || e.department === 'people_culture')
+          )
+          if (hrEmployees.length) {
+            await Promise.all(hrEmployees.map(e => API.createNotification({
+              recipient_employee_id: e.id,
+              type:    'info',
+              message: `${_user.name} has requested asset "${btn.dataset.name}". Awaiting your approval.`,
+              module:  'assets',
+              record_id: req?.id || null,
+            })))
           }
 
           // FYI notification to reporting manager (no action needed)
           if (_user.manager_id) {
-            await Config.supabase.from('notifications').insert({
+            await API.createNotification({
               recipient_employee_id: _user.manager_id,
               type:    'info',
               message: `FYI: ${_user.name} has requested asset "${btn.dataset.name}". HR will handle the approval.`,
