@@ -110,7 +110,7 @@ const API = (() => {
       .order('name')
   }
 
-  async function getTeamTimesheetEntries(from, to, empId = null, reporteeIds = null, excludeSelfId = null) {
+  async function getTeamTimesheetEntries(from, to, empId = null, reporteeIds = null, excludeSelfId = null, includeAllStatuses = false) {
     // reporteeIds: array of employee IDs that are direct reports of the current manager.
     // excludeSelfId: always exclude the viewer's own entries — no self-approval allowed.
     let q = supabase
@@ -118,8 +118,8 @@ const API = (() => {
       .select('*, employees!employee_id(id, name, profile_image_url, department), clients!client_id(client_name, project_code), internal_project:internal_projects(id, project_code, name), internal_entity:internal_project_entities(id, entity_name)')
       .gte('date', from)
       .lte('date', to)
-      .in('status', ['submitted', 'approved', 'rejected'])
       .order('date', { ascending: false })
+    if (!includeAllStatuses)        q = q.in('status', ['submitted', 'approved', 'rejected'])
     if (empId)                      q = q.eq('employee_id', empId)
     if (reporteeIds?.length)        q = q.in('employee_id', reporteeIds)
     if (excludeSelfId)              q = q.neq('employee_id', excludeSelfId)

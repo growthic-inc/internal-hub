@@ -12,6 +12,7 @@ const Timesheet = (() => {
   let _clients           = []
   let _internalProjects  = []   // active internal projects with their work areas
   let _directReports     = []   // employees whose manager_id === _user.id
+  let _isManager         = false
   let _weekStart         = null
   let _activeTab         = 'mine'
   let _p                 = null
@@ -44,10 +45,11 @@ const Timesheet = (() => {
 
   /* ── render ─────────────────────────────────────────────── */
   function render(user) {
-    const showTeam = App.hasAccess('timesheet', 'approve_timesheets', 'can_approve')
-    const tabs = [{ id:'mine', label:'My Timesheet' }]
-    if (showTeam) tabs.push({ id:'team', label:"Team's Timesheet" })
-    tabs.push({ id:'insights', label:'Insights' })
+    const tabs = [
+      { id: 'mine',     label: 'My Timesheet'      },
+      { id: 'team',     label: "Team's Timesheet"   },
+      { id: 'insights', label: 'Insights'            },
+    ]
 
     return `
       <div class="page-inner">
@@ -87,17 +89,22 @@ const Timesheet = (() => {
     _clients          = clients || []
     _internalProjects = (internalProjects || []).filter(p => p.status === 'active')
 
-    // Pre-load direct reports so the Team tab can scope approvals correctly
-    if (_p.can_approve) {
-      const { data: reports } = await API.getDirectReports(_user.id)
-      _directReports = reports || []
+    // Load direct reports for all users — reporting managers see the Team tab
+    // even without an explicit can_approve access level
+    const { data: reports } = await API.getDirectReports(_user.id)
+    _directReports = reports || []
+    _isManager     = _directReports.length > 0
+
+    // Hide the Team tab if the user is neither an approver nor a reporting manager
+    if (!_p.can_approve && !_isManager) {
+      document.querySelector('#ts-tabs .tab-btn[data-tab="team"]')?.remove()
     }
 
     _bindTabs()
 
     // If a valid tab was requested (e.g. "team" from home Review button) and
     // the user has the right permissions, navigate there instead of "mine"
-    if (_requestedTab === 'team' && _p.can_approve) {
+    if (_requestedTab === 'team' && (_p.can_approve || _isManager)) {
       _activeTab = 'team'
       document.querySelectorAll('#ts-tabs .tab-btn').forEach(btn => {
         btn.classList.toggle('tab-btn--active', btn.dataset.tab === 'team')
@@ -882,7 +889,7 @@ const Timesheet = (() => {
     const to   = _toISO(_weekEnd(_teamWeek))
 
     const reporteeIds = _directReports.map(e => e.id)
-    const { data, error } = await API.getTeamTimesheetEntries(from, to, _teamEmpId || null, reporteeIds.length ? reporteeIds : null, _user.id)
+    const { data, error } = await API.getTeamTimesheetEntries(from, to, _teamEmpId || null, reporteeIds.length ? reporteeIds : null, _user.id, !_p.can_approve && _isManager)
     if (error) { Utils.showToast('Failed to load team data.', 'error'); return }
     _teamEntries = data || []
 
@@ -987,15 +994,10 @@ const Timesheet = (() => {
     const submitted = _teamEntries.filter(e => e.status === 'submitted').length
     const approved  = _teamEntries.filter(e => e.status === 'approved').length
     const rejected  = _teamEntries.filter(e => e.status === 'rejected').length
+    const drafts    = _teamEntries.filter(e => e.status === 'draft').length
     const totalHrs  = _teamEntries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
 
-    mainPanel.innerHTML = `
-      <div class="grid-4 mb-4">
-        <div class="stat-card">
-          <div class="stat-label">Total Hours</div>
-          <div class="stat-value">${totalHrs.toFixed(1)}h</div>
-          <div class="stat-delta">${_teamEntries.length} entr${_teamEntries.length === 1 ? 'y' : 'ies'}</div>
-        </div>
+    const statCards = _p.can_approve ? `
         <div class="stat-card">
           <div class="stat-label">Awaiting Review</div>
           <div class="stat-value stat-value--warning">${submitted}</div>
@@ -1010,7 +1012,31 @@ const Timesheet = (() => {
           <div class="stat-label">Rejected</div>
           <div class="stat-value${rejected > 0 ? ' stat-value--negative' : ''}">${rejected}</div>
           <div class="stat-delta">sent back</div>
+        </div>` : `
+        <div class="stat-card">
+          <div class="stat-label">Drafts</div>
+          <div class="stat-value">${drafts}</div>
+          <div class="stat-delta">in progress</div>
         </div>
+        <div class="stat-card">
+          <div class="stat-label">Submitted</div>
+          <div class="stat-value stat-value--warning">${submitted}</div>
+          <div class="stat-delta">awaiting approval</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Approved</div>
+          <div class="stat-value stat-value--positive">${approved}</div>
+          <div class="stat-delta">confirmed</div>
+        </div>`
+
+    mainPanel.innerHTML = `
+      <div class="grid-4 mb-4">
+        <div class="stat-card">
+          <div class="stat-label">Total Hours</div>
+          <div class="stat-value">${totalHrs.toFixed(1)}h</div>
+          <div class="stat-delta">${_teamEntries.length} entr${_teamEntries.length === 1 ? 'y' : 'ies'}</div>
+        </div>
+        ${statCards}
       </div>
 
       ${!groups.length
@@ -1394,7 +1420,7 @@ const Timesheet = (() => {
           <td style="text-align:right;font-weight:700;white-space:nowrap;padding-top:14px;">${parseFloat(e.hours).toFixed(1)}h</td>
           <td style="padding-top:14px;">${_statusBadge(e.status)}</td>
           <td style="white-space:nowrap;padding-top:14px;">
-            ${e.status === 'submitted' && e.employee_id !== _user.id ? `
+            ${_p.can_approve && e.status === 'submitted' && e.employee_id !== _user.id ? `
               <button class="btn btn--xs btn--secondary ts-approve-entry" data-id="${e.id}" style="margin-right:4px;">Approve</button>
               <button class="btn btn--xs btn--danger ts-reject-entry"  data-id="${e.id}">Reject</button>
             ` : e.status === 'rejected' && e.rejection_comment ? `
@@ -1460,12 +1486,17 @@ const Timesheet = (() => {
     const sixMonthsAgo  = new Date(now.getFullYear(), now.getMonth() - 5, 1)
 
     // Personal data fetches
-    const [{ data: weekData }, { data: monthData }, { data: lastMonthData }, { data: sixMonthData }] = await Promise.all([
+    const personalFetches = [
       API.getTimesheetEntries(_user.id, _toISO(eightWeeksAgo), _toISO(now)),
       API.getTimesheetEntries(_user.id, _toISO(monthStart), _toISO(now)),
       API.getTimesheetEntries(_user.id, _toISO(lastMonthS), _toISO(lastMonthE)),
       API.getTimesheetEntries(_user.id, _toISO(sixMonthsAgo), _toISO(now)),
-    ])
+    ]
+    const teamFetch = (_p.can_approve || _isManager) && _directReports.length
+      ? API.getTeamTimesheetEntries(_toISO(sixMonthsAgo), _toISO(now), null, _directReports.map(e => e.id), _user.id, true)
+      : Promise.resolve({ data: [] })
+
+    const [{ data: weekData }, { data: monthData }, { data: lastMonthData }, { data: sixMonthData }, { data: teamInsightData }] = await Promise.all([...personalFetches, teamFetch])
 
     const allPersonal   = weekData     || []
     const thisMonth     = monthData    || []
@@ -1604,13 +1635,11 @@ const Timesheet = (() => {
     // ── Team section (managers) ───────────────────────────────
     let teamHtml = ''
     let teamBarData = null
-    if (_p.can_approve && _directReports.length) {
-      const reporteeIds = _directReports.map(e => e.id)
-      const { data: teamMonthData } = await API.getTeamTimesheetEntries(
-        _toISO(monthStart), _toISO(now), null,
-        reporteeIds.length ? reporteeIds : null, _user.id
-      )
-      const teamEntries = teamMonthData || []
+    if ((_p.can_approve || _isManager) && _directReports.length) {
+      const teamEntries = (teamInsightData || []).filter(e => {
+        const d = e.date
+        return d >= _toISO(monthStart) && d <= _toISO(now)
+      })
 
       const personMap = {}
       _directReports.forEach(dr => { personMap[dr.id] = { name: dr.name || 'Unknown', hours: 0, pending: 0 } })
@@ -1647,9 +1676,77 @@ const Timesheet = (() => {
       `
     }
 
+    // ── Team summary section for insights (6-month) ───────────
+    const teamInsights = (teamInsightData || [])
+    const teamTotalHrs  = teamInsights.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+    const teamSubmitted = teamInsights.filter(e => e.status === 'submitted').length
+    const teamApproved  = teamInsights.filter(e => e.status === 'approved').length
+    const teamDrafts    = teamInsights.filter(e => e.status === 'draft').length
+
+    // Per-member hours summary
+    const teamMemberMap = {}
+    teamInsights.forEach(e => {
+      const id = e.employee_id
+      if (!teamMemberMap[id]) teamMemberMap[id] = { name: e.employees?.name || 'Unknown', hours: 0, approved: 0 }
+      teamMemberMap[id].hours    += parseFloat(e.hours || 0)
+      if (e.status === 'approved') teamMemberMap[id].approved += parseFloat(e.hours || 0)
+    })
+    _directReports.forEach(dr => {
+      if (!teamMemberMap[dr.id]) teamMemberMap[dr.id] = { name: dr.name, hours: 0, approved: 0 }
+    })
+
+    const teamSummaryHtml = (_p.can_approve || _isManager) && _directReports.length ? `
+      <div class="section-card mb-4">
+        <div class="section-card-header"><h3>Team Overview (Last 6 Months)</h3></div>
+        <div class="section-card-body">
+          <div class="grid-4 mb-4">
+            <div class="stat-card">
+              <div class="stat-label">Team Members</div>
+              <div class="stat-value">${_directReports.length}</div>
+              <div class="stat-delta">direct reports</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Total Hours Logged</div>
+              <div class="stat-value">${teamTotalHrs.toFixed(1)}h</div>
+              <div class="stat-delta">across all members</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Approved Hours</div>
+              <div class="stat-value stat-value--positive">${teamApproved > 0 ? (teamInsights.filter(e=>e.status==='approved').reduce((s,e)=>s+parseFloat(e.hours||0),0)).toFixed(1)+'h' : '0h'}</div>
+              <div class="stat-delta">confirmed entries</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Pending Review</div>
+              <div class="stat-value${teamSubmitted > 0 ? ' stat-value--warning' : ''}">${teamSubmitted}</div>
+              <div class="stat-delta">awaiting approval</div>
+            </div>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border-color);">
+                <th style="text-align:left;padding:8px 0;font-weight:600;color:var(--text-muted);">Member</th>
+                <th style="text-align:right;padding:8px 0;font-weight:600;color:var(--text-muted);">Total Hours</th>
+                <th style="text-align:right;padding:8px 0;font-weight:600;color:var(--text-muted);">Approved</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${Object.values(teamMemberMap).sort((a,b) => b.hours - a.hours).map(m => `
+                <tr style="border-bottom:1px solid var(--border-color,#f0f0f0);">
+                  <td style="padding:10px 0;font-weight:500;">${Utils.escapeHtml(m.name)}</td>
+                  <td style="text-align:right;padding:10px 0;">${m.hours.toFixed(1)}h</td>
+                  <td style="text-align:right;padding:10px 0;color:var(--color-success,#22c55e);">${m.approved.toFixed(1)}h</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ` : ''
+
     if (!content) return
     content.innerHTML = `
       <div>
+        ${teamSummaryHtml}
         <div class="ts-insights-section-title">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           Personal
