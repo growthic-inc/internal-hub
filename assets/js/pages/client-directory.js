@@ -69,6 +69,25 @@ const ClientDirectory = (() => {
 
   /* ── Document helpers ───────────────────────────────────────── */
 
+  // Creates the base client folder in both Shared Drives immediately on client creation.
+  // Fire-and-forget — failure is non-fatal (upload-client-doc creates folders on demand anyway).
+  async function _createClientFolder(clientName, clientStatus) {
+    const { data: { session } } = await Config.supabase.auth.getSession()
+    if (!session) return
+    const res = await fetch(`${Config.SUPABASE_URL}/functions/v1/create-client-folder`, {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey':        Config.SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ client_name: clientName, client_status: clientStatus }),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) console.warn('[Drive] create-client-folder failed:', json.error)
+    else         console.log('[Drive] client folder created ✓', clientName)
+  }
+
   // Uploads to Google Drive via the upload-client-doc Edge Function.
   // clientName is passed directly — no DB lookup needed (works for new clients too).
   // Returns a Drive /view URL stored directly in the DB column.
@@ -1028,6 +1047,9 @@ const ClientDirectory = (() => {
         const { error } = await Config.supabase.from('clients')
           .insert({ id: clientId, ...clientData, created_by: _user.id })
         if (error) throw error
+
+        // Create Drive folders immediately — non-blocking, best-effort
+        _createClientFolder(name, status).catch(err => console.warn('[Drive] folder pre-creation error:', err))
       }
 
       /* Client-level platforms */
