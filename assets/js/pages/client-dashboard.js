@@ -484,12 +484,12 @@ const ClientDashboard = (() => {
     const prevTotalFollowers= sum(prevFollowers, 'total_new_followers')
 
     if (_isPersonalProfile) {
-      // Personal LinkedIn profile — only impressions + total engagements + followers
+      // Personal LinkedIn profile — impressions + total engagements (likes+comments+shares) + followers
       const totalImpressions = sum(metrics, 'impressions')
-      const totalEngagements = sum(metrics, 'reactions') // engagements stored as reactions
+      const totalEngagements = metrics.reduce((a, m) => a + (m.reactions || 0) + (m.comments || 0) + (m.reposts_shares || 0), 0)
       const avgEng           = metrics.length ? sum(metrics, 'engagement_rate') / metrics.length * 100 : 0
       const pImpressions     = sum(prevMetrics, 'impressions')
-      const pEngagements     = sum(prevMetrics, 'reactions')
+      const pEngagements     = prevMetrics.reduce((a, m) => a + (m.reactions || 0) + (m.comments || 0) + (m.reposts_shares || 0), 0)
       const pAvgEng          = prevMetrics.length ? sum(prevMetrics, 'engagement_rate') / prevMetrics.length * 100 : 0
       return [
         { label: 'Impressions',     rawValue: totalImpressions, value: loc(totalImpressions),    growth: growthPct(totalImpressions, pImpressions)    },
@@ -1609,29 +1609,38 @@ const ClientDashboard = (() => {
         const row  = engRows[i]
         const date = _parseDate(String(row[eI('Date')] || ''))
         if (!date) continue
-        const impressions = _num(row[eI('Impressions')])
-        const engagements = _num(row[eI('Engagements')])
-        const engRate     = impressions > 0 ? engagements / impressions : 0
+        const impressions  = _num(row[eI('Impressions')])
+        const uniqueImpr   = _num(row[eI('Unique impressions')])
+        const clicks       = _num(row[eI('Clicks')])
+        const likes        = _num(row[eI('Likes')])
+        const comments     = _num(row[eI('Comments')])
+        const shares       = _num(row[eI('Shares')])
+        // LinkedIn personal ENGAGEMENT sheet uses Likes/Comments/Shares columns, not
+        // a single "Engagements" column. Sum them; fall back to the column if it exists.
+        const engagements  = eI('Engagements') >= 0
+          ? _num(row[eI('Engagements')])
+          : likes + comments + shares
+        const engRate      = impressions > 0 ? engagements / impressions : 0
         metrics.push({
           date,
           impressions,
-          reach:                      0,
-          clicks:                     0,
-          reactions:                  engagements,   // total engagements → reactions
-          comments:                   0,
-          reposts_shares:             0,
+          reach:                      uniqueImpr,
+          clicks,
+          reactions:                  likes,
+          comments,
+          reposts_shares:             shares,
           follows:                    0,
           engagement_rate:            engRate,
           impressions_organic:        impressions,
           impressions_sponsored:      0,
-          unique_impressions_organic: 0,
-          clicks_organic:             0,
+          unique_impressions_organic: uniqueImpr,
+          clicks_organic:             clicks,
           clicks_sponsored:           0,
-          reactions_organic:          engagements,
+          reactions_organic:          likes,
           reactions_sponsored:        0,
-          comments_organic:           0,
+          comments_organic:           comments,
           comments_sponsored:         0,
-          reposts_organic:            0,
+          reposts_organic:            shares,
           reposts_sponsored:          0,
           engagement_rate_organic:    engRate,
           engagement_rate_sponsored:  0,
