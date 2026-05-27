@@ -1581,6 +1581,24 @@ const API = (() => {
   // updateClientStatus which manages the CRM health field.
   // After the DB update succeeds, fire-and-forget a Drive folder move so the
   // client's folders stay in sync with the new status category.
+  async function getCompetitorData(clientId) {
+    return supabase
+      .from('social_competitor_data')
+      .select('*')
+      .eq('client_id', clientId)
+      .order('period_start', { ascending: false })
+  }
+
+  async function saveCompetitorData(clientId, rows, uploadedBy) {
+    const { error } = await supabase
+      .from('social_competitor_data')
+      .upsert(
+        rows.map(r => ({ client_id: clientId, uploaded_by: uploadedBy, ...r })),
+        { onConflict: 'client_id,period_start,page_name' }
+      )
+    return { error }
+  }
+
   async function setClientStatus(clientId, status) {
     // Fetch current status so we know which folder to move from
     const { data: current } = await Config.supabase
@@ -1673,5 +1691,6 @@ const API = (() => {
     getPolicyCategories, addPolicyCategory, deletePolicyCategory,
     getPolicies, createPolicy, updatePolicy, deletePolicy,
     getInternalProjects, createInternalProject, updateInternalProject, setInternalProjectStatus, updateClientProjectDetails, setClientStatus,
+    getCompetitorData, saveCompetitorData,
   }
 })()
