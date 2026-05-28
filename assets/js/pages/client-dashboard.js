@@ -42,10 +42,9 @@ const ClientDashboard = (() => {
   let _user = null, _p = null, _clients = [], _currentClient = null, _currentEntity = null
   let _currentPlatform = 'LinkedIn', _currentRange = '30', _currentMonth = _thisMonth()
   let _customDateFrom = '', _customDateTo = ''
-  let _trendChart = null, _pubChart = null, _followersChart = null, _visitorsChart = null, _competitorChart = null
+  let _trendChart = null, _pubChart = null, _followersChart = null, _visitorsChart = null
   let _activeMetrics = ['impressions', 'clicks']
   let _isPersonalProfile = false
-  let _competitorPeriod = null
   let _tcSort = { col: 'impressions', dir: 'desc' }, _tcPosts = []
 
   /* ── render ─────────────────────────────────────────────── */
@@ -124,7 +123,7 @@ const ClientDashboard = (() => {
       can_create: App.hasAccess('client_dashboard', 'upload_performance_data', 'can_upload'),
       can_edit:   App.hasAccess('client_dashboard', 'update_client_status',    'can_edit'),
     }
-    _trendChart = null; _pubChart = null; _followersChart = null; _visitorsChart = null; _competitorChart = null; _currentClient = null
+    _trendChart = null; _pubChart = null; _followersChart = null; _visitorsChart = null; _currentClient = null
     _activeMetrics = _getDefaultActiveMetrics()
     const { data } = await API.getClients()
     _clients = data || []
@@ -227,7 +226,7 @@ const ClientDashboard = (() => {
     const { dateFrom, dateTo } = _getDateRange()
     const { dateFrom: prevFrom, dateTo: prevTo } = _getPrevDateRange()
     const eid = _currentEntity || null
-    const [metricsRes, postsRes, reportsRes, uploadLogRes, followersRes, visitorsRes, demographicsFollowersRes, demographicsVisitorsRes, prevMetricsRes, prevPostsRes, prevFollowersRes, competitorRes] = await Promise.all([
+    const [metricsRes, postsRes, reportsRes, uploadLogRes, followersRes, visitorsRes, demographicsFollowersRes, demographicsVisitorsRes, prevMetricsRes, prevPostsRes, prevFollowersRes] = await Promise.all([
       API.getSocialMetrics(_currentClient.id, _currentPlatform, dateFrom, dateTo, eid),
       API.getSocialPosts(_currentClient.id, _currentPlatform, dateFrom, dateTo, eid),
       API.getMasterFolderFiles(_currentClient.id, _currentMonth, 'reports'),
@@ -239,14 +238,12 @@ const ClientDashboard = (() => {
       API.getSocialMetrics(_currentClient.id, _currentPlatform, prevFrom, prevTo, eid),
       API.getSocialPosts(_currentClient.id, _currentPlatform, prevFrom, prevTo, eid),
       API.getSocialFollowers(_currentClient.id, _currentPlatform, prevFrom, prevTo, eid),
-      API.getCompetitorData(_currentClient.id),
     ])
     const metrics = metricsRes.data || [], posts = postsRes.data || []
     const reports = reportsRes.data || [], uploadLog = uploadLogRes.data || []
     const followers = followersRes.data || [], visitors = visitorsRes.data || []
     const demoFollowers = demographicsFollowersRes.data || [], demoVisitors = demographicsVisitorsRes.data || []
     const prevMetrics = prevMetricsRes.data || [], prevPosts = prevPostsRes.data || [], prevFollowers = prevFollowersRes.data || []
-    const competitorRows = competitorRes.data || []
 
     // Detect personal profile: either via entity profile_type (when entity exists)
     // or from the upload log containing a 'personal_analytics' entry (entity-less clients)
@@ -262,7 +259,6 @@ const ClientDashboard = (() => {
     if (_pubChart)        { _pubChart.destroy();        _pubChart = null }
     if (_followersChart)  { _followersChart.destroy();  _followersChart = null }
     if (_visitorsChart)   { _visitorsChart.destroy();   _visitorsChart = null }
-    if (_competitorChart) { _competitorChart.destroy(); _competitorChart = null }
 
     const kpis = _computeKPIs(metrics, posts, followers, prevMetrics, prevPosts, prevFollowers)
     const mCfg = _getMetricConfig(), mKeys = _getMetricKeys()
@@ -341,32 +337,7 @@ const ClientDashboard = (() => {
       ${_renderAudienceSection(followers, visitors, demoFollowers, demoVisitors)}
     `
 
-    const tabBar = `
-      <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:20px;">
-        <button class="db-view-tab db-view-tab--active" data-view="analytics" style="padding:10px 20px;font-size:13px;font-weight:600;border:none;background:transparent;cursor:pointer;border-bottom:2px solid #0F4799;margin-bottom:-2px;color:#0F4799;">Analytics</button>
-        <button class="db-view-tab" data-view="competitors" style="padding:10px 20px;font-size:13px;font-weight:600;border:none;background:transparent;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--text-muted);">Competitor Analytics</button>
-      </div>
-    `
-
-    body.innerHTML = tabBar + `<div id="db-analytics-pane">${analyticsHtml}</div><div id="db-competitor-pane" style="display:none"></div>`
-    document.getElementById('db-competitor-pane').innerHTML = _renderCompetitorView(competitorRows, _currentClient.client_name)
-
-    document.querySelectorAll('.db-view-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.db-view-tab').forEach(t => {
-          t.style.borderBottomColor = 'transparent'; t.style.color = 'var(--text-muted)'
-          t.classList.remove('db-view-tab--active')
-        })
-        tab.style.borderBottomColor = '#0F4799'; tab.style.color = '#0F4799'
-        tab.classList.add('db-view-tab--active')
-        const view = tab.dataset.view
-        document.getElementById('db-analytics-pane').style.display = view === 'analytics' ? '' : 'none'
-        document.getElementById('db-competitor-pane').style.display = view === 'competitors' ? '' : 'none'
-        if (view === 'competitors' && competitorRows.length) {
-          _initCompetitorChart(competitorRows, _competitorPeriod, _currentClient.client_name)
-        }
-      })
-    })
+    body.innerHTML = analyticsHtml
 
     _initTrendChart(metrics); _initPubChart(posts)
     _initFollowersChart(followers); _initVisitorsChart(visitors)
@@ -740,145 +711,6 @@ const ClientDashboard = (() => {
     }
 
     return `<div class="section-card mb-4"><div class="section-card-header"><h3>Audience</h3></div><div class="section-card-body">${chartsHtml}${demosHtml}</div></div>`
-  }
-
-  /* ── Competitor Analytics view ──────────────────────────── */
-  function _renderCompetitorView(rows, clientName) {
-    if (!rows.length) {
-      return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center;">
-        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--border)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:16px;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-        <h3 style="margin:0 0 8px;font-size:16px;font-weight:600;color:var(--text);">No competitor data yet</h3>
-        <p style="margin:0 0 20px;font-size:14px;color:var(--text-muted);max-width:380px;">Upload a LinkedIn Competitor Analytics export to benchmark against competitors.</p>
-        ${_p.can_create ? `<button class="btn btn--primary btn--sm" onclick="document.getElementById('db-upload-btn')?.click()">Upload Competitor Data</button>` : ''}
-      </div>`
-    }
-
-    // Get all unique periods, sorted descending
-    const periods = [...new Set(rows.map(r => r.period_start))].sort((a, b) => b.localeCompare(a))
-    if (!_competitorPeriod || !periods.includes(_competitorPeriod)) _competitorPeriod = periods[0]
-
-    const periodOptions = periods.map(p => {
-      const d = new Date(p + 'T00:00:00')
-      const label = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-      return `<option value="${p}"${p === _competitorPeriod ? ' selected' : ''}>${label}</option>`
-    }).join('')
-
-    const periodRows = rows.filter(r => r.period_start === _competitorPeriod)
-      .sort((a, b) => b.total_followers - a.total_followers)
-
-    const metrics = [
-      { key: 'total_followers',   label: 'Total Followers' },
-      { key: 'new_followers',     label: 'New Followers' },
-      { key: 'total_engagements', label: 'Engagements' },
-      { key: 'total_posts',       label: 'Posts' },
-    ]
-
-    const tableRows = periodRows.map((r, i) => {
-      const isClient = r.page_name.toLowerCase().includes((clientName || '').toLowerCase().substring(0, 8))
-      return `<tr style="${isClient ? 'background:rgba(15,71,153,0.06);font-weight:600;' : ''}">
-        <td style="padding:10px 12px;">${i + 1}</td>
-        <td style="padding:10px 12px;">${Utils.escapeHtml(r.page_name)}${isClient ? ' <span style="font-size:11px;color:#0F4799;background:rgba(15,71,153,0.1);padding:2px 6px;border-radius:99px;font-weight:500;">Your Page</span>' : ''}</td>
-        <td style="padding:10px 12px;text-align:right;">${r.total_followers.toLocaleString()}</td>
-        <td style="padding:10px 12px;text-align:right;color:${r.new_followers >= 0 ? '#1D9E75' : '#EF4444'};">${r.new_followers >= 0 ? '+' : ''}${r.new_followers.toLocaleString()}</td>
-        <td style="padding:10px 12px;text-align:right;">${r.total_engagements.toLocaleString()}</td>
-        <td style="padding:10px 12px;text-align:right;">${r.total_posts.toLocaleString()}</td>
-      </tr>`
-    }).join('')
-
-    const metricPills = metrics.map((m, i) =>
-      `<button class="comp-metric-pill${i === 0 ? ' active' : ''}" data-metric="${m.key}" style="padding:6px 14px;font-size:12px;font-weight:500;border:1px solid ${i === 0 ? '#0F4799' : 'var(--border)'};background:${i === 0 ? '#0F4799' : 'transparent'};color:${i === 0 ? '#fff' : 'var(--text-muted)'};border-radius:99px;cursor:pointer;">${m.label}</button>`
-    ).join('')
-
-    return `
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
-        <div>
-          <h3 style="margin:0 0 2px;font-size:15px;font-weight:700;color:var(--text);">Competitor Benchmarking</h3>
-          <p style="margin:0;font-size:13px;color:var(--text-muted);">LinkedIn Company Pages — ${periodRows.length} pages tracked</p>
-        </div>
-        ${periods.length > 1 ? `<select id="comp-period-select" class="db-filter-select" style="height:34px;font-size:13px;">${periodOptions}</select>` : `<div style="font-size:13px;color:var(--text-muted);">${(() => { const d = new Date(_competitorPeriod + 'T00:00:00'); return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) })()}</div>`}
-      </div>
-
-      <div class="chart-card mb-4">
-        <div class="chart-card-header">
-          <span class="chart-card-title">Competitor Comparison</span>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;" id="comp-metric-pills">${metricPills}</div>
-        </div>
-        <div class="chart-canvas-wrap" style="height:${Math.max(200, periodRows.length * 42)}px;"><canvas id="competitor-chart"></canvas></div>
-      </div>
-
-      <div class="section-card mb-4">
-        <div class="section-card-header"><h3>Full Comparison Table</h3></div>
-        <div class="section-card-body" style="padding:0;overflow-x:auto;">
-          <table class="data-table" style="min-width:600px;">
-            <thead><tr>
-              <th style="padding:10px 12px;text-align:left;width:32px;">#</th>
-              <th style="padding:10px 12px;text-align:left;">Page</th>
-              <th style="padding:10px 12px;text-align:right;">Followers</th>
-              <th style="padding:10px 12px;text-align:right;">New Followers</th>
-              <th style="padding:10px 12px;text-align:right;">Engagements</th>
-              <th style="padding:10px 12px;text-align:right;">Posts</th>
-            </tr></thead>
-            <tbody>${tableRows}</tbody>
-          </table>
-        </div>
-      </div>
-    `
-  }
-
-  function _initCompetitorChart(allRows, period, clientName) {
-    if (_competitorChart) { _competitorChart.destroy(); _competitorChart = null }
-    const canvas = document.getElementById('competitor-chart')
-    if (!canvas || typeof Chart === 'undefined') return
-
-    const activePill = document.querySelector('.comp-metric-pill.active')
-    const metric = activePill?.dataset.metric || 'total_followers'
-
-    const rows = allRows.filter(r => r.period_start === (period || allRows[0]?.period_start))
-      .sort((a, b) => b[metric] - a[metric])
-
-    const labels = rows.map(r => r.page_name)
-    const values = rows.map(r => r[metric] || 0)
-    const colors = rows.map(r =>
-      r.page_name.toLowerCase().includes((clientName || '').toLowerCase().substring(0, 8))
-        ? '#0F4799' : '#94A3B8'
-    )
-
-    _competitorChart = new Chart(canvas, {
-      type: 'bar',
-      data: { labels, datasets: [{ data: values, backgroundColor: colors, borderRadius: 4, borderSkipped: false }] },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.x.toLocaleString()}` } },
-        },
-        scales: {
-          x: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 11 }, color: '#94A3B8' }, beginAtZero: true },
-          y: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#94A3B8' } },
-        },
-      },
-    })
-
-    // Bind metric pills
-    document.querySelectorAll('.comp-metric-pill').forEach(pill => {
-      pill.addEventListener('click', () => {
-        document.querySelectorAll('.comp-metric-pill').forEach(p => {
-          p.classList.remove('active')
-          p.style.background = 'transparent'; p.style.color = 'var(--text-muted)'; p.style.borderColor = 'var(--border)'
-        })
-        pill.classList.add('active')
-        pill.style.background = '#0F4799'; pill.style.color = '#fff'; pill.style.borderColor = '#0F4799'
-        _initCompetitorChart(allRows, _competitorPeriod, clientName)
-      })
-    })
-
-    // Bind period select
-    document.getElementById('comp-period-select')?.addEventListener('change', e => {
-      _competitorPeriod = e.target.value
-      _initCompetitorChart(allRows, _competitorPeriod, clientName)
-    })
   }
 
   function _bindDemoTabs() {
@@ -1280,7 +1112,16 @@ const ClientDashboard = (() => {
       const btn = document.getElementById('up-submit-btn'); if (btn) btn.disabled = false
     }
     function _previewAlert(summary, dFrom, dTo) {
-      return `<div class="alert alert-info" style="margin-bottom:0;"><strong>Ready to upload.</strong> ${summary}<br>Date range: <strong>${Utils.escapeHtml(dFrom)}</strong> to <strong>${Utils.escapeHtml(dTo)}</strong>.<br><span style="color:var(--warning,#B45309);font-size:12px;">This will overwrite existing data in this date range for the selected client.</span></div>`
+      const selectedClientId = document.getElementById('up-client')?.value
+      const selectedClient   = _clients.find(cl => cl.id === selectedClientId)
+      const clientLabel      = selectedClient ? Utils.escapeHtml(selectedClient.client_name) : '—'
+      return `<div class="alert alert-info" style="margin-bottom:0;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted,#6B7280);">Uploading for</span>
+          <span style="font-size:15px;font-weight:700;color:var(--primary,#2563EB);">${clientLabel}</span>
+        </div>
+        <strong>Ready to upload.</strong> ${summary}<br>Date range: <strong>${Utils.escapeHtml(dFrom)}</strong> to <strong>${Utils.escapeHtml(dTo)}</strong>.<br><span style="color:var(--warning,#B45309);font-size:12px;">This will overwrite existing data in this date range for the selected client.</span>
+      </div>`
     }
 
     function _detectLinkedInFileType(wb) {
@@ -1290,7 +1131,6 @@ const ClientDashboard = (() => {
       if (sheets.includes('visitor metrics')) return 'visitors'
       // LinkedIn personal profile AggregateAnalytics export (all sheets UPPERCASED)
       if (sheets.includes('engagement') && sheets.includes('top posts')) return 'personal_analytics'
-      if (sheets.includes('competitors')) return 'competitors'
       return null
     }
 
@@ -1327,7 +1167,6 @@ const ClientDashboard = (() => {
           else if (fileType === 'followers')     _parseFollowersFile(wb)
           else if (fileType === 'visitors')      _parseVisitorsFile(wb)
           else if (fileType === 'personal_analytics') _parsePersonalAnalyticsFile(wb)
-          else if (fileType === 'competitors')   _parseCompetitorFile(wb)
         }
       } catch (err) { console.error('[ClientDashboard] parse error', err); _showError('Failed to parse file: ' + (err.message || 'Unknown error.')) }
     }
@@ -1760,52 +1599,6 @@ const ClientDashboard = (() => {
       ))
     }
 
-    function _parseCompetitorFile(wb) {
-      const sheet = wb.Sheets[wb.SheetNames.find(n => n.toLowerCase().trim() === 'competitors')]
-      if (!sheet) { _showError('Could not find COMPETITORS sheet.'); return }
-
-      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
-      if (rows.length < 3) { _showError('Competitor file appears to be empty.'); return }
-
-      // Row 0: date range header (e.g. "1/1/2026" ... "1/31/2026" as serial or string)
-      // Row 1: column headers (Page, Total Followers, New Followers, Total post engagements, Total posts)
-      // Row 2+: data
-      let periodStart = null, periodEnd = null
-      const headerCells = (rows[0] || []).filter(c => c !== '')
-      const dates = headerCells.map(c => _parseDate(String(c))).filter(Boolean).sort()
-      if (dates.length >= 2) { periodStart = dates[0]; periodEnd = dates[dates.length - 1] }
-      else if (dates.length === 1) { periodStart = dates[0]; periodEnd = dates[0] }
-      else {
-        // Fallback: use first day of current month
-        const n = new Date(); periodStart = `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`
-        periodEnd = periodStart
-      }
-
-      const competitors = []
-      for (let i = 2; i < rows.length; i++) {
-        const row = rows[i]
-        const pageName = String(row[0] || '').trim()
-        if (!pageName) continue
-        competitors.push({
-          page_name:          pageName,
-          total_followers:    _num(row[1]),
-          new_followers:      _num(row[2]),
-          total_engagements:  _num(row[3]),
-          total_posts:        _num(row[4]),
-          period_start:       periodStart,
-          period_end:         periodEnd,
-        })
-      }
-
-      if (!competitors.length) { _showError('No competitor rows found in the file.'); return }
-
-      _parsedPayload = { data_type: 'competitors', period_start: periodStart, period_end: periodEnd, competitors }
-      _showPreview(_previewAlert(
-        `Found <strong>${competitors.length}</strong> competitor pages.`,
-        periodStart || '—', periodEnd || '—'
-      ))
-    }
-
     async function _doUpload(payload) {
       const platform = document.getElementById('up-platform')?.value
       const clientId = document.getElementById('up-client')?.value
@@ -1840,18 +1633,6 @@ const ClientDashboard = (() => {
           Utils.closeModal(); Utils.showToast('Data uploaded successfully.', 'success'); _loadDashboard()
         } catch (err) {
           console.error('[ClientDashboard] upload error', err)
-          if (btn) { btn.disabled = false; btn.textContent = 'Upload and Process' }
-          _showError('Upload failed: ' + (err.message || 'Unknown error.'))
-        }
-        return
-      }
-
-      if (payload.data_type === 'competitors') {
-        try {
-          const { error } = await API.saveCompetitorData(payload.client_id, payload.competitors, _user?.id)
-          if (error) { if (btn) { btn.disabled = false; btn.textContent = 'Upload and Process' }; _showError(error.message || 'Failed to save competitor data.'); return }
-          Utils.closeModal(); Utils.showToast('Competitor data uploaded successfully.', 'success'); _loadDashboard()
-        } catch (err) {
           if (btn) { btn.disabled = false; btn.textContent = 'Upload and Process' }
           _showError('Upload failed: ' + (err.message || 'Unknown error.'))
         }

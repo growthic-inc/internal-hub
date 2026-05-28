@@ -62,6 +62,42 @@ const API = (() => {
       .eq('id', entityId)
   }
 
+  /* ── Client Team Members ──────────────────────────────────── */
+  async function getClientTeam(clientId) {
+    return supabase
+      .from('client_team_members')
+      .select('id, employee_id, employees!employee_id(id, name, profile_image_url, designation)')
+      .eq('client_id', clientId)
+      .order('created_at')
+  }
+
+  async function setClientTeam(clientId, employeeIds, addedBy) {
+    await supabase.from('client_team_members').delete().eq('client_id', clientId)
+    if (!employeeIds.length) return { error: null }
+    return supabase.from('client_team_members').insert(
+      employeeIds.map(eid => ({ client_id: clientId, employee_id: eid, added_by: addedBy }))
+    )
+  }
+
+  /* ── Client Brand Books ───────────────────────────────────── */
+  async function getBrandBooks(clientId) {
+    return supabase
+      .from('client_brand_books')
+      .select('id, name, drive_url, file_name, created_at, employees!uploaded_by(name)')
+      .eq('client_id', clientId)
+      .order('created_at')
+  }
+
+  async function saveBrandBook(clientId, name, driveUrl, fileName, uploadedBy) {
+    return supabase.from('client_brand_books').insert({
+      client_id: clientId, name, drive_url: driveUrl, file_name: fileName, uploaded_by: uploadedBy,
+    }).select().single()
+  }
+
+  async function deleteBrandBook(id) {
+    return supabase.from('client_brand_books').delete().eq('id', id)
+  }
+
   /* ── Employees ────────────────────────────────────────────── */
   async function getEmployees(activeOnly = true) {
     let query = supabase
@@ -1581,24 +1617,6 @@ const API = (() => {
   // updateClientStatus which manages the CRM health field.
   // After the DB update succeeds, fire-and-forget a Drive folder move so the
   // client's folders stay in sync with the new status category.
-  async function getCompetitorData(clientId) {
-    return supabase
-      .from('social_competitor_data')
-      .select('*')
-      .eq('client_id', clientId)
-      .order('period_start', { ascending: false })
-  }
-
-  async function saveCompetitorData(clientId, rows, uploadedBy) {
-    const { error } = await supabase
-      .from('social_competitor_data')
-      .upsert(
-        rows.map(r => ({ client_id: clientId, uploaded_by: uploadedBy, ...r })),
-        { onConflict: 'client_id,period_start,page_name' }
-      )
-    return { error }
-  }
-
   async function setClientStatus(clientId, status) {
     // Fetch current status so we know which folder to move from
     const { data: current } = await Config.supabase
@@ -1636,6 +1654,8 @@ const API = (() => {
 
   return {
     getClients, getClient, getClientByProjectCode, updateEntityProfileType,
+    getClientTeam, setClientTeam,
+    getBrandBooks, saveBrandBook, deleteBrandBook,
     getEmployees, getEmployee, getTeamLeads, getAllEmployees,
     getTimesheetEntries, getTeamTimesheetEntries, getDirectReports, upsertTimesheetEntry,
     insertMasterFolderFile, softDeleteMasterFolderFile,
@@ -1691,6 +1711,5 @@ const API = (() => {
     getPolicyCategories, addPolicyCategory, deletePolicyCategory,
     getPolicies, createPolicy, updatePolicy, deletePolicy,
     getInternalProjects, createInternalProject, updateInternalProject, setInternalProjectStatus, updateClientProjectDetails, setClientStatus,
-    getCompetitorData, saveCompetitorData,
   }
 })()
