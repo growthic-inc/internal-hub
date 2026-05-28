@@ -648,8 +648,11 @@ const App = (() => {
     const _kycFiles = { aadhar: null, pan: null }
     const _d = {
       dob: '', personal_email: '', phone: '', blood_group: '',
-      address: '', linkedin_url: '',
-      bank_account_number: '', bank_ifsc: '',
+      current_address_line1: '', current_address_city: '', current_address_state: '', current_address_pincode: '',
+      permanent_address_line1: '', permanent_address_city: '', permanent_address_state: '', permanent_address_pincode: '',
+      permanent_same_as_current: false,
+      linkedin_url: '',
+      bank_account_number: '', bank_ifsc: '', bank_confirmed: false,
       ec_name: '', ec_phone: '', ec_relationship: '',
       is_pep: null, pep_note: '', declaration: false,
     }
@@ -657,7 +660,7 @@ const App = (() => {
     const STEP_META = [
       { n: 1, title: 'Profile Photo',     sub: 'Your photo appears across the platform — org chart, requests, and more.',   tip: 'A real photo helps teammates recognise you in meetings, on the org chart, and in announcements.' },
       { n: 2, title: 'Personal Details',  sub: 'A few basics we keep on file for your records.',                            tip: 'This information is only accessible to HR and is never shared externally.' },
-      { n: 3, title: 'Address & Socials', sub: 'Your home address and professional links.',                                 tip: 'Your LinkedIn profile helps with client introductions and builds your professional presence.' },
+      { n: 3, title: 'Address & Socials', sub: 'Your current and permanent address, and professional links.',              tip: 'Your LinkedIn profile helps with client introductions and builds your professional presence.' },
       { n: 4, title: 'Bank Details',      sub: 'Required for payroll — stored securely.',                                   tip: '🔒 Bank details are encrypted and only accessible to the Finance team for payroll processing.' },
       { n: 5, title: 'Emergency Contact', sub: 'Someone we can reach in case of an emergency.',                             tip: 'Only used in genuine emergencies. Never shared outside the company.' },
       { n: 6, title: 'KYC Documents',     sub: 'Identity documents for your employee records.',                             tip: 'Files are stored in a secure, access-controlled Google Drive folder visible only to HR.' },
@@ -676,12 +679,28 @@ const App = (() => {
         _d.blood_group    = document.getElementById('pw-blood-group')?.value || ''
       }
       if (_step === 3) {
-        _d.address      = document.getElementById('pw-address')?.value.trim() || ''
+        _d.current_address_line1     = document.getElementById('pw-curr-line1')?.value.trim()   || ''
+        _d.current_address_city      = document.getElementById('pw-curr-city')?.value.trim()    || ''
+        _d.current_address_state     = document.getElementById('pw-curr-state')?.value.trim()   || ''
+        _d.current_address_pincode   = document.getElementById('pw-curr-pincode')?.value.trim() || ''
+        _d.permanent_same_as_current = document.getElementById('pw-perm-same')?.checked         || false
+        if (_d.permanent_same_as_current) {
+          _d.permanent_address_line1   = _d.current_address_line1
+          _d.permanent_address_city    = _d.current_address_city
+          _d.permanent_address_state   = _d.current_address_state
+          _d.permanent_address_pincode = _d.current_address_pincode
+        } else {
+          _d.permanent_address_line1   = document.getElementById('pw-perm-line1')?.value.trim()   || ''
+          _d.permanent_address_city    = document.getElementById('pw-perm-city')?.value.trim()    || ''
+          _d.permanent_address_state   = document.getElementById('pw-perm-state')?.value.trim()   || ''
+          _d.permanent_address_pincode = document.getElementById('pw-perm-pincode')?.value.trim() || ''
+        }
         _d.linkedin_url = document.getElementById('pw-linkedin')?.value.trim() || ''
       }
       if (_step === 4) {
         _d.bank_account_number = document.getElementById('pw-bank-account')?.value.trim() || ''
-        _d.bank_ifsc           = document.getElementById('pw-bank-ifsc')?.value.trim() || ''
+        _d.bank_ifsc           = document.getElementById('pw-bank-ifsc')?.value.trim()    || ''
+        _d.bank_confirmed      = document.getElementById('pw-bank-confirm')?.checked      || false
       }
       if (_step === 5) {
         _d.ec_name         = document.getElementById('pw-ec-name')?.value.trim() || ''
@@ -709,7 +728,7 @@ const App = (() => {
       let pts = 0
       if (_avatarFile || user.profile_image_url)           pts += 20
       if (_d.dob || _d.phone || _d.personal_email)        pts += 15
-      if (_d.address)                                      pts += 5
+      if (_d.current_address_line1)                        pts += 5
       if (_d.linkedin_url)                                 pts += 5
       if (_d.bank_account_number || _d.bank_ifsc)         pts += 15
       if (_d.ec_name && _d.ec_phone)                      pts += 15
@@ -881,12 +900,61 @@ const App = (() => {
       }
 
       if (_step === 3) {
+        const _permDis = _d.permanent_same_as_current
         html += `
-          <div class="form-group">
-            <label class="form-label">Residential Address <span class="required">*</span></label>
-            <textarea id="pw-address" class="form-input" rows="3" placeholder="House no., Street, City, State, PIN">${Utils.escapeHtml(_d.address)}</textarea>
+          <div style="margin-bottom:22px;">
+            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:12px;">Current Address</div>
+            <div class="form-group" style="margin-bottom:10px;">
+              <label class="form-label">House / Flat No. &amp; Street <span class="required">*</span></label>
+              <input type="text" id="pw-curr-line1" class="form-input" placeholder="e.g. Flat 4B, 12 MG Road" value="${Utils.escapeHtml(_d.current_address_line1)}">
+            </div>
+            <div class="people-field-grid">
+              <div class="form-group">
+                <label class="form-label">City <span class="required">*</span></label>
+                <input type="text" id="pw-curr-city" class="form-input" placeholder="City" value="${Utils.escapeHtml(_d.current_address_city)}">
+              </div>
+              <div class="form-group">
+                <label class="form-label">State <span class="required">*</span></label>
+                <input type="text" id="pw-curr-state" class="form-input" placeholder="State" value="${Utils.escapeHtml(_d.current_address_state)}">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Pincode <span class="required">*</span></label>
+                <input type="text" id="pw-curr-pincode" class="form-input" placeholder="Pincode" value="${Utils.escapeHtml(_d.current_address_pincode)}" maxlength="6">
+              </div>
+            </div>
           </div>
-          <div class="form-group" style="margin-top:14px;">
+
+          <div style="border-top:1px solid var(--border);padding-top:18px;margin-bottom:16px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+              <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);">Permanent Address</div>
+              <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;font-weight:500;color:var(--primary);">
+                <input type="checkbox" id="pw-perm-same" ${_permDis ? 'checked' : ''} style="width:15px;height:15px;accent-color:var(--primary);cursor:pointer;">
+                Same as Current Address
+              </label>
+            </div>
+            <div id="pw-perm-fields" style="${_permDis ? 'opacity:0.45;pointer-events:none;' : ''}">
+              <div class="form-group" style="margin-bottom:10px;">
+                <label class="form-label">House / Flat No. &amp; Street <span class="required">*</span></label>
+                <input type="text" id="pw-perm-line1" class="form-input" placeholder="e.g. Flat 4B, 12 MG Road" value="${Utils.escapeHtml(_d.permanent_address_line1)}"${_permDis ? ' disabled' : ''}>
+              </div>
+              <div class="people-field-grid">
+                <div class="form-group">
+                  <label class="form-label">City <span class="required">*</span></label>
+                  <input type="text" id="pw-perm-city" class="form-input" placeholder="City" value="${Utils.escapeHtml(_d.permanent_address_city)}"${_permDis ? ' disabled' : ''}>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">State <span class="required">*</span></label>
+                  <input type="text" id="pw-perm-state" class="form-input" placeholder="State" value="${Utils.escapeHtml(_d.permanent_address_state)}"${_permDis ? ' disabled' : ''}>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Pincode <span class="required">*</span></label>
+                  <input type="text" id="pw-perm-pincode" class="form-input" placeholder="Pincode" value="${Utils.escapeHtml(_d.permanent_address_pincode)}"${_permDis ? ' disabled' : ''} maxlength="6">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
             <label class="form-label">LinkedIn URL</label>
             <input type="url" id="pw-linkedin" class="form-input" placeholder="https://linkedin.com/in/yourprofile" value="${Utils.escapeHtml(_d.linkedin_url)}">
           </div>`
@@ -903,7 +971,11 @@ const App = (() => {
               <label class="form-label">IFSC Code <span class="required">*</span></label>
               <input type="text" id="pw-bank-ifsc" class="form-input" placeholder="e.g. HDFC0001234" value="${Utils.escapeHtml(_d.bank_ifsc)}">
             </div>
-          </div>`
+          </div>
+          <label class="pw-declaration" style="margin-top:20px;">
+            <input type="checkbox" id="pw-bank-confirm" ${_d.bank_confirmed ? 'checked' : ''}>
+            <span>I hereby confirm that all the information and details provided by me are accurate and complete to the best of my knowledge.</span>
+          </label>`
       }
 
       if (_step === 5) {
@@ -971,7 +1043,7 @@ const App = (() => {
               </div>` : ''}
             <label class="pw-declaration">
               <input type="checkbox" id="pw-declaration" ${_d.declaration ? 'checked' : ''}>
-              <span>I confirm that all information provided during this onboarding is accurate and complete to the best of my knowledge.</span>
+              <span>I confirm that all the information provided by me is accurate and authentic to the best of my knowledge.</span>
             </label>
           </div>`
       }
@@ -1002,6 +1074,33 @@ const App = (() => {
           reader.readAsDataURL(f)
           _renderPreview()
         })
+      }
+
+      // Address "Same as Current" binding
+      if (_step === 3) {
+        const sameBox = document.getElementById('pw-perm-same')
+        if (sameBox) {
+          sameBox.addEventListener('change', () => {
+            const checked    = sameBox.checked
+            const permFields = document.getElementById('pw-perm-fields')
+            if (permFields) {
+              permFields.style.opacity       = checked ? '0.45' : '1'
+              permFields.style.pointerEvents = checked ? 'none'  : ''
+              permFields.querySelectorAll('input').forEach(inp => { inp.disabled = checked })
+            }
+            if (checked) {
+              const g   = id => document.getElementById(id)?.value || ''
+              const s   = (id, v) => { const el = document.getElementById(id); if (el) el.value = v }
+              s('pw-perm-line1',   g('pw-curr-line1'))
+              s('pw-perm-city',    g('pw-curr-city'))
+              s('pw-perm-state',   g('pw-curr-state'))
+              s('pw-perm-pincode', g('pw-curr-pincode'))
+            }
+            _capture()
+            const nextBtn = document.getElementById('pw-next')
+            if (nextBtn) nextBtn.disabled = !_isStepComplete()
+          })
+        }
       }
 
       // KYC bindings
@@ -1059,7 +1158,7 @@ const App = (() => {
           ${_d.phone         ? `<div class="pw-prev-field"><span>📞</span><span>${Utils.escapeHtml(_d.phone)}</span></div>` : ''}
           ${_d.personal_email? `<div class="pw-prev-field"><span>✉️</span><span>${Utils.escapeHtml(_d.personal_email)}</span></div>` : ''}
           ${_d.linkedin_url  ? `<div class="pw-prev-field"><span>🔗</span><span>LinkedIn</span></div>` : ''}
-          ${_d.address       ? `<div class="pw-prev-field"><span>📍</span><span>${Utils.escapeHtml(_d.address.split('\n')[0])}</span></div>` : ''}
+          ${_d.current_address_line1 ? `<div class="pw-prev-field"><span>📍</span><span>${Utils.escapeHtml(_d.current_address_line1)}</span></div>` : ''}
         </div>
         <div class="pw-prev-pct">
           <div class="pw-prev-pct-row"><span>Completeness</span><strong style="color:${pctColor};">${pct}%</strong></div>
@@ -1081,11 +1180,25 @@ const App = (() => {
         const blood = document.getElementById('pw-blood-group')?.value
         return !!(day && month && year && email && phone && blood)
       }
-      if (_step === 3) return !!(document.getElementById('pw-address')?.value.trim())
+      if (_step === 3) {
+        const line1     = document.getElementById('pw-curr-line1')?.value.trim()
+        const city      = document.getElementById('pw-curr-city')?.value.trim()
+        const state     = document.getElementById('pw-curr-state')?.value.trim()
+        const pincode   = document.getElementById('pw-curr-pincode')?.value.trim()
+        const same      = document.getElementById('pw-perm-same')?.checked
+        const permLine1   = document.getElementById('pw-perm-line1')?.value.trim()
+        const permCity    = document.getElementById('pw-perm-city')?.value.trim()
+        const permState   = document.getElementById('pw-perm-state')?.value.trim()
+        const permPincode = document.getElementById('pw-perm-pincode')?.value.trim()
+        const currOk = !!(line1 && city && state && pincode)
+        const permOk = same || !!(permLine1 && permCity && permState && permPincode)
+        return currOk && permOk
+      }
       if (_step === 4) {
-        const acc  = document.getElementById('pw-bank-account')?.value.trim()
-        const ifsc = document.getElementById('pw-bank-ifsc')?.value.trim()
-        return !!(acc && ifsc)
+        const acc       = document.getElementById('pw-bank-account')?.value.trim()
+        const ifsc      = document.getElementById('pw-bank-ifsc')?.value.trim()
+        const confirmed = document.getElementById('pw-bank-confirm')?.checked
+        return !!(acc && ifsc && confirmed)
       }
       if (_step === 5) {
         const name = document.getElementById('pw-ec-name')?.value.trim()
@@ -1173,7 +1286,8 @@ const App = (() => {
           personal_email:                 _d.personal_email      || null,
           phone:                          _d.phone               || null,
           blood_group:                    _d.blood_group         || null,
-          address:                        _d.address             || null,
+          address:           [_d.current_address_line1, _d.current_address_city, _d.current_address_state, _d.current_address_pincode].filter(Boolean).join(', ') || null,
+          permanent_address: [_d.permanent_address_line1, _d.permanent_address_city, _d.permanent_address_state, _d.permanent_address_pincode].filter(Boolean).join(', ') || null,
           linkedin_url:                   _d.linkedin_url        || null,
           bank_account_number:            _d.bank_account_number || null,
           bank_ifsc:                      _d.bank_ifsc           || null,
@@ -1198,26 +1312,23 @@ const App = (() => {
           return
         }
 
-        // ── Done screen ───────────────────────────────────────
-        const pct = _completeness()
+        // ── Done / Welcome screen ─────────────────────────────
         document.getElementById('pw-stepper').innerHTML = ''
         document.getElementById('pw-nav').innerHTML = ''
         document.getElementById('pw-error').style.display = 'none'
         document.getElementById('pw-progress-bar').style.width = '100%'
         document.getElementById('pw-step-body').innerHTML = `
-          <div class="pw-done">
-            <div class="pw-done-check">
+          <div class="pw-done" style="text-align:center;padding:32px 12px 20px;">
+            <div class="pw-done-check" style="margin:0 auto 28px;">
               <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
             </div>
-            <h3 class="pw-done-title">You're all set, ${Utils.escapeHtml(user.name.split(' ')[0])}! 🎉</h3>
-            <p class="pw-done-sub">Your profile is <strong>${pct}% complete</strong>. You can fill in the rest anytime from your profile settings.</p>
-            <div class="pw-done-bar-wrap">
-              <div style="background:${pct >= 80 ? 'var(--success)' : 'var(--warning)'};height:8px;border-radius:4px;width:${pct}%;transition:width 0.8s ease;"></div>
-            </div>
-            <p class="pw-done-hint">Taking you to your dashboard…</p>
+            <h2 style="font-size:26px;font-weight:800;color:var(--text);margin-bottom:14px;line-height:1.2;">You're all set.</h2>
+            <p style="font-size:15px;color:var(--text-muted);line-height:1.65;max-width:340px;margin:0 auto 12px;">Everything you need to collaborate, manage, and grow is now in one place.</p>
+            <p style="font-size:17px;font-weight:700;color:var(--primary);margin-bottom:32px;">Welcome to Growthic One.</p>
+            <p class="pw-done-hint">Taking you to your dashboard in a moment…</p>
           </div>`
         _launchConfetti()
-        setTimeout(() => window.location.reload(), 2500)
+        setTimeout(() => window.location.reload(), 4000)
       })
     }
 

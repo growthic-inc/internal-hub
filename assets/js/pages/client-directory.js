@@ -21,6 +21,7 @@ const ClientDirectory = (() => {
   let _editingClientId  = null
   let _formEntities     = []   // [{ id, name, platforms[], services[] }]
   let _formSelPlatforms = []   // client-level platform selection
+  let _formTeamIds      = []   // employee IDs for Assigned Team
   let _files            = { bg: null, sa: null }   // pending file uploads
   let _existingBgUrl    = null   // storage path or URL from DB
   let _existingSaUrl    = null
@@ -63,9 +64,11 @@ const ClientDirectory = (() => {
     if (!str) return ''
     return str.charAt(0).toUpperCase() + str.slice(1)
   }
-  function _canWrite()      { return !!_p?.can_create }
-  function _canEdit()       { return !!_p?.can_edit }
-  function _canCommercial() { return _user?.role === 'super_admin' || _user?.department === 'business_development' }
+  function _canWrite()            { return !!_p?.can_create }
+  function _canEdit()             { return !!_p?.can_edit }
+  function _canCommercial()       { return _user?.role === 'super_admin' || _user?.department === 'business_development' }
+  function _canUploadBrandBook()  { return App.hasAccess('client_directory', 'brand_book', 'can_upload') }
+  function _canDeleteBrandBook()  { return App.hasAccess('client_directory', 'brand_book', 'can_edit') }
 
   /* ── Document helpers ───────────────────────────────────────── */
 
@@ -346,20 +349,22 @@ const ClientDirectory = (() => {
     if (nameEl) nameEl.textContent = data.client_name
     if (codeEl) codeEl.textContent = data.project_code
 
-    // Pre-generate signed URLs so document links render as real <a> tags
-    const [bgUrl, saUrl] = await Promise.all([
+    // Fetch doc URLs, team members, and brand books in parallel
+    const [bgUrl, saUrl, { data: teamData }, { data: booksData }] = await Promise.all([
       data.brand_guidelines_url
         ? _resolveDocUrl(data.brand_guidelines_url)
         : Promise.resolve(null),
       data.service_agreement_url && _canCommercial()
         ? _resolveDocUrl(data.service_agreement_url)
         : Promise.resolve(null),
+      API.getClientTeam(clientId),
+      API.getBrandBooks(clientId),
     ])
 
-    _renderDrawerBody(data, { bg: bgUrl, sa: saUrl })
+    _renderDrawerBody(data, { bg: bgUrl, sa: saUrl }, teamData || [], booksData || [])
   }
 
-  function _renderDrawerBody(c, docUrls = {}) {
+  function _renderDrawerBody(c, docUrls = {}, teamMembers = [], brandBooks = []) {
     const body = document.getElementById('cdd-body')
     if (!body) return
 
@@ -368,6 +373,8 @@ const ClientDirectory = (() => {
     const platforms = c.client_platforms || []
     const canComm  = _canCommercial()
     const canEdit  = _canEdit()
+    const canUploadBB = _canUploadBrandBook()
+    const canDeleteBB = _canDeleteBrandBook()
     const ptLabel  = PROJECT_TYPE_LABELS[c.project_type] || ''
     const hasBg    = !!docUrls.bg
     const hasSa    = canComm && !!docUrls.sa
@@ -393,6 +400,29 @@ const ClientDirectory = (() => {
             <div class="cd-info-value">${Utils.formatDate(c.created_at)}</div>
           </div>
         </div>
+      </div>
+
+      <!-- Assigned Team (visible to all) -->
+      <div class="divider"></div>
+      <div class="cd-drawer-section">
+        <div class="cd-drawer-label">Assigned Team</div>
+        ${teamMembers.length ? `
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;">
+          ${teamMembers.map(tm => {
+            const emp = tm.employees || {}
+            const avatar = emp.profile_image_url
+              ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" style="width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0;">`
+              : `<span class="avatar-circle avatar-circle--sm" style="flex-shrink:0;">${Utils.escapeHtml(Utils.getInitials(emp.name || ''))}</span>`
+            return `
+            <div style="display:flex;align-items:center;gap:8px;background:var(--surface-2,#f8f9fa);border:1px solid var(--border);border-radius:8px;padding:5px 10px 5px 6px;">
+              ${avatar}
+              <div>
+                <div style="font-size:12px;font-weight:600;line-height:1.2;">${Utils.escapeHtml(emp.name || '')}</div>
+                ${emp.designation ? `<div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(emp.designation)}</div>` : ''}
+              </div>
+            </div>`
+          }).join('')}
+        </div>` : `<p style="font-size:13px;color:var(--text-muted);margin-top:4px;">No team members assigned yet.</p>`}
       </div>
 
       ${c.overview ? `
@@ -464,6 +494,28 @@ const ClientDirectory = (() => {
         </div>
       </div>` : ''}
 
+      <!-- Brand Books -->
+      <div class="divider"></div>
+      <div class="cd-drawer-section" id="cdd-bb-section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <div class="cd-drawer-label" style="margin-bottom:0;">Brand Books</div>
+          ${canUploadBB ? `<button class="btn btn--secondary btn--sm" id="cdd-bb-upload-btn">+ Upload</button>` : ''}
+        </div>
+        ${brandBooks.length ? `
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${brandBooks.map(bb => `
+          <div style="display:flex;align-items:center;gap:8px;" data-bb-id="${bb.id}">
+            <a href="${Utils.escapeHtml(bb.drive_url)}" target="_blank" rel="noopener noreferrer"
+               class="cd-doc-link" style="flex:1;overflow:hidden;">
+              ${ICONS.file}
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${Utils.escapeHtml(bb.name)}</span>
+              ${ICONS.ext}
+            </a>
+            ${canDeleteBB ? `<button class="btn-icon-sm cd-bb-delete" data-id="${bb.id}" title="Delete brand book" style="color:var(--danger);flex-shrink:0;">×</button>` : ''}
+          </div>`).join('')}
+        </div>` : `<p style="font-size:13px;color:var(--text-muted);">No brand books uploaded yet.</p>`}
+      </div>
+
       <div class="divider"></div>
 
       <!-- Entities (visible to all) -->
@@ -493,6 +545,31 @@ const ClientDirectory = (() => {
         const open = detail.style.display !== 'none'
         detail.style.display = open ? 'none' : 'block'
         if (chevron) chevron.style.transform = open ? '' : 'rotate(90deg)'
+      })
+    })
+
+    /* Brand Book — upload button */
+    document.getElementById('cdd-bb-upload-btn')?.addEventListener('click', () => {
+      _openBrandBookUpload(c.id, c.client_name, c.status)
+    })
+
+    /* Brand Book — delete buttons */
+    body.querySelectorAll('.cd-bb-delete').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this brand book? This cannot be undone.')) return
+        btn.disabled = true
+        const { error } = await API.deleteBrandBook(btn.dataset.id)
+        if (error) { Utils.showToast('Failed to delete brand book', 'error'); btn.disabled = false; return }
+        // Remove row from DOM immediately
+        const row = btn.closest('[data-bb-id]')
+        if (row) row.remove()
+        // If no books left, update empty state
+        const section = document.getElementById('cdd-bb-section')
+        if (section && !section.querySelectorAll('[data-bb-id]').length) {
+          const list = section.querySelector('div[style*="flex-direction:column"]')
+          if (list) list.outerHTML = `<p style="font-size:13px;color:var(--text-muted);">No brand books uploaded yet.</p>`
+        }
+        Utils.showToast('Brand book deleted', 'success')
       })
     })
 
@@ -526,6 +603,78 @@ const ClientDirectory = (() => {
         await _loadClients()
       })
     }
+  }
+
+  /* ── Brand Book Upload Modal ────────────────────────────────── */
+  function _openBrandBookUpload(clientId, clientName, clientStatus) {
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">Upload Brand Book</h3>
+        <button class="modal-close" onclick="Utils.closeModal()">${ICONS.close}</button>
+      </div>
+      <div class="modal-body">
+        <div id="bb-err" class="alert alert-danger" style="display:none;margin-bottom:12px;"></div>
+        <div class="form-group">
+          <label class="form-label">Brand Book Name <span style="color:var(--danger)">*</span></label>
+          <input class="form-input" id="bb-name" placeholder="e.g. GDA Brand Book, STIM Brand Book">
+          <span class="form-hint">Give it a clear name so the team knows which account it belongs to</span>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">PDF File <span style="color:var(--danger)">*</span></label>
+          <label class="cd-file-pick-label" id="bb-file-label">
+            ${ICONS.upload} Choose PDF
+            <input type="file" id="bb-file" accept=".pdf" style="display:none;">
+          </label>
+          <div id="bb-file-name" style="font-size:12px;color:var(--text-muted);margin-top:6px;display:none;"></div>
+          <span class="form-hint">PDF only · max 20 MB · uploaded to the client's Brand Books folder on Drive</span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="Utils.closeModal()">Cancel</button>
+        <button class="btn btn-primary" id="bb-upload-btn" disabled>Upload to Drive</button>
+      </div>`)
+
+    document.getElementById('bb-file')?.addEventListener('change', e => {
+      const f    = e.target.files?.[0]
+      const nameEl = document.getElementById('bb-file-name')
+      const btn    = document.getElementById('bb-upload-btn')
+      const lbl    = document.getElementById('bb-file-label')
+      if (!f) return
+      if (f.size > 20 * 1024 * 1024) {
+        Utils.showToast('File must be under 20 MB', 'error')
+        return
+      }
+      if (nameEl) { nameEl.textContent = `✓ ${f.name}`; nameEl.style.display = 'block' }
+      if (lbl)    lbl.innerHTML = `${ICONS.upload} Change File <input type="file" id="bb-file" accept=".pdf" style="display:none;">`
+      if (btn)    { btn.disabled = false }
+    })
+
+    document.getElementById('bb-upload-btn')?.addEventListener('click', async () => {
+      const nameVal = (document.getElementById('bb-name')?.value || '').trim()
+      const file    = document.getElementById('bb-file')?.files?.[0]
+      const errEl   = document.getElementById('bb-err')
+      const btn     = document.getElementById('bb-upload-btn')
+
+      errEl.style.display = 'none'
+      if (!nameVal) { errEl.textContent = 'Please enter a brand book name.'; errEl.style.display = 'block'; return }
+      if (!file)    { errEl.textContent = 'Please choose a PDF file.';       errEl.style.display = 'block'; return }
+
+      btn.disabled = true; btn.textContent = 'Uploading…'
+
+      try {
+        const driveUrl = await _uploadClientDoc(clientName, clientStatus, file, 'brand_book')
+        const { error } = await API.saveBrandBook(clientId, nameVal, driveUrl, file.name, _user.id)
+        if (error) throw new Error(error.message)
+        Utils.closeModal()
+        Utils.showToast('Brand book uploaded successfully!', 'success')
+        // Re-open drawer to refresh brand books list
+        _openDrawer(clientId)
+      } catch (err) {
+        errEl.textContent = err.message || 'Upload failed. Please try again.'
+        errEl.style.display = 'block'
+        btn.disabled = false; btn.textContent = 'Upload to Drive'
+      }
+    })
   }
 
   function _entityRowHTML(e) {
@@ -564,6 +713,7 @@ const ClientDirectory = (() => {
     _editingClientId  = client?.id || null
     _formEntities     = []
     _formSelPlatforms = []
+    _formTeamIds      = []
     _files            = { bg: null, sa: null }
     _existingBgUrl    = client?.brand_guidelines_url  || null
     _existingSaUrl    = client?.service_agreement_url || null
@@ -637,6 +787,16 @@ const ClientDirectory = (() => {
               <option value="">— Not assigned —</option>
               ${amOptions}
             </select>
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Assigned Team</label>
+            <div id="cdf-team-tags" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:4px;"></div>
+            <div style="position:relative;">
+              <input class="form-input" id="cdf-team-search" placeholder="Type a name to add team members…" autocomplete="off">
+              <div id="cdf-team-dropdown"
+                   style="display:none;position:absolute;top:100%;left:0;right:0;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);max-height:200px;overflow-y:auto;margin-top:4px;"></div>
+            </div>
+            <span class="form-hint">Select all employees working on this client</span>
           </div>
         </div>
 
@@ -749,6 +909,16 @@ const ClientDirectory = (() => {
     _renderFileField('bg', _existingBgUrl)
     if (canComm) _renderFileField('sa', _existingSaUrl)
 
+    /* Team picker — bind immediately, then load existing team async if editing */
+    _bindTeamPicker()
+    if (client?.id) {
+      API.getClientTeam(client.id).then(({ data }) => {
+        if (!data) return
+        _formTeamIds = data.map(tm => tm.employee_id)
+        _renderTeamTags()
+      })
+    }
+
     /* Render existing entities (edit mode) */
     _renderFormEntities()
 
@@ -779,6 +949,68 @@ const ClientDirectory = (() => {
 
     /* Save */
     document.getElementById('cdf-save')?.addEventListener('click', _saveClient)
+  }
+
+  /* ── Team Picker ────────────────────────────────────────────── */
+  function _renderTeamTags() {
+    const container = document.getElementById('cdf-team-tags')
+    if (!container) return
+    if (!_formTeamIds.length) { container.innerHTML = ''; return }
+    container.innerHTML = _formTeamIds.map(id => {
+      const emp = _employees.find(e => e.id === id)
+      if (!emp) return ''
+      return `
+        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--primary-light,#EEF2FF);color:var(--primary);border:1px solid var(--primary-border,#C7D2FE);border-radius:6px;padding:3px 8px;font-size:12px;font-weight:500;">
+          ${Utils.escapeHtml(emp.name)}
+          <button type="button" data-remove-team="${id}"
+                  style="background:none;border:none;cursor:pointer;color:var(--primary);font-size:14px;line-height:1;padding:0;margin-left:2px;">×</button>
+        </span>`
+    }).join('')
+    container.querySelectorAll('[data-remove-team]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        _formTeamIds = _formTeamIds.filter(id => id !== btn.dataset.removeTeam)
+        _renderTeamTags()
+      })
+    })
+  }
+
+  function _bindTeamPicker() {
+    const input    = document.getElementById('cdf-team-search')
+    const dropdown = document.getElementById('cdf-team-dropdown')
+    if (!input || !dropdown) return
+
+    input.addEventListener('input', () => {
+      const q = input.value.trim().toLowerCase()
+      if (!q) { dropdown.style.display = 'none'; return }
+      const matches = _employees.filter(e =>
+        e.name.toLowerCase().includes(q) && !_formTeamIds.includes(e.id)
+      ).slice(0, 8)
+      if (!matches.length) { dropdown.style.display = 'none'; return }
+      dropdown.innerHTML = matches.map(e => `
+        <div class="cd-team-dd-item" data-emp-id="${e.id}" data-emp-name="${Utils.escapeHtml(e.name)}"
+             style="padding:9px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);">
+          ${Utils.escapeHtml(e.name)}
+          ${e.department ? `<span style="color:var(--text-muted);font-size:11px;margin-left:4px;">${Utils.escapeHtml(e.department)}</span>` : ''}
+        </div>`).join('')
+      dropdown.style.display = 'block'
+      dropdown.querySelectorAll('.cd-team-dd-item').forEach(item => {
+        item.addEventListener('mousedown', e => {
+          e.preventDefault()   // prevent input blur before click registers
+          const id = item.dataset.empId
+          if (!_formTeamIds.includes(id)) {
+            _formTeamIds.push(id)
+            _renderTeamTags()
+          }
+          input.value = ''
+          dropdown.style.display = 'none'
+        })
+        item.addEventListener('mouseover', () => item.style.background = 'var(--surface-2,#f3f4f6)')
+        item.addEventListener('mouseout',  () => item.style.background = '')
+      })
+    })
+
+    input.addEventListener('blur', () => setTimeout(() => { dropdown.style.display = 'none' }, 150))
+    input.addEventListener('focus', () => { if (input.value.trim()) input.dispatchEvent(new Event('input')) })
   }
 
   /* ── File Field ─────────────────────────────────────────────── */
@@ -1084,6 +1316,9 @@ const ClientDirectory = (() => {
           )
         }
       }
+
+      /* Save Assigned Team (replace all — delete existing then insert new) */
+      await API.setClientTeam(clientId, _formTeamIds, _user.id)
 
       Utils.closeModal()
       Utils.showToast(`Client ${isEdit ? 'updated' : 'created'} successfully`, 'success')
@@ -1520,5 +1755,6 @@ ModuleRegistry.register({
     edit_client:          'Edit Client',
     edit_project_codes:   'Edit Project Codes',
     manage_project_codes: 'Manage Internal Projects',
+    brand_book:           'Brand Book Upload',
   },
 })
