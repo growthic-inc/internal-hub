@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS social_competitor_data (
 
 ALTER TABLE social_competitor_data ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "auth_select_competitor" ON social_competitor_data;
+DROP POLICY IF EXISTS "auth_insert_competitor" ON social_competitor_data;
+DROP POLICY IF EXISTS "auth_delete_competitor" ON social_competitor_data;
+
 CREATE POLICY "auth_select_competitor" ON social_competitor_data FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth_insert_competitor" ON social_competitor_data FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY "auth_delete_competitor" ON social_competitor_data FOR DELETE TO authenticated USING (true);

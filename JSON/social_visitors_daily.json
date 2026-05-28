@@ -1,0 +1,37 @@
+[
+  {
+    "json_agg": [
+      "id",
+      "client_id",
+      "platform",
+      "date",
+      "overview_views_desktop",
+      "overview_views_mobile",
+      "overview_views_total",
+      "overview_unique_desktop",
+      "overview_unique_mobile",
+      "overview_unique_total",
+      "life_views_desktop",
+      "life_views_mobile",
+      "life_views_total",
+      "life_unique_desktop",
+      "life_unique_mobile",
+      "life_unique_total",
+      "jobs_views_desktop",
+      "jobs_views_mobile",
+      "jobs_views_total",
+      "jobs_unique_desktop",
+      "jobs_unique_mobile",
+      "jobs_unique_total",
+      "total_views_desktop",
+      "total_views_mobile",
+      "total_views_total",
+      "total_unique_desktop",
+      "total_unique_mobile",
+      "total_unique_total",
+      "uploaded_by",
+      "uploaded_at",
+      "entity_id"
+    ]
+  }
+]

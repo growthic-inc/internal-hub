@@ -58,8 +58,8 @@ Deno.serve(async (req: Request) => {
     if (!file || !clientName || !docType) {
       return json({ error: 'file, client_name, and doc_type are required.' }, 400)
     }
-    if (!['brand_guidelines', 'service_agreement'].includes(docType)) {
-      return json({ error: `Invalid doc_type: "${docType}". Use brand_guidelines or service_agreement.` }, 400)
+    if (!['brand_guidelines', 'service_agreement', 'brand_book'].includes(docType)) {
+      return json({ error: `Invalid doc_type: "${docType}". Use brand_guidelines, service_agreement, or brand_book.` }, 400)
     }
     if (file.size > 20 * 1024 * 1024) return json({ error: 'File exceeds 20 MB limit.' }, 400)
 
@@ -80,13 +80,22 @@ Deno.serve(async (req: Request) => {
       parent = await findOrCreateFolder(accessToken, name,                 parent)
       parent = await findOrCreateFolder(accessToken, 'Service Agreements', parent)
 
+    } else if (docType === 'brand_book') {
+      // Operations Drive:
+      //   {status} Clients / {Client Name} / Brand Books / {file}
+      const opsRootId = Deno.env.get('GOOGLE_DRIVE_OPS_DRIVE_ID')!
+      parent = opsRootId
+      parent = await findOrCreateFolder(accessToken, sfolder,       parent)
+      parent = await findOrCreateFolder(accessToken, name,          parent)
+      parent = await findOrCreateFolder(accessToken, 'Brand Books', parent)
+
     } else {
       // Operations Drive:
       //   {status} Clients / {Client Name} / Brand Guidelines / {file}
       const opsRootId = Deno.env.get('GOOGLE_DRIVE_OPS_DRIVE_ID')!
       parent = opsRootId
-      parent = await findOrCreateFolder(accessToken, sfolder,           parent)
-      parent = await findOrCreateFolder(accessToken, name,              parent)
+      parent = await findOrCreateFolder(accessToken, sfolder,            parent)
+      parent = await findOrCreateFolder(accessToken, name,               parent)
       parent = await findOrCreateFolder(accessToken, 'Brand Guidelines', parent)
     }
 
