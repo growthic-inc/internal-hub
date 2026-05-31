@@ -1293,6 +1293,22 @@ const API = (() => {
       .order('created_at', { ascending: false })
   }
 
+  // Returns all approved leave + WFH records for a given employee.
+  // Used by the Timesheet module to overlay leave/WFH status on day columns.
+  async function getApprovedLeaveForEmployee(employeeId) {
+    const [leaveRes, wfhRes] = await Promise.all([
+      supabase.from('leave_requests')
+        .select('start_date, end_date, leave_types(name)')
+        .eq('employee_id', employeeId)
+        .eq('status', 'approved'),
+      supabase.from('wfh_requests')
+        .select('start_date, end_date')
+        .eq('employee_id', employeeId)
+        .eq('status', 'approved'),
+    ])
+    return { leaves: leaveRes.data || [], wfhs: wfhRes.data || [] }
+  }
+
   async function getPendingWfhApprovals(approverId) {
     return supabase
       .from('wfh_requests')
@@ -1704,7 +1720,7 @@ const API = (() => {
     getMyLeaveRequests, getPendingLeaveApprovals, getHRLeaveQueue, getAllLeaveRequests,
     getApprovalHistoryLeave, getApprovalHistoryWfh,
     createLeaveRequest, updateLeaveRequest,
-    getMyWfhRequests, getPendingWfhApprovals, getHRWfhQueue, getAllWfhRequests,
+    getMyWfhRequests, getPendingWfhApprovals, getHRWfhQueue, getAllWfhRequests, getApprovedLeaveForEmployee,
     createWfhRequest, updateWfhRequest,
     getWfhQuotas, createWfhQuota, deleteWfhQuota,
     getCompanyHolidays, addCompanyHoliday, deleteCompanyHoliday,

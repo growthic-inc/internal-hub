@@ -13,6 +13,10 @@ const Timesheet = (() => {
   let _internalProjects  = []   // active internal projects with their work areas
   let _directReports     = []   // employees whose manager_id === _user.id
   let _isManager         = false
+  let _myLeaves          = []   // user's approved leave requests
+  let _myWfhs            = []   // user's approved WFH requests
+  let _teamPersonLeaves  = []   // selected team member's approved leaves
+  let _teamPersonWfhs    = []   // selected team member's approved WFHs
   let _weekStart         = null
   let _activeTab         = 'mine'
   let _p                 = null
@@ -82,12 +86,15 @@ const Timesheet = (() => {
     const _requestedTab = sessionStorage.getItem('timesheet:tab') || null
     if (_requestedTab) sessionStorage.removeItem('timesheet:tab')
 
-    const [{ data: clients }, { data: internalProjects }] = await Promise.all([
+    const [{ data: clients }, { data: internalProjects }, leaveData] = await Promise.all([
       API.getClients(false),
       API.getInternalProjects(),
+      API.getApprovedLeaveForEmployee(_user.id),
     ])
     _clients          = clients || []
     _internalProjects = (internalProjects || []).filter(p => p.status === 'active')
+    _myLeaves         = leaveData.leaves
+    _myWfhs           = leaveData.wfhs
 
     // Load the full reporting subtree for this user — anyone in their hierarchy
     // (direct or indirect) grants Team tab visibility and scopes team data.
@@ -250,6 +257,18 @@ const Timesheet = (() => {
   }
 
   /* ── Day column ─────────────────────────────────────────── */
+  /* ── Leave / WFH helpers ────────────────────────────────── */
+  function _isLeaveDay(iso, leaves) {
+    return leaves.some(l => iso >= l.start_date && iso <= l.end_date)
+  }
+  function _isWfhDay(iso, wfhs) {
+    return wfhs.some(w => iso >= w.start_date && iso <= w.end_date)
+  }
+  function _getLeaveName(iso, leaves) {
+    const match = leaves.find(l => iso >= l.start_date && iso <= l.end_date)
+    return match?.leave_types?.name || null
+  }
+
   function _renderDayCol(day) {
     const iso        = _toISO(day)
     const today      = _toISO(new Date())
@@ -261,8 +280,14 @@ const Timesheet = (() => {
     const diffDays  = Math.floor((new Date(today) - new Date(iso)) / 86400000)
     const isFuture  = iso > today
     const isLocked  = diffDays > 7
-    // Warn: past weekdays in the current week with 0 hours and no entries
-    const isPastNoEntry = !isToday && diffDays > 0 && diffDays <= 7 && dayEntries.length === 0
+
+    // Leave / WFH status for this day
+    const isLeaveDay = _isLeaveDay(iso, _myLeaves)
+    const isWfhDay   = !isLeaveDay && _isWfhDay(iso, _myWfhs)
+    const leaveName  = isLeaveDay ? _getLeaveName(iso, _myLeaves) : null
+
+    // Don't warn for missing hours on approved leave days
+    const isPastNoEntry = !isToday && diffDays > 0 && diffDays <= 7 && dayEntries.length === 0 && !isLeaveDay
 
     // Determine day-level status
     const drafts    = dayEntries.filter(e => e.status === 'draft').length
@@ -284,6 +309,8 @@ const Timesheet = (() => {
     let footerHtml = ''
     if (isLocked) {
       footerHtml = `<div class="ts-day-action ts-day-action--locked">Locked</div>`
+    } else if (isLeaveDay && dayEntries.length === 0) {
+      footerHtml = `<div class="ts-day-action" style="background:#EEF2FF;color:#6366F1;border:none;cursor:default;">On Leave</div>`
     } else if (drafts > 0 && _p.can_edit) {
       footerHtml = `<button class="ts-day-action ts-day-action--submit ts-submit-day" data-date="${iso}">Submit ${drafts} Draft${drafts > 1 ? 's' : ''}</button>`
     } else if (approved === dayEntries.length && dayEntries.length > 0) {
@@ -295,19 +322,25 @@ const Timesheet = (() => {
     }
 
     return `
-      <div class="ts-col${isToday ? ' ts-col--today' : ''}${isLocked ? ' ts-col--locked' : ''}">
+      <div class="ts-col${isToday ? ' ts-col--today' : ''}${isLocked ? ' ts-col--locked' : ''}${isLeaveDay ? ' ts-col--leave' : ''}">
         <div class="ts-col-header">
           <div class="ts-col-top">
             <span class="ts-col-weekday">${day.toLocaleDateString('en-IN', { weekday:'short' }).toUpperCase()}</span>
-            <span class="ts-col-status-icon">${headerIcon}</span>
+            <span class="ts-col-status-icon">${headerIcon}${isWfhDay ? `<span style="font-size:9px;font-weight:600;background:#ECFDF5;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">WFH</span>` : ''}</span>
           </div>
           <span class="ts-col-date${isToday ? ' ts-col-date--today' : ''}">${day.getDate()}</span>
           ${dayHours > 0 ? `<span class="ts-col-hours">${dayHours.toFixed(1)}h</span>` : ''}
         </div>
 
         <div class="ts-col-body">
-          ${dayEntries.map(e => _renderCard(e)).join('')}
-          ${_p.can_create && !isLocked && !isFuture ? `
+          ${isLeaveDay && dayEntries.length === 0 ? `
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:20px 8px;text-align:center;flex:1;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              <span style="font-size:11px;font-weight:600;color:#6366F1;">On Leave</span>
+              ${leaveName ? `<span style="font-size:10px;color:var(--text-muted);">${Utils.escapeHtml(leaveName)}</span>` : ''}
+            </div>
+          ` : dayEntries.map(e => _renderCard(e)).join('')}
+          ${_p.can_create && !isLocked && !isFuture && !isLeaveDay ? `
             <button class="ts-add-btn" data-date="${iso}">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Entry
@@ -1073,9 +1106,14 @@ const Timesheet = (() => {
 
     const from = _toISO(_teamPersonWeek)
     const to   = _toISO(_weekEnd(_teamPersonWeek))
-    const { data, error } = await API.getTimesheetEntries(_teamSelEmpObj.id, from, to)
+    const [{ data, error }, leaveData] = await Promise.all([
+      API.getTimesheetEntries(_teamSelEmpObj.id, from, to),
+      API.getApprovedLeaveForEmployee(_teamSelEmpObj.id),
+    ])
     if (error) { Utils.showToast('Failed to load entries.', 'error'); return }
     _teamPersonEntries = data || []
+    _teamPersonLeaves  = leaveData.leaves
+    _teamPersonWfhs    = leaveData.wfhs
     _renderPersonView()
   }
 
@@ -1191,6 +1229,11 @@ const Timesheet = (() => {
     const isToday    = iso === today
     const dayHours   = dayEntries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
 
+    // Leave / WFH status for this team member on this day
+    const isLeaveDay = _isLeaveDay(iso, _teamPersonLeaves)
+    const isWfhDay   = !isLeaveDay && _isWfhDay(iso, _teamPersonWfhs)
+    const leaveName  = isLeaveDay ? _getLeaveName(iso, _teamPersonLeaves) : null
+
     const drafts    = dayEntries.filter(e => e.status === 'draft').length
     const submitted = dayEntries.filter(e => e.status === 'submitted').length
     const approved  = dayEntries.filter(e => e.status === 'approved').length
@@ -1206,18 +1249,25 @@ const Timesheet = (() => {
     }
 
     return `
-      <div class="ts-col${isToday ? ' ts-col--today' : ''}">
+      <div class="ts-col${isToday ? ' ts-col--today' : ''}${isLeaveDay ? ' ts-col--leave' : ''}">
         <div class="ts-col-header">
           <div class="ts-col-top">
             <span class="ts-col-weekday">${day.toLocaleDateString('en-IN', { weekday:'short' }).toUpperCase()}</span>
-            <span class="ts-col-status-icon">${headerIcon}</span>
+            <span class="ts-col-status-icon">${headerIcon}${isWfhDay ? `<span style="font-size:9px;font-weight:600;background:#ECFDF5;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">WFH</span>` : ''}</span>
           </div>
           <span class="ts-col-date${isToday ? ' ts-col-date--today' : ''}">${day.getDate()}</span>
           ${dayHours > 0 ? `<span class="ts-col-hours">${dayHours.toFixed(1)}h</span>` : ''}
         </div>
         <div class="ts-col-body">
-          ${dayEntries.map(e => _renderPersonCard(e)).join('')}
+          ${isLeaveDay && dayEntries.length === 0 ? `
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:20px 8px;text-align:center;flex:1;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              <span style="font-size:11px;font-weight:600;color:#6366F1;">On Leave</span>
+              ${leaveName ? `<span style="font-size:10px;color:var(--text-muted);">${Utils.escapeHtml(leaveName)}</span>` : ''}
+            </div>
+          ` : dayEntries.map(e => _renderPersonCard(e)).join('')}
         </div>
+        ${isLeaveDay && dayEntries.length === 0 ? `<div class="ts-col-footer"><div class="ts-day-action" style="background:#EEF2FF;color:#6366F1;border:none;cursor:default;">On Leave</div></div>` : ''}
       </div>
     `
   }
