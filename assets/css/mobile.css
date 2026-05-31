@@ -215,6 +215,86 @@
     width: 100%;
   }
 
+  /* ── Timesheet — Team tab: collapse sidebar into chip bar ────── */
+  .ts-team-layout {
+    flex-direction: column;
+    height: auto;
+    overflow: visible;
+  }
+  .ts-team-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    scroll-snap-type: x mandatory;
+    background: var(--surface, var(--bg));
+  }
+  .ts-team-main {
+    overflow-y: visible;
+    padding: 14px;
+  }
+
+  /* "All Submissions" becomes a pill chip */
+  .ts-sidebar-all {
+    flex-shrink: 0;
+    margin-bottom: 0;
+    padding: 6px 14px;
+    border-radius: 99px;
+    border: 1px solid var(--border);
+    background: var(--surface, var(--bg));
+    font-size: 12px;
+    white-space: nowrap;
+    scroll-snap-align: start;
+    gap: 0;
+  }
+  .ts-sidebar-all svg { display: none; }
+  .ts-sidebar-all--active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+  }
+  .ts-sidebar-all--active:hover { background: var(--primary); color: #fff; }
+
+  /* Employee cards become compact pill chips */
+  .ts-emp-card {
+    flex-shrink: 0;
+    margin-bottom: 0;
+    padding: 5px 10px;
+    border-radius: 99px;
+    border: 1px solid var(--border);
+    background: var(--surface, var(--bg));
+    gap: 6px;
+    scroll-snap-align: start;
+  }
+  .ts-emp-card--active {
+    background: var(--primary);
+    border-color: var(--primary);
+  }
+  .ts-emp-card--active .ts-emp-card-name { color: #fff; }
+  .ts-emp-card-avatar { width: 20px; height: 20px; font-size: 8px; }
+  .ts-emp-card-dept   { display: none; }
+  .ts-emp-card-meta   { display: none; }
+  .ts-emp-card-name   { font-size: 12px; }
+
+  /* Hide "TEAM MEMBERS" section label — redundant in chip bar */
+  .ts-sidebar-divider { display: none; }
+
+  /* Person week header: stack nav below name on narrow screens */
+  .ts-person-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .ts-sub-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; width: 100%; }
+  .ts-sub-tab-btn { flex-shrink: 0; white-space: nowrap; }
+
   /* ── Permissions panel ──────────────────────────────────────── */
   .perms-layout {
     grid-template-columns: 1fr;
