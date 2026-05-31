@@ -89,9 +89,9 @@ const Timesheet = (() => {
     _clients          = clients || []
     _internalProjects = (internalProjects || []).filter(p => p.status === 'active')
 
-    // Load direct reports for all users — reporting managers see the Team tab
-    // even without an explicit can_approve access level
-    const { data: reports } = await API.getDirectReports(_user.id)
+    // Load the full reporting subtree for this user — anyone in their hierarchy
+    // (direct or indirect) grants Team tab visibility and scopes team data.
+    const { data: reports } = await API.getAllSubordinates(_user.id)
     _directReports = reports || []
     _isManager     = _directReports.length > 0
 

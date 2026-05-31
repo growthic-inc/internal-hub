@@ -146,6 +146,12 @@ const API = (() => {
       .order('name')
   }
 
+  // Returns every employee in the full reporting subtree beneath managerId
+  // (direct reports + their reports + all the way down).
+  async function getAllSubordinates(managerId) {
+    return supabase.rpc('get_all_subordinates', { root_manager_id: managerId })
+  }
+
   async function getTeamTimesheetEntries(from, to, empId = null, reporteeIds = null, excludeSelfId = null, includeAllStatuses = false) {
     // reporteeIds: array of employee IDs that are direct reports of the current manager.
     // excludeSelfId: always exclude the viewer's own entries — no self-approval allowed.
@@ -1657,7 +1663,7 @@ const API = (() => {
     getClientTeam, setClientTeam,
     getBrandBooks, saveBrandBook, deleteBrandBook,
     getEmployees, getEmployee, getTeamLeads, getAllEmployees,
-    getTimesheetEntries, getTeamTimesheetEntries, getDirectReports, upsertTimesheetEntry,
+    getTimesheetEntries, getTeamTimesheetEntries, getDirectReports, getAllSubordinates, upsertTimesheetEntry,
     insertMasterFolderFile, softDeleteMasterFolderFile,
     getMyReimbursements, getReimbursementInbox, getAllReimbursementsAdmin, getApprovedClaims,
     insertReimbursement, getMyPreApprovals, getEmployeesByDepartment, getEmployeesByRole,
