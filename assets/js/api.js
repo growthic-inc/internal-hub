@@ -1155,6 +1155,15 @@ const API = (() => {
     return supabase.from('employees').update(data).eq('id', employeeId)
   }
 
+  // Records that the employee has read and agreed to company policies.
+  // Sets policy_acknowledged_at to the current timestamp; unlocks all modules.
+  async function acknowledgePolicy(employeeId) {
+    return supabase
+      .from('employees')
+      .update({ policy_acknowledged_at: new Date().toISOString() })
+      .eq('id', employeeId)
+  }
+
   /* Returns KYC document URLs for one employee — HR / super_admin only. */
   async function getEmployeeKyc(employeeId) {
     return supabase
@@ -1713,7 +1722,7 @@ const API = (() => {
     getWhoIsOutToday, getWhoIsWfhToday, getPendingTimesheetApprovalsCount, getBirthdayEmployees,
     // Phase 7
     getDepartments, addDepartment, deleteDepartment,
-    getEmployeesFull, updateEmployeeFull, getEmployeeKyc,
+    getEmployeesFull, updateEmployeeFull, acknowledgePolicy, getEmployeeKyc,
     getOrgChart,
     getLeaveTypes, createLeaveType, updateLeaveType, deleteLeaveType,
     getLeaveCredits, getAllLeaveCredits, addLeaveCredit, deleteLeaveCredit,

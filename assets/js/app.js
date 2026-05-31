@@ -57,6 +57,13 @@ const App = (() => {
   // _matrix: { [module]: { [feature]: access_level_string } }
   let _matrix = null
 
+  // Modules always accessible regardless of policy acknowledgement status
+  const POLICY_UNLOCKED = new Set(['home', 'timesheet', 'people', 'policies', 'settings'])
+
+  // True once the employee has accepted the company policies disclaimer.
+  // Super admins are always treated as acknowledged.
+  let _policyAcknowledged = false
+
   /* ── Load access matrix at login ───────────────────────── */
   async function _loadAccessMatrix() {
     if (currentUser.role === 'super_admin') {
@@ -165,6 +172,9 @@ const App = (() => {
 
     await _loadAccessMatrix()
 
+    // Super admins are always unlocked. Everyone else needs to acknowledge policies.
+    _policyAcknowledged = currentUser.role === 'super_admin' || !!currentUser.policy_acknowledged_at
+
     _renderSidebar()
     _renderHeaderUser()
     _setupUserMenu()
@@ -229,6 +239,64 @@ const App = (() => {
       .subscribe()
   }
 
+  /* ── Policy acknowledgement modal ──────────────────────── */
+  function _showPolicyAcknowledgementModal(pendingRoute) {
+    if (document.getElementById('policy-ack-overlay')) return  // already open
+
+    const overlay = document.createElement('div')
+    overlay.id        = 'policy-ack-overlay'
+    overlay.className = 'modal-overlay'
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:480px;">
+        <div class="modal-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
+          <h3 class="modal-title" style="font-size:16px;font-weight:700;">Review Required</h3>
+        </div>
+        <div class="modal-body" style="padding:20px 0 4px;">
+          <p style="margin:0 0 16px;font-size:14px;line-height:1.65;color:var(--text);">
+            Before proceeding, please review the company policies and guidelines available in Growthic One.
+          </p>
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:14px;background:var(--bg-secondary,#F8FAFC);border:1px solid var(--border);border-radius:8px;">
+            <input type="checkbox" id="policy-ack-check" style="margin-top:2px;cursor:pointer;flex-shrink:0;width:15px;height:15px;">
+            <span style="font-size:13px;line-height:1.55;color:var(--text);">
+              I confirm that I have reviewed, understood, and agree to comply with the company's policies and guidelines.
+            </span>
+          </label>
+        </div>
+        <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:10px;padding-top:20px;">
+          <button class="btn btn--ghost" id="policy-ack-cancel">Not now</button>
+          <button class="btn btn--primary" id="policy-ack-confirm" disabled>I Agree &amp; Continue</button>
+        </div>
+      </div>
+    `
+    document.body.appendChild(overlay)
+
+    const check   = overlay.querySelector('#policy-ack-check')
+    const confirm = overlay.querySelector('#policy-ack-confirm')
+    const cancel  = overlay.querySelector('#policy-ack-cancel')
+
+    check.addEventListener('change', () => { confirm.disabled = !check.checked })
+
+    cancel.addEventListener('click', () => overlay.remove())
+
+    confirm.addEventListener('click', async () => {
+      if (!check.checked) return
+      confirm.disabled    = true
+      confirm.textContent = 'Saving…'
+      const { error } = await API.acknowledgePolicy(currentUser.id)
+      if (error) {
+        Utils.showToast('Could not save acknowledgement. Please try again.', 'error')
+        confirm.disabled    = false
+        confirm.textContent = 'I Agree & Continue'
+        return
+      }
+      _policyAcknowledged = true
+      currentUser.policy_acknowledged_at = new Date().toISOString()
+      overlay.remove()
+      _renderSidebar()
+      if (pendingRoute) window.location.hash = pendingRoute
+    })
+  }
+
   function _renderSidebar() {
     const nav    = document.getElementById('sidebar-nav')
     const footer = document.getElementById('sidebar-footer')
@@ -240,13 +308,31 @@ const App = (() => {
       return _canViewModule(item)
     })
 
-    nav.innerHTML = accessible.map(item => `
-      <a class="nav-item" data-route="${item.id}" href="#${item.id}">
-        <span class="nav-icon">${item.icon}</span>
-        <span class="nav-label">${item.label}</span>
-        ${item.id === 'announcements' ? `<span class="nav-ann-dot" id="ann-nav-dot" style="display:none;"></span>` : ''}
-      </a>
-    `).join('')
+    const LOCK_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left:auto;flex-shrink:0;opacity:0.5;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`
+
+    nav.innerHTML = accessible.map(item => {
+      const isLocked = !_policyAcknowledged && !POLICY_UNLOCKED.has(item.id) && !item.superAdminOnly
+      if (isLocked) {
+        return `
+          <div class="nav-item nav-item--policy-locked" data-route="${item.id}" style="opacity:0.55;cursor:pointer;">
+            <span class="nav-icon">${item.icon}</span>
+            <span class="nav-label">${item.label}</span>
+            ${LOCK_ICON}
+          </div>`
+      }
+      return `
+        <a class="nav-item" data-route="${item.id}" href="#${item.id}">
+          <span class="nav-icon">${item.icon}</span>
+          <span class="nav-label">${item.label}</span>
+          ${item.id === 'announcements' ? `<span class="nav-ann-dot" id="ann-nav-dot" style="display:none;"></span>` : ''}
+        </a>`
+    }).join('')
+
+    if (!_policyAcknowledged) {
+      nav.querySelectorAll('.nav-item--policy-locked').forEach(el => {
+        el.addEventListener('click', () => _showPolicyAcknowledgementModal(el.dataset.route))
+      })
+    }
 
     footer.innerHTML = `
       <div class="sidebar-user">
@@ -607,6 +693,12 @@ const App = (() => {
     if (_matrix !== null && !_canViewModule(navItem)) {
       const fallback = _getDefaultRoute()
       if (fallback) { window.location.hash = fallback } else { _renderNoAccess() }
+      return
+    }
+
+    // Policy acknowledgement gate: redirect to home if module is still locked
+    if (!_policyAcknowledged && !POLICY_UNLOCKED.has(route) && !navItem.superAdminOnly) {
+      window.location.hash = 'home'
       return
     }
 
