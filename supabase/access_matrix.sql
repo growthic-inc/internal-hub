@@ -64,6 +64,7 @@ INSERT INTO access_matrix (department, module, feature, access_level) VALUES
 ('management', 'client_directory',    'view_clients',            'view_only'),
 ('management', 'client_directory',    'create_client',           'can_manage'),
 ('management', 'client_directory',    'edit_client',             'can_manage'),
+('management', 'client_directory',    'brand_book',              'can_edit'),
 
 ('management', 'client_repository',   'view_files',              'view_only'),
 ('management', 'client_repository',   'upload_files',            'can_upload'),
@@ -99,6 +100,7 @@ INSERT INTO access_matrix (department, module, feature, access_level) VALUES
 ('operations_growth', 'client_directory',    'view_clients',            'view_only'),
 ('operations_growth', 'client_directory',    'create_client',           'can_manage'),
 ('operations_growth', 'client_directory',    'edit_client',             'can_manage'),
+('operations_growth', 'client_directory',    'brand_book',              'can_edit'),
 
 ('operations_growth', 'client_repository',   'view_files',              'view_only'),
 ('operations_growth', 'client_repository',   'upload_files',            'can_upload'),
@@ -134,6 +136,7 @@ INSERT INTO access_matrix (department, module, feature, access_level) VALUES
 ('people_culture', 'client_directory',    'view_clients',            'view_only'),
 ('people_culture', 'client_directory',    'create_client',           'no_access'),
 ('people_culture', 'client_directory',    'edit_client',             'no_access'),
+('people_culture', 'client_directory',    'brand_book',              'no_access'),
 
 ('people_culture', 'client_repository',   'view_files',              'view_only'),
 ('people_culture', 'client_repository',   'upload_files',            'no_access'),
@@ -169,6 +172,7 @@ INSERT INTO access_matrix (department, module, feature, access_level) VALUES
 ('business_development', 'client_directory',    'view_clients',            'view_only'),
 ('business_development', 'client_directory',    'create_client',           'can_upload'),
 ('business_development', 'client_directory',    'edit_client',             'can_edit'),
+('business_development', 'client_directory',    'brand_book',              'can_edit'),
 
 ('business_development', 'client_repository',   'view_files',              'view_only'),
 ('business_development', 'client_repository',   'upload_files',            'no_access'),
@@ -204,6 +208,7 @@ INSERT INTO access_matrix (department, module, feature, access_level) VALUES
 ('content_strategy', 'client_directory',    'view_clients',            'view_only'),
 ('content_strategy', 'client_directory',    'create_client',           'no_access'),
 ('content_strategy', 'client_directory',    'edit_client',             'no_access'),
+('content_strategy', 'client_directory',    'brand_book',              'no_access'),
 
 ('content_strategy', 'client_repository',   'view_files',              'view_only'),
 ('content_strategy', 'client_repository',   'upload_files',            'can_upload'),
@@ -239,6 +244,7 @@ INSERT INTO access_matrix (department, module, feature, access_level) VALUES
 ('creative', 'client_directory',    'view_clients',            'view_only'),
 ('creative', 'client_directory',    'create_client',           'no_access'),
 ('creative', 'client_directory',    'edit_client',             'no_access'),
+('creative', 'client_directory',    'brand_book',              'no_access'),
 
 ('creative', 'client_repository',   'view_files',              'view_only'),
 ('creative', 'client_repository',   'upload_files',            'can_upload'),
@@ -274,6 +280,7 @@ INSERT INTO access_matrix (department, module, feature, access_level) VALUES
 ('creators', 'client_directory',    'view_clients',            'no_access'),
 ('creators', 'client_directory',    'create_client',           'no_access'),
 ('creators', 'client_directory',    'edit_client',             'no_access'),
+('creators', 'client_directory',    'brand_book',              'no_access'),
 
 ('creators', 'client_repository',   'view_files',              'view_only'),
 ('creators', 'client_repository',   'upload_files',            'can_upload'),
@@ -309,6 +316,7 @@ INSERT INTO access_matrix (department, module, feature, access_level) VALUES
 ('finance', 'client_directory',    'view_clients',            'view_only'),
 ('finance', 'client_directory',    'create_client',           'no_access'),
 ('finance', 'client_directory',    'edit_client',             'no_access'),
+('finance', 'client_directory',    'brand_book',              'no_access'),
 
 ('finance', 'client_repository',   'view_files',              'view_only'),
 ('finance', 'client_repository',   'upload_files',            'no_access'),
