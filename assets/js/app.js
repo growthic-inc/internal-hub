@@ -1135,7 +1135,7 @@ const App = (() => {
               </div>` : ''}
             <label class="pw-declaration">
               <input type="checkbox" id="pw-declaration" ${_d.declaration ? 'checked' : ''}>
-              <span>I confirm that all the information provided by me is accurate and authentic to the best of my knowledge.</span>
+              <span>I confirm that all the information and documents provided by me are accurate and complete to the best of my knowledge, and I consent to the collection, storage, and processing of my information by the organization for employment, administrative, operational, and compliance purposes.</span>
             </label>
           </div>`
       }
