@@ -456,11 +456,18 @@ const ClientDashboard = (() => {
 
     if (_isPersonalProfile) {
       // Personal LinkedIn profile — impressions + total engagements (likes+comments+shares) + followers
+      // Personal LinkedIn exports have a single "Engagements" column (not split into Likes/Comments/Shares).
+      // The parser stores this as engagement_rate = engagements/impressions, leaving reactions/comments/
+      // reposts_shares as 0. Back-calculate via rate × impressions when the breakdown is all zeros.
+      const _engTotal = arr => arr.reduce((a, m) => {
+        const parts = (m.reactions || 0) + (m.comments || 0) + (m.reposts_shares || 0)
+        return a + (parts > 0 ? parts : Math.round((m.engagement_rate || 0) * (m.impressions || 0)))
+      }, 0)
       const totalImpressions = sum(metrics, 'impressions')
-      const totalEngagements = metrics.reduce((a, m) => a + (m.reactions || 0) + (m.comments || 0) + (m.reposts_shares || 0), 0)
+      const totalEngagements = _engTotal(metrics)
       const avgEng           = metrics.length ? sum(metrics, 'engagement_rate') / metrics.length * 100 : 0
       const pImpressions     = sum(prevMetrics, 'impressions')
-      const pEngagements     = prevMetrics.reduce((a, m) => a + (m.reactions || 0) + (m.comments || 0) + (m.reposts_shares || 0), 0)
+      const pEngagements     = _engTotal(prevMetrics)
       const pAvgEng          = prevMetrics.length ? sum(prevMetrics, 'engagement_rate') / prevMetrics.length * 100 : 0
       return [
         { label: 'Impressions',     rawValue: totalImpressions, value: loc(totalImpressions),    growth: growthPct(totalImpressions, pImpressions)    },
@@ -1454,9 +1461,12 @@ const ClientDashboard = (() => {
         const likes        = _num(row[eI('Likes')])
         const comments     = _num(row[eI('Comments')])
         const shares       = _num(row[eI('Shares')])
-        // LinkedIn personal ENGAGEMENT sheet uses Likes/Comments/Shares columns, not
-        // a single "Engagements" column. Sum them; fall back to the column if it exists.
-        const engagements  = eI('Engagements') >= 0
+        // LinkedIn personal ENGAGEMENT sheet only has a single "Engagements" column
+        // (no separate Likes/Comments/Shares). When that column exists, use it directly
+        // and store the total in `reactions` so the KPI display can sum it correctly.
+        // Fall back to summing individual columns for older export formats.
+        const hasSingleEngCol = eI('Engagements') >= 0
+        const engagements  = hasSingleEngCol
           ? _num(row[eI('Engagements')])
           : likes + comments + shares
         const engRate      = impressions > 0 ? engagements / impressions : 0
@@ -1465,9 +1475,11 @@ const ClientDashboard = (() => {
           impressions,
           reach:                      uniqueImpr,
           clicks,
-          reactions:                  likes,
-          comments,
-          reposts_shares:             shares,
+          // When the export has a single Engagements column, store the total in reactions
+          // so it's directly retrievable; otherwise use the breakdown columns as-is.
+          reactions:                  hasSingleEngCol ? engagements : likes,
+          comments:                   hasSingleEngCol ? 0 : comments,
+          reposts_shares:             hasSingleEngCol ? 0 : shares,
           follows:                    0,
           engagement_rate:            engRate,
           impressions_organic:        impressions,
@@ -1475,11 +1487,11 @@ const ClientDashboard = (() => {
           unique_impressions_organic: uniqueImpr,
           clicks_organic:             clicks,
           clicks_sponsored:           0,
-          reactions_organic:          likes,
+          reactions_organic:          hasSingleEngCol ? engagements : likes,
           reactions_sponsored:        0,
-          comments_organic:           comments,
+          comments_organic:           hasSingleEngCol ? 0 : comments,
           comments_sponsored:         0,
-          reposts_organic:            shares,
+          reposts_organic:            hasSingleEngCol ? 0 : shares,
           reposts_sponsored:          0,
           engagement_rate_organic:    engRate,
           engagement_rate_sponsored:  0,
