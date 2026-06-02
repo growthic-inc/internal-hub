@@ -922,7 +922,10 @@ const Timesheet = (() => {
     const to   = _toISO(_weekEnd(_teamWeek))
 
     const reporteeIds = _directReports.map(e => e.id)
-    const { data, error } = await API.getTeamTimesheetEntries(from, to, _teamEmpId || null, reporteeIds.length ? reporteeIds : null, _user.id, !_p.can_approve && _isManager)
+    // Always fetch ALL statuses (including drafts) for the team view — managers need
+    // visibility into who has/hasn't logged time, not just who has submitted.
+    // Approval actions gate on 'submitted' status independently.
+    const { data, error } = await API.getTeamTimesheetEntries(from, to, _teamEmpId || null, reporteeIds.length ? reporteeIds : null, _user.id, true)
     if (error) { Utils.showToast('Failed to load team data.', 'error'); return }
     _teamEntries = data || []
 
