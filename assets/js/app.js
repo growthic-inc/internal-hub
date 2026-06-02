@@ -740,8 +740,12 @@ const App = (() => {
     const _kycFiles = { aadhar: null, pan: null }
     const _d = {
       dob: '', personal_email: '', phone: '', blood_group: '',
-      current_address_line1: '', current_address_city: '', current_address_state: '', current_address_pincode: '',
-      permanent_address_line1: '', permanent_address_city: '', permanent_address_state: '', permanent_address_pincode: '',
+      current_address_house_no: '', current_address_building: '', current_address_street: '',
+      current_address_landmark: '', current_address_city: '', current_address_state: '',
+      current_address_pincode: '', current_address_type: '',
+      permanent_address_house_no: '', permanent_address_building: '', permanent_address_street: '',
+      permanent_address_landmark: '', permanent_address_city: '', permanent_address_state: '',
+      permanent_address_pincode: '', permanent_address_type: '',
       permanent_same_as_current: false,
       linkedin_url: '',
       bank_account_number: '', bank_ifsc: '', bank_confirmed: false,
@@ -771,21 +775,33 @@ const App = (() => {
         _d.blood_group    = document.getElementById('pw-blood-group')?.value || ''
       }
       if (_step === 3) {
-        _d.current_address_line1     = document.getElementById('pw-curr-line1')?.value.trim()   || ''
-        _d.current_address_city      = document.getElementById('pw-curr-city')?.value.trim()    || ''
-        _d.current_address_state     = document.getElementById('pw-curr-state')?.value.trim()   || ''
-        _d.current_address_pincode   = document.getElementById('pw-curr-pincode')?.value.trim() || ''
-        _d.permanent_same_as_current = document.getElementById('pw-perm-same')?.checked         || false
+        _d.current_address_house_no  = document.getElementById('pw-curr-house-no')?.value.trim()  || ''
+        _d.current_address_building  = document.getElementById('pw-curr-building')?.value.trim()  || ''
+        _d.current_address_street    = document.getElementById('pw-curr-street')?.value.trim()    || ''
+        _d.current_address_landmark  = document.getElementById('pw-curr-landmark')?.value.trim()  || ''
+        _d.current_address_city      = document.getElementById('pw-curr-city')?.value.trim()      || ''
+        _d.current_address_state     = document.getElementById('pw-curr-state')?.value.trim()     || ''
+        _d.current_address_pincode   = document.getElementById('pw-curr-pincode')?.value.trim()   || ''
+        _d.current_address_type      = document.getElementById('pw-curr-addr-type')?.value        || ''
+        _d.permanent_same_as_current = document.getElementById('pw-perm-same')?.checked           || false
         if (_d.permanent_same_as_current) {
-          _d.permanent_address_line1   = _d.current_address_line1
-          _d.permanent_address_city    = _d.current_address_city
-          _d.permanent_address_state   = _d.current_address_state
-          _d.permanent_address_pincode = _d.current_address_pincode
+          _d.permanent_address_house_no  = _d.current_address_house_no
+          _d.permanent_address_building  = _d.current_address_building
+          _d.permanent_address_street    = _d.current_address_street
+          _d.permanent_address_landmark  = _d.current_address_landmark
+          _d.permanent_address_city      = _d.current_address_city
+          _d.permanent_address_state     = _d.current_address_state
+          _d.permanent_address_pincode   = _d.current_address_pincode
+          _d.permanent_address_type      = _d.current_address_type
         } else {
-          _d.permanent_address_line1   = document.getElementById('pw-perm-line1')?.value.trim()   || ''
-          _d.permanent_address_city    = document.getElementById('pw-perm-city')?.value.trim()    || ''
-          _d.permanent_address_state   = document.getElementById('pw-perm-state')?.value.trim()   || ''
-          _d.permanent_address_pincode = document.getElementById('pw-perm-pincode')?.value.trim() || ''
+          _d.permanent_address_house_no  = document.getElementById('pw-perm-house-no')?.value.trim()  || ''
+          _d.permanent_address_building  = document.getElementById('pw-perm-building')?.value.trim()  || ''
+          _d.permanent_address_street    = document.getElementById('pw-perm-street')?.value.trim()    || ''
+          _d.permanent_address_landmark  = document.getElementById('pw-perm-landmark')?.value.trim()  || ''
+          _d.permanent_address_city      = document.getElementById('pw-perm-city')?.value.trim()      || ''
+          _d.permanent_address_state     = document.getElementById('pw-perm-state')?.value.trim()     || ''
+          _d.permanent_address_pincode   = document.getElementById('pw-perm-pincode')?.value.trim()   || ''
+          _d.permanent_address_type      = document.getElementById('pw-perm-addr-type')?.value        || ''
         }
         _d.linkedin_url = document.getElementById('pw-linkedin')?.value.trim() || ''
       }
@@ -820,7 +836,7 @@ const App = (() => {
       let pts = 0
       if (_avatarFile || user.profile_image_url)           pts += 20
       if (_d.dob || _d.phone || _d.personal_email)        pts += 15
-      if (_d.current_address_line1)                        pts += 5
+      if (_d.current_address_house_no && _d.current_address_city) pts += 5
       if (_d.linkedin_url)                                 pts += 5
       if (_d.bank_account_number || _d.bank_ifsc)         pts += 15
       if (_d.ec_name && _d.ec_phone)                      pts += 15
@@ -993,14 +1009,32 @@ const App = (() => {
 
       if (_step === 3) {
         const _permDis = _d.permanent_same_as_current
+        const _addrTypeOpts = ['Owned', 'Rented', 'PG', 'Hostel', 'Company Accommodation']
+        const _addrTypeSelect = (id, val, dis = false) =>
+          `<select id="${id}" class="form-input"${dis ? ' disabled' : ''}>
+            <option value="">Select type</option>
+            ${_addrTypeOpts.map(t => `<option value="${t}"${val === t ? ' selected' : ''}>${t}</option>`).join('')}
+          </select>`
         html += `
           <div style="margin-bottom:22px;">
             <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:12px;">Current Address</div>
             <div class="form-group" style="margin-bottom:10px;">
-              <label class="form-label">House / Flat No. &amp; Street <span class="required">*</span></label>
-              <input type="text" id="pw-curr-line1" class="form-input" placeholder="e.g. Flat 4B, 12 MG Road" value="${Utils.escapeHtml(_d.current_address_line1)}">
+              <label class="form-label">House / Flat Number <span class="required">*</span></label>
+              <input type="text" id="pw-curr-house-no" class="form-input" placeholder="e.g. Flat 4B, House 12" value="${Utils.escapeHtml(_d.current_address_house_no)}">
             </div>
-            <div class="people-field-grid">
+            <div class="form-group" style="margin-bottom:10px;">
+              <label class="form-label">Building / Society Name</label>
+              <input type="text" id="pw-curr-building" class="form-input" placeholder="e.g. Green Park Apartments" value="${Utils.escapeHtml(_d.current_address_building)}">
+            </div>
+            <div class="form-group" style="margin-bottom:10px;">
+              <label class="form-label">Street / Area / Locality <span class="required">*</span></label>
+              <input type="text" id="pw-curr-street" class="form-input" placeholder="e.g. MG Road, Koramangala" value="${Utils.escapeHtml(_d.current_address_street)}">
+            </div>
+            <div class="form-group" style="margin-bottom:10px;">
+              <label class="form-label">Landmark</label>
+              <input type="text" id="pw-curr-landmark" class="form-input" placeholder="e.g. Near City Mall" value="${Utils.escapeHtml(_d.current_address_landmark)}">
+            </div>
+            <div class="people-field-grid" style="margin-bottom:10px;">
               <div class="form-group">
                 <label class="form-label">City <span class="required">*</span></label>
                 <input type="text" id="pw-curr-city" class="form-input" placeholder="City" value="${Utils.escapeHtml(_d.current_address_city)}">
@@ -1009,9 +1043,15 @@ const App = (() => {
                 <label class="form-label">State <span class="required">*</span></label>
                 <input type="text" id="pw-curr-state" class="form-input" placeholder="State" value="${Utils.escapeHtml(_d.current_address_state)}">
               </div>
+            </div>
+            <div class="people-field-grid">
               <div class="form-group">
-                <label class="form-label">Pincode <span class="required">*</span></label>
-                <input type="text" id="pw-curr-pincode" class="form-input" placeholder="Pincode" value="${Utils.escapeHtml(_d.current_address_pincode)}" maxlength="6">
+                <label class="form-label">PIN Code <span class="required">*</span></label>
+                <input type="text" id="pw-curr-pincode" class="form-input" placeholder="6-digit PIN" value="${Utils.escapeHtml(_d.current_address_pincode)}" maxlength="6" inputmode="numeric">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Address Type <span class="required">*</span></label>
+                ${_addrTypeSelect('pw-curr-addr-type', _d.current_address_type)}
               </div>
             </div>
           </div>
@@ -1026,10 +1066,22 @@ const App = (() => {
             </div>
             <div id="pw-perm-fields" style="${_permDis ? 'opacity:0.45;pointer-events:none;' : ''}">
               <div class="form-group" style="margin-bottom:10px;">
-                <label class="form-label">House / Flat No. &amp; Street <span class="required">*</span></label>
-                <input type="text" id="pw-perm-line1" class="form-input" placeholder="e.g. Flat 4B, 12 MG Road" value="${Utils.escapeHtml(_d.permanent_address_line1)}"${_permDis ? ' disabled' : ''}>
+                <label class="form-label">House / Flat Number <span class="required">*</span></label>
+                <input type="text" id="pw-perm-house-no" class="form-input" placeholder="e.g. Flat 4B, House 12" value="${Utils.escapeHtml(_d.permanent_address_house_no)}"${_permDis ? ' disabled' : ''}>
               </div>
-              <div class="people-field-grid">
+              <div class="form-group" style="margin-bottom:10px;">
+                <label class="form-label">Building / Society Name</label>
+                <input type="text" id="pw-perm-building" class="form-input" placeholder="e.g. Green Park Apartments" value="${Utils.escapeHtml(_d.permanent_address_building)}"${_permDis ? ' disabled' : ''}>
+              </div>
+              <div class="form-group" style="margin-bottom:10px;">
+                <label class="form-label">Street / Area / Locality <span class="required">*</span></label>
+                <input type="text" id="pw-perm-street" class="form-input" placeholder="e.g. MG Road, Koramangala" value="${Utils.escapeHtml(_d.permanent_address_street)}"${_permDis ? ' disabled' : ''}>
+              </div>
+              <div class="form-group" style="margin-bottom:10px;">
+                <label class="form-label">Landmark</label>
+                <input type="text" id="pw-perm-landmark" class="form-input" placeholder="e.g. Near City Mall" value="${Utils.escapeHtml(_d.permanent_address_landmark)}"${_permDis ? ' disabled' : ''}>
+              </div>
+              <div class="people-field-grid" style="margin-bottom:10px;">
                 <div class="form-group">
                   <label class="form-label">City <span class="required">*</span></label>
                   <input type="text" id="pw-perm-city" class="form-input" placeholder="City" value="${Utils.escapeHtml(_d.permanent_address_city)}"${_permDis ? ' disabled' : ''}>
@@ -1038,9 +1090,15 @@ const App = (() => {
                   <label class="form-label">State <span class="required">*</span></label>
                   <input type="text" id="pw-perm-state" class="form-input" placeholder="State" value="${Utils.escapeHtml(_d.permanent_address_state)}"${_permDis ? ' disabled' : ''}>
                 </div>
+              </div>
+              <div class="people-field-grid">
                 <div class="form-group">
-                  <label class="form-label">Pincode <span class="required">*</span></label>
-                  <input type="text" id="pw-perm-pincode" class="form-input" placeholder="Pincode" value="${Utils.escapeHtml(_d.permanent_address_pincode)}"${_permDis ? ' disabled' : ''} maxlength="6">
+                  <label class="form-label">PIN Code <span class="required">*</span></label>
+                  <input type="text" id="pw-perm-pincode" class="form-input" placeholder="6-digit PIN" value="${Utils.escapeHtml(_d.permanent_address_pincode)}"${_permDis ? ' disabled' : ''} maxlength="6" inputmode="numeric">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Address Type <span class="required">*</span></label>
+                  ${_addrTypeSelect('pw-perm-addr-type', _d.permanent_address_type, _permDis)}
                 </div>
               </div>
             </div>
@@ -1183,10 +1241,14 @@ const App = (() => {
             if (checked) {
               const g   = id => document.getElementById(id)?.value || ''
               const s   = (id, v) => { const el = document.getElementById(id); if (el) el.value = v }
-              s('pw-perm-line1',   g('pw-curr-line1'))
-              s('pw-perm-city',    g('pw-curr-city'))
-              s('pw-perm-state',   g('pw-curr-state'))
-              s('pw-perm-pincode', g('pw-curr-pincode'))
+              s('pw-perm-house-no', g('pw-curr-house-no'))
+              s('pw-perm-building', g('pw-curr-building'))
+              s('pw-perm-street',   g('pw-curr-street'))
+              s('pw-perm-landmark', g('pw-curr-landmark'))
+              s('pw-perm-city',     g('pw-curr-city'))
+              s('pw-perm-state',    g('pw-curr-state'))
+              s('pw-perm-pincode',  g('pw-curr-pincode'))
+              s('pw-perm-addr-type',g('pw-curr-addr-type'))
             }
             _capture()
             const nextBtn = document.getElementById('pw-next')
@@ -1273,17 +1335,21 @@ const App = (() => {
         return !!(day && month && year && email && phone && blood)
       }
       if (_step === 3) {
-        const line1     = document.getElementById('pw-curr-line1')?.value.trim()
+        const houseNo   = document.getElementById('pw-curr-house-no')?.value.trim()
+        const street    = document.getElementById('pw-curr-street')?.value.trim()
         const city      = document.getElementById('pw-curr-city')?.value.trim()
         const state     = document.getElementById('pw-curr-state')?.value.trim()
         const pincode   = document.getElementById('pw-curr-pincode')?.value.trim()
+        const addrType  = document.getElementById('pw-curr-addr-type')?.value
         const same      = document.getElementById('pw-perm-same')?.checked
-        const permLine1   = document.getElementById('pw-perm-line1')?.value.trim()
-        const permCity    = document.getElementById('pw-perm-city')?.value.trim()
-        const permState   = document.getElementById('pw-perm-state')?.value.trim()
-        const permPincode = document.getElementById('pw-perm-pincode')?.value.trim()
-        const currOk = !!(line1 && city && state && pincode)
-        const permOk = same || !!(permLine1 && permCity && permState && permPincode)
+        const permHouseNo  = document.getElementById('pw-perm-house-no')?.value.trim()
+        const permStreet   = document.getElementById('pw-perm-street')?.value.trim()
+        const permCity     = document.getElementById('pw-perm-city')?.value.trim()
+        const permState    = document.getElementById('pw-perm-state')?.value.trim()
+        const permPincode  = document.getElementById('pw-perm-pincode')?.value.trim()
+        const permAddrType = document.getElementById('pw-perm-addr-type')?.value
+        const currOk = !!(houseNo && street && city && state && pincode && addrType)
+        const permOk = same || !!(permHouseNo && permStreet && permCity && permState && permPincode && permAddrType)
         return currOk && permOk
       }
       if (_step === 4) {
@@ -1378,8 +1444,24 @@ const App = (() => {
           personal_email:                 _d.personal_email      || null,
           phone:                          _d.phone               || null,
           blood_group:                    _d.blood_group         || null,
-          address:           [_d.current_address_line1, _d.current_address_city, _d.current_address_state, _d.current_address_pincode].filter(Boolean).join(', ') || null,
-          permanent_address: [_d.permanent_address_line1, _d.permanent_address_city, _d.permanent_address_state, _d.permanent_address_pincode].filter(Boolean).join(', ') || null,
+          address:           [_d.current_address_house_no, _d.current_address_building, _d.current_address_street, _d.current_address_landmark, _d.current_address_city, _d.current_address_state, _d.current_address_pincode].filter(Boolean).join(', ') || null,
+          permanent_address: [_d.permanent_address_house_no, _d.permanent_address_building, _d.permanent_address_street, _d.permanent_address_landmark, _d.permanent_address_city, _d.permanent_address_state, _d.permanent_address_pincode].filter(Boolean).join(', ') || null,
+          current_address_house_no:   _d.current_address_house_no   || null,
+          current_address_building:   _d.current_address_building   || null,
+          current_address_street:     _d.current_address_street     || null,
+          current_address_landmark:   _d.current_address_landmark   || null,
+          current_address_city:       _d.current_address_city       || null,
+          current_address_state:      _d.current_address_state      || null,
+          current_address_pincode:    _d.current_address_pincode    || null,
+          current_address_type:       _d.current_address_type       || null,
+          permanent_address_house_no: _d.permanent_address_house_no || null,
+          permanent_address_building: _d.permanent_address_building || null,
+          permanent_address_street:   _d.permanent_address_street   || null,
+          permanent_address_landmark: _d.permanent_address_landmark || null,
+          permanent_address_city:     _d.permanent_address_city     || null,
+          permanent_address_state:    _d.permanent_address_state    || null,
+          permanent_address_pincode:  _d.permanent_address_pincode  || null,
+          permanent_address_type:     _d.permanent_address_type     || null,
           linkedin_url:                   _d.linkedin_url        || null,
           bank_account_number:            _d.bank_account_number || null,
           bank_ifsc:                      _d.bank_ifsc           || null,

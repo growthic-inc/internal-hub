@@ -479,6 +479,48 @@ const People = (() => {
           </div>
         </div>
 
+        <!-- ── Address ───────────────────────────────────────── -->
+        ${(emp.current_address_house_no || emp.address) ? `
+        <div style="padding:16px 24px;border-bottom:1px solid var(--border);">
+          ${_sec('Address')}
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+            <div>
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:8px;">Current Address</div>
+              ${emp.current_address_house_no ? `
+                <div style="font-size:13px;color:var(--text);line-height:1.7;">
+                  ${[
+                    emp.current_address_house_no,
+                    emp.current_address_building,
+                    emp.current_address_street,
+                    emp.current_address_landmark,
+                    emp.current_address_city,
+                    emp.current_address_state,
+                    emp.current_address_pincode
+                  ].filter(Boolean).map(l => Utils.escapeHtml(l)).join('<br>')}
+                  ${emp.current_address_type ? `<br><span style="font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1px 6px;color:var(--text-secondary);">${Utils.escapeHtml(emp.current_address_type)}</span>` : ''}
+                </div>
+              ` : `<div style="font-size:13px;color:var(--text);">${Utils.escapeHtml(emp.address || '—')}</div>`}
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:8px;">Permanent Address</div>
+              ${emp.permanent_address_house_no ? `
+                <div style="font-size:13px;color:var(--text);line-height:1.7;">
+                  ${[
+                    emp.permanent_address_house_no,
+                    emp.permanent_address_building,
+                    emp.permanent_address_street,
+                    emp.permanent_address_landmark,
+                    emp.permanent_address_city,
+                    emp.permanent_address_state,
+                    emp.permanent_address_pincode
+                  ].filter(Boolean).map(l => Utils.escapeHtml(l)).join('<br>')}
+                  ${emp.permanent_address_type ? `<br><span style="font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1px 6px;color:var(--text-secondary);">${Utils.escapeHtml(emp.permanent_address_type)}</span>` : ''}
+                </div>
+              ` : `<div style="font-size:13px;color:var(--text);">${Utils.escapeHtml(emp.permanent_address || emp.address || '—')}</div>`}
+            </div>
+          </div>
+        </div>` : ''}
+
         <!-- ── Emergency Contact ──────────────────────────────── -->
         <div style="padding:16px 24px;${_canManage ? 'border-bottom:1px solid var(--border);' : ''}">
           ${_sec('Emergency Contact')}

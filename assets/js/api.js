@@ -821,7 +821,14 @@ const API = (() => {
       .select(`
         id, employee_id, name, email, personal_email, phone_number,
         date_of_birth, role, department, designation, employment_type,
-        work_location, profile_image_url,
+        work_location, profile_image_url, linkedin_url,
+        address, permanent_address,
+        current_address_house_no, current_address_building, current_address_street,
+        current_address_landmark, current_address_city, current_address_state,
+        current_address_pincode, current_address_type,
+        permanent_address_house_no, permanent_address_building, permanent_address_street,
+        permanent_address_landmark, permanent_address_city, permanent_address_state,
+        permanent_address_pincode, permanent_address_type,
         emergency_contact_name, emergency_contact_relationship, emergency_contact_phone,
         status, joining_date, probation_completed, probation_completed_date,
         manager_id, manager:employees!manager_id(id, name, designation)
