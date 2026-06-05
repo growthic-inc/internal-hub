@@ -396,4 +396,12 @@
 
   /* Home stats single col */
   .home-stats-grid { grid-template-columns: 1fr !important; }
+
+  /* Insights person tab responsive */
+  #ts-person-tab-body > div > div[style*="grid-template-columns:repeat(4"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  #ts-person-tab-body > div > div[style*="grid-template-columns:1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
 }

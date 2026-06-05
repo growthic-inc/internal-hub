@@ -33,6 +33,8 @@ const Timesheet = (() => {
   let _teamPersonEntries = []           // entries for person drill-down
   // Insights tab
   let _insightsCharts    = []
+  let _insightsPersonMonth = null   // Date: first day of selected month for person insights
+  let _personInsightsChart = null   // Chart.js donut for person insights tab
 
   /* ── Constants ──────────────────────────────────────────── */
   const CHART_COLORS = [
@@ -141,6 +143,7 @@ const Timesheet = (() => {
     // Destroy any insights charts
     _insightsCharts.forEach(c => { try { c.destroy() } catch(_) {} })
     _insightsCharts = []
+    if (_personInsightsChart) { try { _personInsightsChart.destroy() } catch(_) {} _personInsightsChart = null }
     switch (tab) {
       case 'mine':     return _loadMineTab()
       case 'team':     return _loadTeamTab()
@@ -282,6 +285,34 @@ const Timesheet = (() => {
     if (p === 'first_half')  return 'First Half'
     if (p === 'second_half') return 'Second Half'
     return null
+  }
+
+  function _weekdaysInMonth(year, month) {
+    let count = 0
+    const days = new Date(year, month + 1, 0).getDate()
+    for (let d = 1; d <= days; d++) {
+      const dow = new Date(year, month, d).getDay()
+      if (dow !== 0 && dow !== 6) count++
+    }
+    return count
+  }
+
+  function _leaveDaysInMonth(leaves, mS, mE) {
+    let full = 0, half = 0
+    ;(leaves || []).forEach(l => {
+      if (l.end_date < mS || l.start_date > mE) return
+      if (l.is_half_day) {
+        const dow = new Date(l.start_date).getDay()
+        if (l.start_date >= mS && l.start_date <= mE && dow !== 0 && dow !== 6) half += 0.5
+      } else {
+        const s = new Date(Math.max(new Date(l.start_date), new Date(mS)))
+        const e = new Date(Math.min(new Date(l.end_date), new Date(mE)))
+        for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
+          if (d.getDay() !== 0 && d.getDay() !== 6) full++
+        }
+      }
+    })
+    return { full, half, total: full + half }
   }
 
   function _renderDayCol(day) {
@@ -1030,10 +1061,11 @@ const Timesheet = (() => {
         const empObj = _teamEntries.find(e => e.employee_id === empId)?.employees
                     || _directReports.find(e => e.id === empId)
         if (!empObj) return
-        _teamView       = 'person'
-        _teamSelEmpObj  = empObj
-        _teamPersonTab  = 'week'
-        _teamPersonWeek = _getMondayOf(new Date())
+        _teamView            = 'person'
+        _teamSelEmpObj       = empObj
+        _teamPersonTab       = 'week'
+        _teamPersonWeek      = _getMondayOf(new Date())
+        _insightsPersonMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
         _updateTeamToolbar()
         _renderTeamSidebar()
         _loadPersonWeek()
@@ -1171,6 +1203,7 @@ const Timesheet = (() => {
           <button class="ts-sub-tab-btn${_teamPersonTab==='week'?' ts-sub-tab-btn--active':''}" data-ptab="week">Week View</button>
           <button class="ts-sub-tab-btn${_teamPersonTab==='history'?' ts-sub-tab-btn--active':''}" data-ptab="history">History</button>
           <button class="ts-sub-tab-btn${_teamPersonTab==='monthly'?' ts-sub-tab-btn--active':''}" data-ptab="monthly">Monthly Summary</button>
+          <button class="ts-sub-tab-btn${_teamPersonTab==='insights'?' ts-sub-tab-btn--active':''}" data-ptab="insights">Insights</button>
         </div>
       </div>
       <div id="ts-person-tab-body"></div>
@@ -1206,6 +1239,8 @@ const Timesheet = (() => {
       const to   = _toISO(new Date())
       const { data } = await API.getTimesheetEntries(_teamSelEmpObj.id, from, to)
       _renderPersonMonthly(body, data || [])
+    } else if (_teamPersonTab === 'insights') {
+      await _loadPersonInsights()
     }
   }
 
@@ -1464,6 +1499,298 @@ const Timesheet = (() => {
     }).join('')
 
     container.innerHTML = cardsHtml
+  }
+
+  async function _loadPersonInsights() {
+    const body = document.getElementById('ts-person-tab-body')
+    if (!body || !_teamSelEmpObj) return
+
+    // Destroy existing chart
+    if (_personInsightsChart) { try { _personInsightsChart.destroy() } catch(_){} _personInsightsChart = null }
+
+    body.innerHTML = '<p class="loading-text">Loading insights…</p>'
+
+    const emp    = _teamSelEmpObj
+    const year   = _insightsPersonMonth.getFullYear()
+    const month  = _insightsPersonMonth.getMonth()
+    const mStart = new Date(year, month, 1)
+    const mEnd   = new Date(year, month + 1, 0)
+    const pStart = new Date(year, month - 1, 1)
+    const pEnd   = new Date(year, month, 0)
+    const mS     = _toISO(mStart)
+    const mE     = _toISO(mEnd)
+    const pS     = _toISO(pStart)
+    const pE     = _toISO(pEnd)
+
+    const monthLabel     = mStart.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+    const isCurrentMonth = year === new Date().getFullYear() && month === new Date().getMonth()
+
+    const [
+      { data: entries },
+      { data: prevEntries },
+      leaveData,
+      { data: teamEntries },
+      deptRes,
+    ] = await Promise.all([
+      API.getTimesheetEntries(emp.id, mS, mE),
+      API.getTimesheetEntries(emp.id, pS, pE),
+      API.getApprovedLeaveForEmployee(emp.id),
+      _directReports.length
+        ? API.getTeamTimesheetEntries(mS, mE, null, _directReports.map(e => e.id), emp.id, true)
+        : Promise.resolve({ data: [] }),
+      emp.department ? API.getDeptUtilizationAvg(emp.department, mS, mE) : Promise.resolve({ data: null }),
+    ])
+
+    const allLeaves = leaveData?.leaves || []
+
+    // ── Working days & leaves ───────────────────────────────────
+    const weekdays    = _weekdaysInMonth(year, month)
+    const leaveDays   = _leaveDaysInMonth(allLeaves, mS, mE)
+    const workingDays = Math.max(0, weekdays - leaveDays.full - leaveDays.half)
+    const leavesLabel = leaveDays.total === 0 ? '0' : `${leaveDays.total}`
+
+    // ── Hours ───────────────────────────────────────────────────
+    const E = entries || []
+    const P = prevEntries || []
+    const loggedHours   = E.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+    const prevLogged    = P.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+    const expectedHours = workingDays * 9
+    const prevExpected  = _weekdaysInMonth(year, month - 1) * 9  // approx, no leaves for prev
+    const utilPct       = expectedHours > 0 ? Math.round((loggedHours / expectedHours) * 100) : 0
+    const prevUtil      = prevExpected > 0 ? Math.round((prevLogged / prevExpected) * 100) : 0
+    const utilDelta     = utilPct - prevUtil
+    const utilColor     = utilPct >= 85 ? '#1D9E75' : utilPct >= 70 ? '#F59E0B' : '#EF4444'
+
+    // ── Time allocation ─────────────────────────────────────────
+    const clientHours   = E.filter(e => e.work_type === 'client').reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+    const internalHours = E.filter(e => e.work_type !== 'client').reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+
+    // ── Top clients or internal projects ────────────────────────
+    const hasClientWork = clientHours > 0
+    const breakdownMap  = {}
+    E.forEach(e => {
+      const key = hasClientWork
+        ? (e.work_type === 'client' ? (e.clients?.client_name || 'Unknown Client') : null)
+        : (e.work_type === 'internal' ? (e.internal_project?.name || 'Internal') : (e.clients?.client_name || 'Other'))
+      if (!key) return
+      breakdownMap[key] = (breakdownMap[key] || 0) + parseFloat(e.hours || 0)
+    })
+    const breakdownEntries = Object.entries(breakdownMap).sort((a, b) => b[1] - a[1]).slice(0, 6)
+    const breakdownTotal   = breakdownEntries.reduce((s, [, h]) => s + h, 0)
+
+    // ── Submission compliance ────────────────────────────────────
+    const submitted  = E.filter(e => ['submitted','approved','rejected'].includes(e.status))
+    const onTime     = submitted.filter(e => !e.is_late)
+    const compliance = submitted.length ? Math.round((onTime.length / submitted.length) * 100) : null
+
+    // ── Team average utilization ─────────────────────────────────
+    const T = teamEntries || []
+    const teamEmpMap = {}
+    T.forEach(e => {
+      if (!teamEmpMap[e.employee_id]) teamEmpMap[e.employee_id] = 0
+      teamEmpMap[e.employee_id] += parseFloat(e.hours || 0)
+    })
+    _directReports.forEach(dr => { if (!teamEmpMap[dr.id]) teamEmpMap[dr.id] = 0 })
+    const teamUtils = Object.values(teamEmpMap).map(h => expectedHours > 0 ? Math.min(Math.round((h / expectedHours) * 100), 150) : 0)
+    const teamAvg   = teamUtils.length ? Math.round(teamUtils.reduce((s, u) => s + u, 0) / teamUtils.length) : null
+    const deptAvg   = typeof deptRes?.data === 'number' ? Math.round(deptRes.data) : null
+
+    // ── Attention flags ──────────────────────────────────────────
+    const flags = []
+    if (loggedHours === 0 && !isCurrentMonth) flags.push({ icon: '🔴', msg: 'No hours logged this month.' })
+    else if (utilPct < 70 && expectedHours > 0) flags.push({ icon: '🟡', msg: `Underutilized — ${utilPct}% utilization (below 70% threshold).` })
+    if (utilPct > 105 && expectedHours > 0) flags.push({ icon: '🟠', msg: `Overloaded — ${utilPct}% utilization exceeds capacity.` })
+    if (utilDelta < -20 && prevUtil > 0) flags.push({ icon: '🟡', msg: `Utilization dropped ${Math.abs(utilDelta)} points vs last month.` })
+    if (hasClientWork && breakdownEntries.length > 0 && (breakdownEntries[0][1] / clientHours) > 0.75)
+      flags.push({ icon: '🔵', msg: `Single client (${breakdownEntries[0][0]}) consuming ${Math.round(breakdownEntries[0][1]/clientHours*100)}% of client hours.` })
+    if (compliance !== null && compliance < 70 && submitted.length >= 5)
+      flags.push({ icon: '🟡', msg: `Low submission compliance — ${compliance}% of entries submitted on time.` })
+
+    // ── Render ───────────────────────────────────────────────────
+    const flagsHtml = flags.length
+      ? flags.map(f => `<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;"><span>${f.icon}</span><span>${Utils.escapeHtml(f.msg)}</span></div>`).join('')
+      : `<div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#1D9E75;"><span>✓</span><span>No concerns this month.</span></div>`
+
+    const breakdownBars = breakdownEntries.map(([name, hrs], i) => {
+      const pct = breakdownTotal > 0 ? Math.round((hrs / breakdownTotal) * 100) : 0
+      return `
+        <div style="margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
+            <span style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%;">${Utils.escapeHtml(name)}</span>
+            <span style="color:var(--text-muted);flex-shrink:0;">${hrs.toFixed(1)}h &nbsp; ${pct}%</span>
+          </div>
+          <div style="height:6px;background:var(--surface);border-radius:99px;overflow:hidden;">
+            <div style="height:100%;width:${pct}%;background:${CHART_COLORS[i % CHART_COLORS.length]};border-radius:99px;transition:width .4s;"></div>
+          </div>
+        </div>`
+    }).join('')
+
+    const benchBar = (label, pct, color, bold = false) => pct === null ? '' : `
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
+          <span style="${bold ? 'font-weight:700;' : ''}color:var(--text);">${label}</span>
+          <span style="${bold ? 'font-weight:700;' : ''}color:var(--text);">${pct}%</span>
+        </div>
+        <div style="height:6px;background:var(--surface);border-radius:99px;overflow:hidden;">
+          <div style="height:100%;width:${Math.min(pct, 100)}%;background:${color};border-radius:99px;"></div>
+        </div>
+      </div>`
+
+    const capacityGap  = loggedHours - expectedHours
+    const gapColor     = capacityGap >= 0 ? '#EF4444' : '#1D9E75'
+    const gapLabel     = capacityGap >= 0 ? `+${capacityGap.toFixed(1)}h over capacity` : `${Math.abs(capacityGap).toFixed(1)}h available capacity`
+
+    body.innerHTML = `
+      <div style="padding:20px;">
+
+        <!-- Month selector -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+          <div>
+            <div style="font-size:15px;font-weight:700;">Employee Overview</div>
+            <div style="font-size:12px;color:var(--text-muted);">${monthLabel} · Public holidays not yet included</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button class="btn btn--ghost btn--sm" id="pi-prev">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <span style="font-size:13px;font-weight:600;min-width:110px;text-align:center;">${monthLabel}</span>
+            <button class="btn btn--ghost btn--sm" id="pi-next" ${isCurrentMonth ? 'disabled' : ''}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- KPI row -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr) 1.4fr;gap:12px;margin-bottom:20px;">
+          <div class="section-card" style="padding:16px;">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:6px;">Working Days</div>
+            <div style="font-size:26px;font-weight:800;color:var(--text);">${workingDays}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${weekdays} weekdays − ${leaveDays.total} leave</div>
+          </div>
+          <div class="section-card" style="padding:16px;">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:6px;">Leaves Taken</div>
+            <div style="font-size:26px;font-weight:800;color:var(--text);">${leavesLabel}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">days approved</div>
+          </div>
+          <div class="section-card" style="padding:16px;">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:6px;">Expected Hours</div>
+            <div style="font-size:26px;font-weight:800;color:var(--text);">${expectedHours}h</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${workingDays} days × 9h</div>
+          </div>
+          <div class="section-card" style="padding:16px;">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:6px;">Logged Hours</div>
+            <div style="font-size:26px;font-weight:800;color:var(--text);">${loggedHours.toFixed(1)}h</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">recorded</div>
+          </div>
+          <div class="section-card" style="padding:16px;background:${utilColor};border-color:${utilColor};">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.75);margin-bottom:6px;">Utilization</div>
+            <div style="font-size:32px;font-weight:800;color:#fff;">${utilPct}%</div>
+            <div style="margin-top:4px;">${(() => {
+              const d = utilDelta
+              if (prevUtil === 0) return '<span style="font-size:11px;color:rgba(255,255,255,.75);">No prior data</span>'
+              return `<span style="font-size:11px;color:rgba(255,255,255,.85);">${d > 0 ? '▲' : d < 0 ? '▼' : '='} ${Math.abs(d)}% vs last month</span>`
+            })()}</div>
+          </div>
+        </div>
+
+        <!-- Attention Required -->
+        <div class="section-card" style="padding:16px;margin-bottom:20px;">
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px;">Attention Required</div>
+          ${flagsHtml}
+        </div>
+
+        <!-- Time Allocation + Top Clients/Projects -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+          <div class="section-card" style="padding:16px;">
+            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:4px;">Time Allocation</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">How hours are distributed</div>
+            ${loggedHours > 0 ? `
+              <div style="display:flex;align-items:center;gap:20px;">
+                <div style="position:relative;width:100px;height:100px;flex-shrink:0;">
+                  <canvas id="pi-donut" width="100" height="100"></canvas>
+                </div>
+                <div style="flex:1;">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                    <div style="width:10px;height:10px;border-radius:50%;background:#0F4799;flex-shrink:0;"></div>
+                    <div style="flex:1;font-size:12px;">Client Work</div>
+                    <div style="font-size:12px;font-weight:600;">${loggedHours > 0 ? Math.round(clientHours/loggedHours*100) : 0}%</div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <div style="width:10px;height:10px;border-radius:50%;background:#1D9E75;flex-shrink:0;"></div>
+                    <div style="flex:1;font-size:12px;">Internal Work</div>
+                    <div style="font-size:12px;font-weight:600;">${loggedHours > 0 ? Math.round(internalHours/loggedHours*100) : 0}%</div>
+                  </div>
+                </div>
+              </div>` : `<p style="font-size:13px;color:var(--text-muted);text-align:center;padding:20px 0;">No entries this month.</p>`}
+          </div>
+          <div class="section-card" style="padding:16px;">
+            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:4px;">${hasClientWork ? 'Top Clients by Effort' : 'Top Projects by Effort'}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">Hours logged${hasClientWork ? ' per client' : ' per project'}</div>
+            ${breakdownEntries.length ? breakdownBars : `<p style="font-size:13px;color:var(--text-muted);text-align:center;padding:20px 0;">No data for this period.</p>`}
+          </div>
+        </div>
+
+        <!-- Capacity + Team Context -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="section-card" style="padding:16px;">
+            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:14px;">Capacity &amp; Utilization</div>
+            <div style="display:flex;flex-direction:column;gap:10px;">
+              ${[
+                ['Expected', `${expectedHours}h`, 'Standard'],
+                ['Logged', `${loggedHours.toFixed(1)}h`, 'Recorded'],
+                ['Gap', `${capacityGap >= 0 ? '+' : ''}${capacityGap.toFixed(1)}h`, gapLabel],
+                ...(compliance !== null ? [['Submission Compliance', `${compliance}%`, `${onTime.length} of ${submitted.length} on time`]] : []),
+              ].map(([label, val, sub]) => `
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+                  <div>
+                    <div style="font-size:13px;font-weight:500;">${label}</div>
+                    <div style="font-size:11px;color:var(--text-muted);">${sub}</div>
+                  </div>
+                  <div style="font-size:16px;font-weight:700;color:${label === 'Gap' ? gapColor : 'var(--text)'};">${val}</div>
+                </div>`).join('')}
+            </div>
+          </div>
+          <div class="section-card" style="padding:16px;">
+            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:4px;">Team Context</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">Utilization comparison</div>
+            ${benchBar(Utils.escapeHtml(emp.name || 'Employee'), utilPct, utilColor, true)}
+            ${teamAvg !== null ? benchBar('Team Avg', teamAvg, '#94A3B8') : ''}
+            ${deptAvg !== null ? benchBar('Dept Avg', deptAvg, '#CBD5E1') : ''}
+            ${teamAvg === null && deptAvg === null ? '<p style="font-size:13px;color:var(--text-muted);">No benchmark data available.</p>' : ''}
+          </div>
+        </div>
+
+      </div>
+    `
+
+    // Render donut chart
+    if (loggedHours > 0) {
+      const ctx = document.getElementById('pi-donut')
+      if (ctx) {
+        _personInsightsChart = new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+            labels: ['Client Work', 'Internal Work'],
+            datasets: [{ data: [clientHours, internalHours], backgroundColor: ['#0F4799', '#1D9E75'], borderWidth: 2, borderColor: '#fff' }]
+          },
+          options: { responsive: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.toFixed(1)}h` } } }, cutout: '65%' }
+        })
+      }
+    }
+
+    // Month navigation
+    document.getElementById('pi-prev')?.addEventListener('click', () => {
+      _insightsPersonMonth = new Date(_insightsPersonMonth.getFullYear(), _insightsPersonMonth.getMonth() - 1, 1)
+      _loadPersonInsights()
+    })
+    document.getElementById('pi-next')?.addEventListener('click', () => {
+      const now = new Date()
+      const nextMonth = new Date(_insightsPersonMonth.getFullYear(), _insightsPersonMonth.getMonth() + 1, 1)
+      if (nextMonth <= new Date(now.getFullYear(), now.getMonth(), 1)) {
+        _insightsPersonMonth = nextMonth
+        _loadPersonInsights()
+      }
+    })
   }
 
   function _renderTeamEmployeeGroup({ emp, entries }) {

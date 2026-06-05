@@ -1690,6 +1690,14 @@ const API = (() => {
     return result
   }
 
+  async function getDeptUtilizationAvg(department, monthStart, monthEnd) {
+    return supabase.rpc('get_dept_utilization_avg', {
+      p_department:  department,
+      p_month_start: monthStart,
+      p_month_end:   monthEnd,
+    })
+  }
+
   return {
     getClients, getClient, getClientByProjectCode, updateEntityProfileType,
     getClientTeam, setClientTeam,
@@ -1749,5 +1757,6 @@ const API = (() => {
     getPolicyCategories, addPolicyCategory, deletePolicyCategory,
     getPolicies, createPolicy, updatePolicy, deletePolicy,
     getInternalProjects, createInternalProject, updateInternalProject, setInternalProjectStatus, updateClientProjectDetails, setClientStatus,
+    getDeptUtilizationAvg,
   }
 })()
