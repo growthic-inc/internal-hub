@@ -129,7 +129,7 @@ const API = (() => {
   async function getTimesheetEntries(employeeId, from, to) {
     return supabase
       .from('timesheets')
-      .select('*, clients(client_name, project_code), internal_project:internal_projects(id, project_code, name), internal_entity:internal_project_entities(id, entity_name)')
+      .select('*, clients(client_name, project_code), entity:client_entities!entity_id(id, entity_name), internal_project:internal_projects(id, project_code, name), internal_entity:internal_project_entities(id, entity_name)')
       .eq('employee_id', employeeId)
       .gte('date', from)
       .lte('date', to)

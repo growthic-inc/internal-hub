@@ -1554,8 +1554,8 @@ const Timesheet = (() => {
     const P = prevEntries || []
     const loggedHours   = E.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
     const prevLogged    = P.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
-    const expectedHours = workingDays * 9
-    const prevExpected  = _weekdaysInMonth(year, month - 1) * 9  // approx, no leaves for prev
+    const expectedHours = workingDays * 7.5
+    const prevExpected  = _weekdaysInMonth(year, month - 1) * 7.5  // approx, no leaves for prev
     const utilPct       = expectedHours > 0 ? Math.round((loggedHours / expectedHours) * 100) : 0
     const prevUtil      = prevExpected > 0 ? Math.round((prevLogged / prevExpected) * 100) : 0
     const utilDelta     = utilPct - prevUtil
@@ -1565,14 +1565,18 @@ const Timesheet = (() => {
     const clientHours   = E.filter(e => e.work_type === 'client').reduce((s, e) => s + parseFloat(e.hours || 0), 0)
     const internalHours = E.filter(e => e.work_type !== 'client').reduce((s, e) => s + parseFloat(e.hours || 0), 0)
 
-    // ── Top clients or internal projects ────────────────────────
+    // ── Top entities by effort ───────────────────────────────────
     const hasClientWork = clientHours > 0
     const breakdownMap  = {}
     E.forEach(e => {
-      const key = hasClientWork
-        ? (e.work_type === 'client' ? (e.clients?.client_name || 'Unknown Client') : null)
-        : (e.work_type === 'internal' ? (e.internal_project?.name || 'Internal') : (e.clients?.client_name || 'Other'))
-      if (!key) return
+      let key
+      if (e.work_type === 'client') {
+        // Group by client entity name; fall back to client name if entity not set
+        key = e.entity?.entity_name || e.clients?.client_name || 'Unknown'
+      } else {
+        // Group by internal project entity; fall back to project name
+        key = e.internal_entity?.entity_name || e.internal_project?.name || 'Internal'
+      }
       breakdownMap[key] = (breakdownMap[key] || 0) + parseFloat(e.hours || 0)
     })
     const breakdownEntries = Object.entries(breakdownMap).sort((a, b) => b[1] - a[1]).slice(0, 6)
@@ -1675,7 +1679,7 @@ const Timesheet = (() => {
           <div class="section-card" style="padding:16px;">
             <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:6px;">Expected Hours</div>
             <div style="font-size:26px;font-weight:800;color:var(--text);">${expectedHours}h</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${workingDays} days × 9h</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${workingDays} days × 7.5h</div>
           </div>
           <div class="section-card" style="padding:16px;">
             <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:6px;">Logged Hours</div>
@@ -1724,35 +1728,17 @@ const Timesheet = (() => {
               </div>` : `<p style="font-size:13px;color:var(--text-muted);text-align:center;padding:20px 0;">No entries this month.</p>`}
           </div>
           <div class="section-card" style="padding:16px;">
-            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:4px;">${hasClientWork ? 'Top Clients by Effort' : 'Top Projects by Effort'}</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">Hours logged${hasClientWork ? ' per client' : ' per project'}</div>
+            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:4px;">Top Entities by Effort</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">Hours logged per entity</div>
             ${breakdownEntries.length ? breakdownBars : `<p style="font-size:13px;color:var(--text-muted);text-align:center;padding:20px 0;">No data for this period.</p>`}
           </div>
         </div>
 
-        <!-- Capacity + Team Context -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-          <div class="section-card" style="padding:16px;">
-            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:14px;">Capacity &amp; Utilization</div>
-            <div style="display:flex;flex-direction:column;gap:10px;">
-              ${[
-                ['Expected', `${expectedHours}h`, 'Standard'],
-                ['Logged', `${loggedHours.toFixed(1)}h`, 'Recorded'],
-                ['Gap', `${capacityGap >= 0 ? '+' : ''}${capacityGap.toFixed(1)}h`, gapLabel],
-                ...(compliance !== null ? [['Submission Compliance', `${compliance}%`, `${onTime.length} of ${submitted.length} on time`]] : []),
-              ].map(([label, val, sub]) => `
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
-                  <div>
-                    <div style="font-size:13px;font-weight:500;">${label}</div>
-                    <div style="font-size:11px;color:var(--text-muted);">${sub}</div>
-                  </div>
-                  <div style="font-size:16px;font-weight:700;color:${label === 'Gap' ? gapColor : 'var(--text)'};">${val}</div>
-                </div>`).join('')}
-            </div>
-          </div>
-          <div class="section-card" style="padding:16px;">
-            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:4px;">Team Context</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">Utilization comparison</div>
+        <!-- Team Context -->
+        <div class="section-card" style="padding:16px;">
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:4px;">Team Context</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">Utilization comparison</div>
+          <div style="max-width:480px;">
             ${benchBar(Utils.escapeHtml(emp.name || 'Employee'), utilPct, utilColor, true)}
             ${teamAvg !== null ? benchBar('Team Avg', teamAvg, '#94A3B8') : ''}
             ${deptAvg !== null ? benchBar('Dept Avg', deptAvg, '#CBD5E1') : ''}
