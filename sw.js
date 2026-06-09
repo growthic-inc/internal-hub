@@ -7,7 +7,7 @@
    - Push notifications: show + handle tap to open correct page
    ============================================================ */
 
-const CACHE = 'growthic-v22'
+const CACHE = 'growthic-v23'
 
 // ── Install: precache the two shell pages ─────────────────────
 self.addEventListener('install', e => {

@@ -236,7 +236,7 @@ const People = (() => {
                   <div>
                     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
                       <strong>${Utils.escapeHtml(e.name)}</strong>
-                      ${!e.probation_completed ? `<span class="badge badge--warning" style="font-size:10px;padding:1px 7px;">Probation</span>` : ''}
+                      ${e.employment_type === 'probation' ? `<span class="badge badge--warning" style="font-size:10px;padding:1px 7px;">Probation</span>` : ''}
                     </div>
                     ${(() => {
                       const badges = _empBadgeMap[e.id] || []
@@ -392,7 +392,7 @@ const People = (() => {
               padding:3px 10px;border-radius:99px;">
               ${isActive ? '● Active' : '● Inactive'}
             </span>
-            ${!emp.probation_completed ? `<span style="background:rgba(180,83,9,0.35);color:#fcd34d;font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px;">Probation</span>` : ''}
+            ${emp.employment_type === 'probation' ? `<span style="background:rgba(180,83,9,0.35);color:#fcd34d;font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px;">Probation</span>` : ''}
           </div>
         </div>
 
