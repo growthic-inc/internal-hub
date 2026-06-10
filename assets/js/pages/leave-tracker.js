@@ -24,6 +24,10 @@ const LeaveTracker = (() => {
   let _isManager          = false
   let _isHR               = false   // can manage settings/holidays/quotas
   let _canApproveLeave    = false   // can approve team leave/WFH requests
+  let _attendanceRecords  = []      // employee_attendance rows for current month
+  let _attendanceMonth    = null    // Date: first day of displayed month
+  let _uploadLog          = []      // attendance_upload_log rows
+  let _canUploadAttendance = false
 
   const currentYear = new Date().getFullYear()
 
@@ -139,6 +143,7 @@ const LeaveTracker = (() => {
   function render(user) {
     const isHR = App.hasAccess('leave_tracker', 'manage_leave_settings', 'can_manage')
     const tabs = [
+      { id: 'attendance',         label: 'Attendance' },
       { id: 'my-leaves',          label: 'My Leaves' },
       { id: 'my-wfh',             label: 'My WFH' },
       { id: 'pending-approvals',  label: 'Pending Approvals', conditional: true },
@@ -153,7 +158,7 @@ const LeaveTracker = (() => {
           <div class="tabs" id="lt-tabs">
             ${tabs.map(t => `
               <button
-                class="tab-btn${t.id === 'my-leaves' ? ' tab-btn--active' : ''}"
+                class="tab-btn${t.id === 'attendance' ? ' tab-btn--active' : ''}"
                 data-tab="${t.id}"
                 id="lt-tab-${t.id}"
                 ${(t.hrOnly && !isHR) ? 'style="display:none;"' : ''}
@@ -178,8 +183,10 @@ const LeaveTracker = (() => {
     _user             = user
     _isHR             = App.hasAccess('leave_tracker', 'manage_leave_settings', 'can_manage')
     _canApproveLeave  = App.hasAccess('leave_tracker', 'approve_leave', 'can_approve')
-    _calMonth  = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-    _activeTab = 'my-leaves'
+    _canUploadAttendance = App.hasAccess('leave_tracker', 'upload_attendance', 'can_manage')
+    _calMonth         = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+    _attendanceMonth  = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+    _activeTab        = 'attendance'
 
     // Fetch all employees to determine manager status
     const empRes = await API.getAllEmployees()
@@ -237,8 +244,14 @@ const LeaveTracker = (() => {
       _updateApprovalBadge()
     }
 
+    // Fetch attendance upload log if user can upload
+    if (_canUploadAttendance || _user.role === 'super_admin') {
+      const logRes = await API.getAttendanceUploadLog()
+      _uploadLog = logRes.data || []
+    }
+
     _bindTabs()
-    _loadTab('my-leaves')
+    _loadTab('attendance')
   }
 
   function _updateApprovalBadge() {
@@ -268,12 +281,383 @@ const LeaveTracker = (() => {
     const toolbar = document.getElementById('lt-toolbar-actions')
     if (toolbar) toolbar.innerHTML = ''
     switch (tab) {
+      case 'attendance':        return _loadAttendanceTab()
       case 'my-leaves':         return _loadMyLeavesTab()
       case 'my-wfh':            return _loadMyWfhTab()
       case 'pending-approvals': return _loadPendingApprovalsTab()
       case 'team-overview':     return _loadTeamOverviewTab()
       case 'visibility':        return _loadVisibilityTab()
       case 'settings':          return _loadSettingsTab()
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     TAB: ATTENDANCE
+  ══════════════════════════════════════════════════════════ */
+  async function _loadAttendanceTab() {
+    const content = document.getElementById('lt-content')
+    if (!content) return
+
+    // Fetch attendance for current month
+    const mStart = _toISO(_attendanceMonth)
+    const mEnd   = _toISO(new Date(_attendanceMonth.getFullYear(), _attendanceMonth.getMonth() + 1, 0))
+    const attRes = await API.getEmployeeAttendance(_user.id, mStart, mEnd)
+    _attendanceRecords = attRes.data || []
+
+    const monthLabel = _attendanceMonth.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+    const today = _toISO(new Date())
+
+    // Build maps
+    const attMap = {}
+    _attendanceRecords.forEach(r => { attMap[r.date] = r })
+
+    const leaveMap = {}
+    _leaveRequests.filter(r => r.status === 'approved').forEach(r => {
+      let d = new Date(r.start_date)
+      const end = new Date(r.end_date)
+      while (d <= end) {
+        const iso = _toISO(d)
+        leaveMap[iso] = { type: 'leave', name: r.leave_types?.name || 'Leave', is_half_day: r.is_half_day, half_day_period: r.half_day_period }
+        d.setDate(d.getDate() + 1)
+      }
+    })
+
+    const wfhMap = {}
+    _wfhRequests.filter(r => r.status === 'approved').forEach(r => {
+      let d = new Date(r.start_date)
+      const end = new Date(r.end_date)
+      while (d <= end) {
+        wfhMap[_toISO(d)] = true
+        d.setDate(d.getDate() + 1)
+      }
+    })
+
+    const holidayMap = {}
+    _holidays.forEach(h => { holidayMap[h.date] = h.name })
+
+    // Build calendar days
+    const year  = _attendanceMonth.getFullYear()
+    const month = _attendanceMonth.getMonth()
+    const firstDay = new Date(year, month, 1)
+    const lastDay  = new Date(year, month + 1, 0)
+    const startDow = (firstDay.getDay() + 6) % 7 // Mon=0
+
+    let calCells = ''
+    // Empty cells before first day
+    for (let i = 0; i < startDow; i++) {
+      calCells += `<div class="att-cal-cell att-cal-cell--empty"></div>`
+    }
+
+    for (let d = 1; d <= lastDay.getDate(); d++) {
+      const dateObj = new Date(year, month, d)
+      const iso     = _toISO(dateObj)
+      const dow     = dateObj.getDay() // 0=Sun, 6=Sat
+      const isWeekend = dow === 0 || dow === 6
+      const isFuture  = iso > today
+
+      const att     = attMap[iso]
+      const leave   = leaveMap[iso]
+      const isWfh   = wfhMap[iso]
+      const holiday = holidayMap[iso]
+
+      let cellClass = 'att-cal-cell'
+      let cellContent = `<span class="att-cal-day">${d}</span>`
+
+      if (isWeekend) {
+        cellClass += ' att-cal-cell--weekend'
+        cellContent += `<span class="att-cal-label">Weekend</span>`
+      } else if (holiday) {
+        cellClass += ' att-cal-cell--holiday'
+        cellContent += `<span class="att-cal-label">${Utils.escapeHtml(holiday)}</span>`
+      } else if (leave) {
+        cellClass += ' att-cal-cell--leave'
+        const lbl = leave.is_half_day ? `½ ${Utils.escapeHtml(leave.name)}` : Utils.escapeHtml(leave.name)
+        cellContent += `<span class="att-cal-label">${lbl}</span>`
+      } else if (isWfh) {
+        cellClass += ' att-cal-cell--wfh'
+        cellContent += `<span class="att-cal-label">WFH</span>`
+      } else if (att) {
+        if (att.is_absent) {
+          cellClass += ' att-cal-cell--absent'
+          cellContent += `<span class="att-cal-label">Absent</span>`
+        } else if (att.punch_in && att.punch_out) {
+          cellClass += ' att-cal-cell--present'
+          cellContent += `<span class="att-cal-time">${att.punch_in.substring(0,5)}</span>`
+          cellContent += `<span class="att-cal-time att-cal-time--out">${att.punch_out.substring(0,5)}</span>`
+        } else if (att.punch_in) {
+          cellClass += ' att-cal-cell--partial'
+          cellContent += `<span class="att-cal-time">${att.punch_in.substring(0,5)}</span>`
+          cellContent += `<span class="att-cal-time att-cal-time--out">—</span>`
+        }
+      } else if (!isFuture) {
+        cellClass += ' att-cal-cell--no-data'
+      } else {
+        cellClass += ' att-cal-cell--future'
+      }
+
+      if (iso === today) cellClass += ' att-cal-cell--today'
+      calCells += `<div class="${cellClass}">${cellContent}</div>`
+    }
+
+    // Legend
+    const legend = `
+      <div class="att-legend">
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#1D9E75;"></span>Present</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#F59E0B;"></span>Partial</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#6366F1;"></span>Leave</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#059669;"></span>WFH</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#D97706;"></span>Holiday</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:var(--border);"></span>No Data</span>
+      </div>`
+
+    // Upload section (permission gated)
+    const uploadSection = _canUploadAttendance ? `
+      <div class="section-card mb-4">
+        <div class="section-card-header" style="justify-content:space-between;">
+          <h3>Upload Attendance</h3>
+          <label class="btn btn--primary btn--sm" style="cursor:pointer;">
+            Upload XLS / XLSX
+            <input type="file" id="att-upload-input" accept=".xls,.xlsx" style="display:none;">
+          </label>
+        </div>
+        <div class="section-card-body">
+          <p style="font-size:13px;color:var(--text-muted);margin:0;">
+            Upload the biometric attendance report (Exception Stat. sheet). Records are matched by Bio ID and existing entries for the same date will be overwritten.
+          </p>
+          <div id="att-upload-result" style="margin-top:10px;"></div>
+        </div>
+      </div>` : ''
+
+    // Upload history (permission gated)
+    const historyRows = _uploadLog.map(log => `
+      <tr>
+        <td class="text-sm">${new Date(log.uploaded_at).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}</td>
+        <td class="text-sm">${Utils.escapeHtml(log.uploader?.name || '—')}</td>
+        <td class="text-sm">${Utils.escapeHtml(log.file_name)}</td>
+        <td class="text-sm">${log.date_from ? log.date_from + ' → ' + log.date_to : '—'}</td>
+        <td class="text-sm">${log.records_processed}</td>
+        <td class="text-sm">${log.records_matched} matched, ${log.records_skipped} skipped</td>
+        <td><span class="badge ${log.status === 'success' ? 'badge--success' : log.status === 'partial' ? 'badge--warning' : 'badge--danger'}">${log.status === 'partial' ? 'Partial' : log.status === 'success' ? 'Success' : 'Failed'}</span></td>
+      </tr>`).join('')
+
+    const historySection = _canUploadAttendance ? `
+      <div class="section-card">
+        <div class="section-card-header"><h3>Upload History</h3></div>
+        <div class="section-card-body" style="padding:0;">
+          ${_uploadLog.length ? `
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr>
+                <th>Date & Time</th><th>Uploaded By</th><th>File</th><th>Date Range</th>
+                <th>Processed</th><th>Result</th><th>Status</th>
+              </tr></thead>
+              <tbody>${historyRows}</tbody>
+            </table>
+          </div>` : '<p style="padding:16px;font-size:13px;color:var(--text-muted);">No uploads yet.</p>'}
+        </div>
+      </div>` : ''
+
+    content.innerHTML = `
+      ${uploadSection}
+
+      <div style="display:flex;gap:16px;align-items:flex-start;" class="mb-4">
+        <div style="flex:1;min-width:0;">
+          <div class="section-card">
+            <div class="section-card-body">
+              <!-- Month nav -->
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+                <h3 style="margin:0;font-size:15px;font-weight:700;">Attendance — ${monthLabel}</h3>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <button class="btn btn--ghost btn--sm" id="att-cal-prev">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                  </button>
+                  <button class="btn btn--ghost btn--sm" id="att-cal-next" ${_toISO(_attendanceMonth).slice(0,7) >= today.slice(0,7) ? 'disabled' : ''}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                  </button>
+                </div>
+              </div>
+              <!-- Day headers -->
+              <div class="att-cal-grid att-cal-grid--header">
+                ${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => `<div class="att-cal-dow">${d}</div>`).join('')}
+              </div>
+              <div class="att-cal-grid">
+                ${calCells}
+              </div>
+              ${legend}
+            </div>
+          </div>
+        </div>
+        <div style="width:260px;flex-shrink:0;">
+          ${_renderUpcomingPanel()}
+        </div>
+      </div>
+
+      ${historySection}
+    `
+
+    // Month nav handlers
+    document.getElementById('att-cal-prev')?.addEventListener('click', () => {
+      _attendanceMonth = new Date(_attendanceMonth.getFullYear(), _attendanceMonth.getMonth() - 1, 1)
+      _loadAttendanceTab()
+    })
+    document.getElementById('att-cal-next')?.addEventListener('click', () => {
+      const now  = new Date()
+      const next = new Date(_attendanceMonth.getFullYear(), _attendanceMonth.getMonth() + 1, 1)
+      if (next <= new Date(now.getFullYear(), now.getMonth(), 1)) {
+        _attendanceMonth = next
+        _loadAttendanceTab()
+      }
+    })
+
+    // Upload handler
+    if (_canUploadAttendance) {
+      document.getElementById('att-upload-input')?.addEventListener('change', async (e) => {
+        const file = e.target.files[0]
+        if (!file) return
+        await _processAttendanceUpload(file)
+        e.target.value = ''
+      })
+    }
+  }
+
+  async function _processAttendanceUpload(file) {
+    const resultEl = document.getElementById('att-upload-result')
+    if (resultEl) resultEl.innerHTML = '<p style="font-size:13px;color:var(--text-muted);">Processing…</p>'
+
+    try {
+      // Parse XLS using XLSX (globally loaded)
+      const data = await file.arrayBuffer()
+      const wb   = XLSX.read(data, { type: 'array', cellDates: true })
+
+      // Find "Exception Stat." sheet
+      const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('exception'))
+      if (!sheetName) {
+        if (resultEl) resultEl.innerHTML = '<p style="color:#EF4444;font-size:13px;">Could not find "Exception Stat." sheet in the file.</p>'
+        return
+      }
+
+      const ws   = wb.Sheets[sheetName]
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+
+      // Find header row (contains 'ID' and 'Date')
+      let headerIdx = rows.findIndex(r => r.some(c => String(c).trim().toUpperCase() === 'ID') && r.some(c => String(c).trim() === 'Date'))
+      if (headerIdx < 0) headerIdx = 2 // fallback: row index 2 based on known format
+
+      const headers = rows[headerIdx].map(h => String(h).trim())
+      const idIdx   = headers.findIndex(h => h.toUpperCase() === 'ID')
+      const dateIdx = headers.findIndex(h => h === 'Date')
+      const onDutyIdx  = headers.findIndex(h => h === 'On-duty')
+      const offDutyIdx = headers.findIndex(h => h === 'Off-duty')
+      const onIdx  = onDutyIdx  >= 0 ? onDutyIdx  : 4
+      const offIdx = offDutyIdx >= 0 ? offDutyIdx : 5
+      const lateIdx    = headers.findIndex(h => h.toLowerCase().includes('late time'))
+      const absenceIdx = headers.findIndex(h => h.toLowerCase().includes('absence'))
+
+      const dataRows = rows.slice(headerIdx + 1).filter(r => r[idIdx] !== '' && r[idIdx] !== null && !isNaN(Number(r[idIdx])))
+
+      if (!dataRows.length) {
+        if (resultEl) resultEl.innerHTML = '<p style="color:#EF4444;font-size:13px;">No data rows found in the sheet.</p>'
+        return
+      }
+
+      // Fetch employee bio_id map
+      const { data: empData } = await API.getEmployeesWithBioId()
+      const bioMap = {}
+      ;(empData || []).forEach(e => { bioMap[e.bio_id] = e.id })
+
+      let matched = 0, skipped = 0
+      const records = []
+      let dateFrom = null, dateTo = null
+
+      for (const row of dataRows) {
+        const bioId  = parseInt(row[idIdx], 10)
+        const empId  = bioMap[bioId]
+        if (!empId) { skipped++; continue }
+
+        // Parse date
+        let dateISO = ''
+        const rawDate = row[dateIdx]
+        if (rawDate instanceof Date) {
+          dateISO = rawDate.toISOString().split('T')[0]
+        } else if (typeof rawDate === 'string' && rawDate.match(/\d{4}-\d{2}-\d{2}/)) {
+          dateISO = rawDate.trim()
+        } else if (typeof rawDate === 'number') {
+          const d = XLSX.SSF.parse_date_code(rawDate)
+          dateISO = `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`
+        } else {
+          skipped++; continue
+        }
+
+        if (!dateFrom || dateISO < dateFrom) dateFrom = dateISO
+        if (!dateTo   || dateISO > dateTo)   dateTo   = dateISO
+
+        const rawIn  = row[onIdx]
+        const rawOut = row[offIdx]
+        const absMin  = parseInt(row[absenceIdx], 10) || 0
+        const lateMin = parseInt(row[lateIdx], 10) || 0
+
+        const parseTime = v => {
+          if (!v || v === '' || v === 'NaN') return null
+          if (typeof v === 'string' && v.match(/^\d{1,2}:\d{2}$/)) return v
+          if (v instanceof Date) return v.toTimeString().substring(0, 5)
+          return null
+        }
+
+        const punchIn  = parseTime(rawIn)
+        const punchOut = parseTime(rawOut)
+        const isAbsent = absMin >= 530 && !punchIn
+
+        const earlyLeaveColIdx = headers.findIndex(h => h.toLowerCase().includes('leave early'))
+
+        records.push({
+          employee_id:         empId,
+          date:                dateISO,
+          punch_in:            punchIn,
+          punch_out:           punchOut,
+          late_minutes:        lateMin,
+          early_leave_minutes: parseInt(row[earlyLeaveColIdx] || 0, 10) || 0,
+          is_absent:           isAbsent,
+          uploaded_by:         _user.id,
+          uploaded_at:         new Date().toISOString(),
+        })
+        matched++
+      }
+
+      const processed = matched + skipped
+      const status = matched === 0 ? 'failed' : skipped > 0 ? 'partial' : 'success'
+
+      // Upsert records
+      if (records.length) {
+        const { error } = await API.upsertAttendanceRecords(records)
+        if (error) {
+          if (resultEl) resultEl.innerHTML = `<p style="color:#EF4444;font-size:13px;">Upload failed: ${Utils.escapeHtml(error.message)}</p>`
+          return
+        }
+      }
+
+      // Log the upload
+      await API.insertAttendanceUploadLog({
+        uploaded_by:       _user.id,
+        file_name:         file.name,
+        records_processed: processed,
+        records_matched:   matched,
+        records_skipped:   skipped,
+        date_from:         dateFrom,
+        date_to:           dateTo,
+        status,
+      })
+
+      // Refresh log and reload tab
+      const logRes = await API.getAttendanceUploadLog()
+      _uploadLog = logRes.data || []
+
+      const msg = `Upload complete — ${matched} records processed${skipped > 0 ? `, ${skipped} skipped (Bio ID not mapped)` : ''}.`
+      Utils.showToast(msg, status === 'failed' ? 'error' : 'success')
+      _loadAttendanceTab()
+
+    } catch (err) {
+      console.error('[Attendance Upload]', err)
+      if (resultEl) resultEl.innerHTML = `<p style="color:#EF4444;font-size:13px;">Error: ${Utils.escapeHtml(err.message)}</p>`
     }
   }
 
@@ -349,15 +733,6 @@ const LeaveTracker = (() => {
         </div>
       </div>
 
-      <div style="display:flex;gap:16px;align-items:flex-start;" class="mb-4">
-        <div style="flex:1;min-width:0;">
-          ${_renderCalendar()}
-        </div>
-        <div style="width:260px;flex-shrink:0;">
-          ${_renderUpcomingPanel()}
-        </div>
-      </div>
-
       <div class="section-card">
         <div class="section-card-header">
           <h3>Leave History</h3>
@@ -368,7 +743,6 @@ const LeaveTracker = (() => {
       </div>
     `
 
-    _bindCalendarNav()
     _bindLeaveHistoryActions()
   }
 
@@ -2695,5 +3069,6 @@ ModuleRegistry.register({
     manage_leave_settings: 'Manage Leave Types & Holidays',
     manage_wfh_quotas:     'Manage WFH Quotas',
     manage_leave_credits:  'Manage Leave Allocations',
+    upload_attendance:     'Upload Attendance Data',
   },
 })

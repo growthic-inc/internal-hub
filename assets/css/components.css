@@ -6647,3 +6647,106 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 .ts-delta-down { background: rgba(239,68,68,0.12);  color: #EF4444; }
 .ts-delta-flat { background: var(--border);          color: var(--text-muted); }
 .ts-delta-new  { background: rgba(15,71,153,0.12);  color: #0F4799; }
+
+/* ── Sidebar Accordion ───────────────────────────────────── */
+.nav-accordion-children {
+  display: none;
+  padding-left: 8px;
+}
+.nav-accordion--open .nav-accordion-children { display: block; }
+.nav-accordion-toggle {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; background: none; border: none; cursor: pointer;
+  text-align: left;
+}
+.nav-accordion-chevron {
+  margin-left: auto;
+  transition: transform 0.2s;
+}
+.nav-accordion--open .nav-accordion-chevron { transform: rotate(180deg); }
+.nav-item--child {
+  font-size: 13px;
+  padding-left: 24px;
+}
+
+/* ── Attendance Calendar ─────────────────────────────────── */
+.att-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.att-cal-grid--header { margin-bottom: 4px; }
+.att-cal-dow {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 4px 0;
+}
+.att-cal-cell {
+  min-height: 64px;
+  border-radius: 6px;
+  padding: 6px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 11px;
+  border: 1px solid transparent;
+  background: var(--surface);
+  position: relative;
+}
+.att-cal-cell--empty  { background: transparent; border: none; }
+.att-cal-cell--today  { border-color: var(--primary); }
+.att-cal-cell--weekend { background: var(--bg); opacity: 0.6; }
+.att-cal-cell--holiday { background: #FEF3C7; border-color: #F59E0B; }
+.att-cal-cell--leave   { background: #EEF2FF; border-color: #6366F1; }
+.att-cal-cell--wfh     { background: #ECFDF5; border-color: #059669; }
+.att-cal-cell--present { background: #D1FAE5; border-color: #1D9E75; }
+.att-cal-cell--partial { background: #FEF3C7; border-color: #F59E0B; }
+.att-cal-cell--absent  { background: #FEE2E2; border-color: #EF4444; }
+.att-cal-cell--no-data { background: var(--surface); opacity: 0.5; }
+.att-cal-cell--future  { background: var(--bg); opacity: 0.4; }
+.att-cal-day {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.att-cal-label {
+  font-size: 9px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-secondary);
+  line-height: 1.2;
+}
+.att-cal-time {
+  font-size: 10px;
+  font-weight: 600;
+  color: #065F46;
+  line-height: 1.3;
+}
+.att-cal-time--out { color: #1F2937; }
+.att-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.att-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.att-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}

@@ -1698,6 +1698,40 @@ const API = (() => {
     })
   }
 
+  // ── Phase 10: Attendance ─────────────────────────────────
+
+  async function getEmployeeAttendance(employeeId, from, to) {
+    return supabase.from('employee_attendance')
+      .select('*')
+      .eq('employee_id', employeeId)
+      .gte('date', from)
+      .lte('date', to)
+      .order('date')
+  }
+
+  async function upsertAttendanceRecords(records) {
+    return supabase.from('employee_attendance')
+      .upsert(records, { onConflict: 'employee_id,date' })
+  }
+
+  async function getAttendanceUploadLog() {
+    return supabase.from('attendance_upload_log')
+      .select('*, uploader:employees!uploaded_by(name)')
+      .order('uploaded_at', { ascending: false })
+      .limit(20)
+  }
+
+  async function insertAttendanceUploadLog(data) {
+    return supabase.from('attendance_upload_log').insert(data).select().single()
+  }
+
+  async function getEmployeesWithBioId() {
+    return supabase.from('employees')
+      .select('id, name, bio_id')
+      .not('bio_id', 'is', null)
+      .eq('status', 'active')
+  }
+
   return {
     getClients, getClient, getClientByProjectCode, updateEntityProfileType,
     getClientTeam, setClientTeam,
@@ -1758,5 +1792,9 @@ const API = (() => {
     getPolicies, createPolicy, updatePolicy, deletePolicy,
     getInternalProjects, createInternalProject, updateInternalProject, setInternalProjectStatus, updateClientProjectDetails, setClientStatus,
     getDeptUtilizationAvg,
+    // Phase 10 — Attendance
+    getEmployeeAttendance, upsertAttendanceRecords,
+    getAttendanceUploadLog, insertAttendanceUploadLog,
+    getEmployeesWithBioId,
   }
 })()
