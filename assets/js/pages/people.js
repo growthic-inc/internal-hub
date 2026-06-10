@@ -397,19 +397,20 @@ const People = (() => {
         </div>
 
         <!-- ── Quick Stats ────────────────────────────────────── -->
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--border);background:var(--surface);">
+        <div style="display:grid;grid-template-columns:repeat(${emp._managerName ? 4 : 3},1fr);border-bottom:1px solid var(--border);background:var(--surface);">
           <div style="border-right:1px solid var(--border);">
             ${_stat('💼', 'Type', _empTypeLabel(emp.employment_type))}
           </div>
           <div style="border-right:1px solid var(--border);">
             ${_stat('🏢', 'Location', _workLocationLabel(emp.work_location))}
           </div>
-          <div style="border-right:1px solid var(--border);">
+          <div${emp._managerName ? ' style="border-right:1px solid var(--border);"' : ''}>
             ${_stat('📅', 'Joined', Utils.formatDate(emp.joining_date))}
           </div>
+          ${emp._managerName ? `
           <div>
-            ${_stat('👤', 'Manager', emp._managerName ? Utils.escapeHtml(emp._managerName) : '—')}
-          </div>
+            ${_stat('👤', 'Reporting Manager', Utils.escapeHtml(emp._managerName))}
+          </div>` : ''}
         </div>
 
         <!-- ── Badges ─────────────────────────────────────────── -->
