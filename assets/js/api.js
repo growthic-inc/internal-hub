@@ -821,7 +821,7 @@ const API = (() => {
       .select(`
         id, employee_id, name, email, personal_email, phone_number,
         date_of_birth, role, department, designation, employment_type,
-        work_location, profile_image_url, linkedin_url,
+        work_location, profile_image_url, linkedin_url, bio_id,
         address, permanent_address,
         current_address_house_no, current_address_building, current_address_street,
         current_address_landmark, current_address_city, current_address_state,

@@ -453,6 +453,11 @@ const People = (() => {
                 <a href="${Utils.escapeHtml(emp.linkedin_url)}" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:none;">View Profile →</a>
               </div>
             </div>` : ''}
+            ${emp.bio_id != null ? `
+            <div class="people-field">
+              <div class="people-field-label">Bio ID</div>
+              <div class="people-field-value">${emp.bio_id}</div>
+            </div>` : ''}
           </div>
         </div>
 
@@ -880,6 +885,18 @@ const People = (() => {
             value="${emp.probation_completed_date ? emp.probation_completed_date.substring(0, 10) : ''}">
         </div>
 
+        <!-- Biometric -->
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;
+            color:var(--text-muted);margin-bottom:12px;">Biometric</div>
+          <div class="form-group">
+            <label class="form-label">Bio ID</label>
+            <input class="form-input" type="number" id="ppl-edit-bio-id" min="1"
+              value="${emp.bio_id || ''}" placeholder="e.g. 4" style="max-width:200px;">
+            <div class="form-hint">Numeric ID from the biometric attendance machine.</div>
+          </div>
+        </div>
+
         <!-- Emergency Contact -->
         <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
           <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;
@@ -978,6 +995,7 @@ const People = (() => {
       emergency_contact_name:          document.getElementById('ppl-edit-ec-name')?.value.trim()  || null,
       emergency_contact_relationship:  document.getElementById('ppl-edit-ec-rel')?.value.trim()   || null,
       emergency_contact_phone:         document.getElementById('ppl-edit-ec-phone')?.value.trim() || null,
+      bio_id: (() => { const v = document.getElementById('ppl-edit-bio-id')?.value.trim(); return v ? parseInt(v, 10) : null })(),
     }
 
     if (profileImageUrl !== undefined) {
@@ -1325,6 +1343,16 @@ const People = (() => {
             </div>
           </div>
 
+          <!-- Biometric -->
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin:20px 0 12px;">Biometric</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Bio ID</label>
+              <input class="form-input" type="number" id="ppl-inv-bio-id" placeholder="e.g. 4" min="1" style="max-width:200px;">
+              <div class="form-hint">Numeric ID from the biometric attendance machine. Leave blank if not yet assigned.</div>
+            </div>
+          </div>
+
           <div style="margin-top:24px;">
             <button class="btn btn--primary" id="ppl-inv-submit">Add Employee</button>
           </div>
@@ -1386,6 +1414,9 @@ const People = (() => {
     submitBtn.disabled    = true
     submitBtn.textContent = 'Adding employee…'
 
+    const bioIdRaw = document.getElementById('ppl-inv-bio-id')?.value.trim()
+    const bio_id   = bioIdRaw ? parseInt(bioIdRaw, 10) : null
+
     const result = await API.createEmployee({
       name,
       email,
@@ -1397,6 +1428,7 @@ const People = (() => {
       work_location,
       joining_date,
       manager_id,
+      bio_id,
     })
 
     submitBtn.disabled    = false
