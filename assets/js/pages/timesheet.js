@@ -210,12 +210,12 @@ const Timesheet = (() => {
       return d
     })
 
-    // Build sidebar data — group by project name (client or internal)
+    // Build sidebar data — group by entity name, fall back to project name
     const clientHours = {}
     _entries.forEach(e => {
       const name = e.work_type === 'internal'
-        ? (e.internal_project?.name || 'Internal')
-        : (e.clients?.client_name || 'Internal')
+        ? (e.internal_entity?.entity_name || e.internal_project?.name || 'Internal')
+        : (e.entity?.entity_name || e.clients?.client_name || 'Unknown')
       clientHours[name] = (clientHours[name] || 0) + parseFloat(e.hours || 0)
     })
     const totalHours = Object.values(clientHours).reduce((s, h) => s + h, 0)
@@ -695,7 +695,7 @@ const Timesheet = (() => {
             <input type="hidden" id="ts-f-int-project" value="${preIntProjId}" />
           </div>
           <div class="form-group" id="ts-workarea-wrap" style="${preIntWorkAreas.length ? '' : 'display:none;'}">
-            <label class="form-label">Work Area</label>
+            <label class="form-label">Work Area <span class="required">*</span></label>
             <select class="form-select" id="ts-f-workarea">
               <option value="">— Select work area —</option>
               ${preIntWorkAreas.map(wa => `<option value="${wa.id}" ${preIntEntityId === wa.id ? 'selected' : ''}>${Utils.escapeHtml(wa.entity_name)}</option>`).join('')}
@@ -807,6 +807,9 @@ const Timesheet = (() => {
         if (hasEntities && !entityId) errs.push('Please select an entity for this client.')
       } else {
         if (!intProjId)               errs.push('Please select an internal project.')
+        const intProjObj   = _internalProjects.find(p => p.id === intProjId)
+        const hasWorkAreas = (intProjObj?.internal_project_entities || []).length > 0
+        if (hasWorkAreas && !intEntityId) errs.push('Please select a work area for this project.')
       }
 
       if (errs.length) { errEl.textContent = errs[0]; errEl.style.display = 'block'; return }
