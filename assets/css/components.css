@@ -6750,3 +6750,40 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   border-radius: 50%;
   flex-shrink: 0;
 }
+
+/* ── Attendance: clickable cells, event dot, day-detail modal ── */
+.att-cal-cell--clickable { cursor: pointer; transition: filter 0.12s, box-shadow 0.12s; }
+.att-cal-cell--clickable:hover { filter: brightness(0.97); box-shadow: 0 0 0 2px var(--primary) inset; }
+.att-cal-event-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #EC4899;
+}
+.att-day-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.att-day-row:last-child { border-bottom: none; }
+.att-day-tag {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  padding: 2px 8px;
+  border-radius: 99px;
+  flex-shrink: 0;
+}
+.att-day-tag--holiday { background: #FEF3C7; color: #B45309; }
+.att-day-tag--leave   { background: #EEF2FF; color: #4F46E5; }
+.att-day-tag--wfh     { background: #ECFDF5; color: #059669; }
+.att-day-tag--present { background: #D1FAE5; color: #065F46; }
+.att-day-tag--absent  { background: #FEE2E2; color: #B91C1C; }
+.att-day-tag--event   { background: #FCE7F3; color: #BE185D; }

@@ -335,6 +335,19 @@ const LeaveTracker = (() => {
     const holidayMap = {}
     _holidays.forEach(h => { holidayMap[h.date] = h.name })
 
+    // Events: map each event across its date range
+    const eventMap = {}
+    ;(_events || []).forEach(ev => {
+      let d = new Date(ev.start_date)
+      const end = new Date(ev.end_date || ev.start_date)
+      while (d <= end) {
+        const iso = _toISO(d)
+        if (!eventMap[iso]) eventMap[iso] = []
+        eventMap[iso].push(ev)
+        d.setDate(d.getDate() + 1)
+      }
+    })
+
     // Build calendar days
     const year  = _attendanceMonth.getFullYear()
     const month = _attendanceMonth.getMonth()
@@ -352,20 +365,21 @@ const LeaveTracker = (() => {
       const dateObj = new Date(year, month, d)
       const iso     = _toISO(dateObj)
       const dow     = dateObj.getDay() // 0=Sun, 6=Sat
-      const isWeekend = dow === 0 || dow === 6
+      const isSunday  = dow === 0     // only Sunday is the weekly off
       const isFuture  = iso > today
 
       const att     = attMap[iso]
       const leave   = leaveMap[iso]
       const isWfh   = wfhMap[iso]
       const holiday = holidayMap[iso]
+      const dayEvents = eventMap[iso] || []
 
-      let cellClass = 'att-cal-cell'
+      let cellClass = 'att-cal-cell att-cal-cell--clickable'
       let cellContent = `<span class="att-cal-day">${d}</span>`
 
-      if (isWeekend) {
+      if (isSunday) {
         cellClass += ' att-cal-cell--weekend'
-        cellContent += `<span class="att-cal-label">Weekend</span>`
+        cellContent += `<span class="att-cal-label">Weekly Off</span>`
       } else if (holiday) {
         cellClass += ' att-cal-cell--holiday'
         cellContent += `<span class="att-cal-label">${Utils.escapeHtml(holiday)}</span>`
@@ -395,8 +409,13 @@ const LeaveTracker = (() => {
         cellClass += ' att-cal-cell--future'
       }
 
+      // Event indicator dot (events can coexist with any day state)
+      if (dayEvents.length) {
+        cellContent += `<span class="att-cal-event-dot" title="${dayEvents.map(e => Utils.escapeHtml(e.title)).join(', ')}"></span>`
+      }
+
       if (iso === today) cellClass += ' att-cal-cell--today'
-      calCells += `<div class="${cellClass}">${cellContent}</div>`
+      calCells += `<div class="${cellClass}" data-att-date="${iso}">${cellContent}</div>`
     }
 
     // Legend
@@ -408,6 +427,7 @@ const LeaveTracker = (() => {
         <span class="att-legend-item"><span class="att-legend-dot" style="background:#059669;"></span>WFH</span>
         <span class="att-legend-item"><span class="att-legend-dot" style="background:#D97706;"></span>Holiday</span>
         <span class="att-legend-item"><span class="att-legend-dot" style="background:var(--border);"></span>No Data</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#EC4899;"></span>Event</span>
       </div>`
 
     // Upload section (permission gated)
@@ -516,6 +536,134 @@ const LeaveTracker = (() => {
         if (!file) return
         await _processAttendanceUpload(file)
         e.target.value = ''
+      })
+    }
+
+    // Click any date to view what's marked / manage events (HR can add)
+    document.querySelectorAll('.att-cal-cell--clickable[data-att-date]').forEach(cell => {
+      cell.addEventListener('click', () => {
+        _openAttendanceDateModal(cell.dataset.attDate, { holidayMap, leaveMap, wfhMap, attMap, eventMap })
+      })
+    })
+  }
+
+  /* View what's marked on a date + (HR only) add holiday / event */
+  function _openAttendanceDateModal(dateISO, maps) {
+    const holiday   = maps.holidayMap[dateISO]
+    const leave     = maps.leaveMap[dateISO]
+    const isWfh     = maps.wfhMap[dateISO]
+    const att       = maps.attMap[dateISO]
+    const dayEvents = maps.eventMap[dateISO] || []
+
+    // Build the "what's on this day" summary
+    const items = []
+    if (holiday) items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--holiday">Holiday</span><span>${Utils.escapeHtml(holiday)}</span></div>`)
+    if (leave)   items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--leave">${leave.is_half_day ? 'Half-Day Leave' : 'Leave'}</span><span>${Utils.escapeHtml(leave.name)}</span></div>`)
+    if (isWfh)   items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--wfh">WFH</span><span>Work From Home</span></div>`)
+    if (att && !att.is_absent && att.punch_in) {
+      items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--present">Attendance</span><span>${att.punch_in.substring(0,5)} → ${att.punch_out ? att.punch_out.substring(0,5) : '—'}</span></div>`)
+    } else if (att && att.is_absent) {
+      items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--absent">Absent</span><span>No punch recorded</span></div>`)
+    }
+    dayEvents.forEach(ev => {
+      items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--event">Event</span><span>${Utils.escapeHtml(ev.title)}${ev.description ? ` — ${Utils.escapeHtml(ev.description)}` : ''}</span></div>`)
+    })
+
+    const summaryHtml = items.length
+      ? items.join('')
+      : `<p style="font-size:13px;color:var(--text-muted);margin:0;">Nothing marked on this day.</p>`
+
+    // HR add form
+    const addFormHtml = _isHR ? `
+      <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px;">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:12px;">Add to this day</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">
+          <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
+            <input type="radio" name="att-add-type" value="holiday" checked style="accent-color:var(--primary);" />
+            <span style="font-size:13px;font-weight:600;">Holiday</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
+            <input type="radio" name="att-add-type" value="event" style="accent-color:var(--primary);" />
+            <span style="font-size:13px;font-weight:600;">Event</span>
+          </label>
+        </div>
+        <div id="att-add-err" class="alert alert--danger" style="display:none;"></div>
+        <div id="att-holiday-fields">
+          <div class="form-group">
+            <label class="form-label">Holiday Name <span class="required">*</span></label>
+            <input class="form-input" type="text" id="att-hol-name" placeholder="e.g. Second Saturday, Diwali…" />
+          </div>
+        </div>
+        <div id="att-event-fields" style="display:none;">
+          <div class="form-group">
+            <label class="form-label">Event Title <span class="required">*</span></label>
+            <input class="form-input" type="text" id="att-evt-title" placeholder="e.g. Team Offsite…" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">End Date</label>
+            <input class="form-input" type="date" id="att-evt-end" value="${dateISO}" min="${dateISO}" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Description</label>
+            <textarea class="form-input" id="att-evt-desc" rows="2" style="resize:vertical;" placeholder="Optional details…"></textarea>
+          </div>
+        </div>
+        <button class="btn btn--primary btn--sm" id="att-add-save" style="margin-top:4px;">Add</button>
+      </div>` : ''
+
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">${Utils.formatDate(dateISO)}</h3>
+        <button class="modal-close" onclick="Utils.closeModal()">${CLOSE_SVG}</button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex;flex-direction:column;gap:8px;">${summaryHtml}</div>
+        ${addFormHtml}
+      </div>
+    `)
+
+    if (_isHR) {
+      document.querySelectorAll('[name="att-add-type"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+          const isHoliday = radio.value === 'holiday'
+          document.getElementById('att-holiday-fields').style.display = isHoliday ? 'block' : 'none'
+          document.getElementById('att-event-fields').style.display   = isHoliday ? 'none' : 'block'
+        })
+      })
+
+      document.getElementById('att-add-save')?.addEventListener('click', async () => {
+        const errEl   = document.getElementById('att-add-err')
+        const btn     = document.getElementById('att-add-save')
+        const addType = document.querySelector('[name="att-add-type"]:checked')?.value
+        errEl.style.display = 'none'
+        btn.disabled = true; btn.textContent = 'Saving…'
+
+        let error
+        if (addType === 'holiday') {
+          const name = document.getElementById('att-hol-name').value.trim()
+          if (!name) { errEl.textContent = 'Please enter a holiday name.'; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Add'; return }
+          ;({ error } = await API.addCompanyHoliday({ date: dateISO, name }))
+        } else {
+          const title = document.getElementById('att-evt-title').value.trim()
+          const end   = document.getElementById('att-evt-end').value || dateISO
+          const desc  = document.getElementById('att-evt-desc').value.trim()
+          if (!title) { errEl.textContent = 'Please enter an event title.'; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Add'; return }
+          ;({ error } = await API.createCompanyEvent({ title, start_date: dateISO, end_date: end, description: desc || null, created_by: _user.id }))
+        }
+
+        btn.disabled = false; btn.textContent = 'Add'
+        if (error) { errEl.textContent = error.message; errEl.style.display = 'block'; return }
+
+        Utils.closeModal()
+        Utils.showToast(`${addType === 'holiday' ? 'Holiday' : 'Event'} added.`, 'success')
+        // Refresh holiday + event data, then re-render the attendance calendar
+        const [holRes, evtRes] = await Promise.all([
+          API.getCompanyHolidays(_attendanceMonth.getFullYear()),
+          API.getCompanyEvents(_attendanceMonth.getFullYear()),
+        ])
+        _holidays = holRes.data || []
+        _events   = evtRes.data || []
+        _loadAttendanceTab()
       })
     }
   }
