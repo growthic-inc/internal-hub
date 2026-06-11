@@ -1710,8 +1710,9 @@ const API = (() => {
   }
 
   async function upsertAttendanceRecords(records) {
-    return supabase.from('employee_attendance')
-      .upsert(records, { onConflict: 'employee_id,date' })
+    // Cross-user bulk write goes through a SECURITY DEFINER RPC so it bypasses
+    // the restrictive per-row SELECT policy while keeping read privacy intact.
+    return supabase.rpc('upsert_employee_attendance', { p_records: records })
   }
 
   async function getAttendanceUploadLog() {
