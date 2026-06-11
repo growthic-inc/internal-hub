@@ -442,7 +442,7 @@ const LeaveTracker = (() => {
         </div>
         <div class="section-card-body">
           <p style="font-size:13px;color:var(--text-muted);margin:0;">
-            Upload the biometric attendance report (Exception Stat. sheet). Records are matched by Bio ID and existing entries for the same date will be overwritten.
+            Upload the biometric attendance report. Punch times are read from the "Att.log report" sheet (first punch = in, last punch = out), matched by Bio ID. Existing entries for the same date are overwritten.
           </p>
           <div id="att-upload-result" style="margin-top:10px;"></div>
         </div>
@@ -677,34 +677,78 @@ const LeaveTracker = (() => {
       const data = await file.arrayBuffer()
       const wb   = XLSX.read(data, { type: 'array', cellDates: true })
 
-      // Find "Exception Stat." sheet
-      const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('exception'))
+      // Source sheet: "Att.log report" — holds every raw punch per day.
+      // We take the FIRST punch as punch-in and the LAST as punch-out,
+      // ignoring any punches in between.
+      const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('log'))
       if (!sheetName) {
-        if (resultEl) resultEl.innerHTML = '<p style="color:#EF4444;font-size:13px;">Could not find "Exception Stat." sheet in the file.</p>'
+        if (resultEl) resultEl.innerHTML = '<p style="color:#EF4444;font-size:13px;">Could not find the "Att.log report" sheet in the file.</p>'
         return
       }
 
       const ws   = wb.Sheets[sheetName]
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
 
-      // Find header row (contains 'ID' and 'Date')
-      let headerIdx = rows.findIndex(r => r.some(c => String(c).trim().toUpperCase() === 'ID') && r.some(c => String(c).trim() === 'Date'))
-      if (headerIdx < 0) headerIdx = 2 // fallback: row index 2 based on known format
+      // ── Determine the date range start ─────────────────────────
+      // Row 2 holds e.g. "2026-06-01 ~ 2026-06-09". Parse the start date.
+      let rangeStart = null, rangeEnd = null
+      for (const r of rows.slice(0, 6)) {
+        for (const cell of r) {
+          const m = String(cell).match(/(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2})/)
+          if (m) { rangeStart = m[1]; rangeEnd = m[2]; break }
+        }
+        if (rangeStart) break
+      }
+      if (!rangeStart) {
+        if (resultEl) resultEl.innerHTML = '<p style="color:#EF4444;font-size:13px;">Could not read the date range from the file header.</p>'
+        return
+      }
 
-      const headers = rows[headerIdx].map(h => String(h).trim())
-      const idIdx   = headers.findIndex(h => h.toUpperCase() === 'ID')
-      const dateIdx = headers.findIndex(h => h === 'Date')
-      const onDutyIdx  = headers.findIndex(h => h === 'On-duty')
-      const offDutyIdx = headers.findIndex(h => h === 'Off-duty')
-      const onIdx  = onDutyIdx  >= 0 ? onDutyIdx  : 4
-      const offIdx = offDutyIdx >= 0 ? offDutyIdx : 5
-      const lateIdx    = headers.findIndex(h => h.toLowerCase().includes('late time'))
-      const absenceIdx = headers.findIndex(h => h.toLowerCase().includes('absence'))
+      const startDate = new Date(rangeStart + 'T00:00:00')
+      const endDate   = new Date(rangeEnd  + 'T00:00:00')
+      const numDays   = Math.round((endDate - startDate) / 86400000) + 1
+      // Column i of a punch row maps to startDate + i days.
+      const dateForCol = i => {
+        const d = new Date(startDate)
+        d.setDate(d.getDate() + i)
+        return _toISO(d)
+      }
 
-      const dataRows = rows.slice(headerIdx + 1).filter(r => r[idIdx] !== '' && r[idIdx] !== null && !isNaN(Number(r[idIdx])))
+      // Split a concatenated cell like "10:1619:08" into ["10:16","19:08"].
+      // Times are fixed-width HH:MM (5 chars).
+      const splitPunches = v => {
+        const s = String(v).replace(/\s+/g, '')
+        const out = []
+        for (let i = 0; i + 5 <= s.length; i += 5) {
+          const chunk = s.slice(i, i + 5)
+          if (/^\d{2}:\d{2}$/.test(chunk)) out.push(chunk)
+        }
+        return out
+      }
 
-      if (!dataRows.length) {
-        if (resultEl) resultEl.innerHTML = '<p style="color:#EF4444;font-size:13px;">No data rows found in the sheet.</p>'
+      // ── Walk employee blocks: an "ID:" row, then its punch row ──
+      // ID row has the bio id at the cell following an "ID:" label.
+      const blocks = [] // { bioId, punchRow }
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i]
+        const idLabelCol = row.findIndex(c => String(c).trim().toUpperCase() === 'ID:')
+        if (idLabelCol < 0) continue
+        // bio id is the next non-empty cell after the label
+        let bioId = null
+        for (let c = idLabelCol + 1; c < row.length; c++) {
+          const val = String(row[c]).trim()
+          if (val !== '') { bioId = parseInt(val, 10); break }
+        }
+        if (bioId == null || isNaN(bioId)) continue
+        // The punch row is the next row that is NOT another ID row.
+        const punchRow = rows[i + 1] && rows[i + 1].findIndex(c => String(c).trim().toUpperCase() === 'ID:') < 0
+          ? rows[i + 1]
+          : null
+        blocks.push({ bioId, punchRow })
+      }
+
+      if (!blocks.length) {
+        if (resultEl) resultEl.innerHTML = '<p style="color:#EF4444;font-size:13px;">No employee punch blocks found in the sheet.</p>'
         return
       }
 
@@ -713,66 +757,44 @@ const LeaveTracker = (() => {
       const bioMap = {}
       ;(empData || []).forEach(e => { bioMap[e.bio_id] = e.id })
 
-      let matched = 0, skipped = 0
+      let matched = 0, skipped = 0, skippedEmps = 0
       const records = []
-      let dateFrom = null, dateTo = null
+      const dateFrom = rangeStart, dateTo = rangeEnd
 
-      for (const row of dataRows) {
-        const bioId  = parseInt(row[idIdx], 10)
-        const empId  = bioMap[bioId]
-        if (!empId) { skipped++; continue }
+      for (const { bioId, punchRow } of blocks) {
+        const empId = bioMap[bioId]
+        if (!empId) { skippedEmps++; continue }
+        if (!punchRow) continue
 
-        // Parse date
-        let dateISO = ''
-        const rawDate = row[dateIdx]
-        if (rawDate instanceof Date) {
-          dateISO = rawDate.toISOString().split('T')[0]
-        } else if (typeof rawDate === 'string' && rawDate.match(/\d{4}-\d{2}-\d{2}/)) {
-          dateISO = rawDate.trim()
-        } else if (typeof rawDate === 'number') {
-          const d = XLSX.SSF.parse_date_code(rawDate)
-          dateISO = `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`
-        } else {
-          skipped++; continue
+        for (let col = 0; col < numDays; col++) {
+          const cell = punchRow[col]
+          if (cell === '' || cell == null) continue   // no punch this day → leave as "no data"
+          const punches = splitPunches(cell)
+          if (!punches.length) continue
+
+          const punchIn  = punches[0]
+          const punchOut = punches.length > 1 ? punches[punches.length - 1] : null
+
+          records.push({
+            employee_id:         empId,
+            date:                dateForCol(col),
+            punch_in:            punchIn,
+            punch_out:           punchOut,
+            late_minutes:        0,
+            early_leave_minutes: 0,
+            is_absent:           false,
+            uploaded_by:         _user.id,
+            uploaded_at:         new Date().toISOString(),
+          })
+          matched++
         }
-
-        if (!dateFrom || dateISO < dateFrom) dateFrom = dateISO
-        if (!dateTo   || dateISO > dateTo)   dateTo   = dateISO
-
-        const rawIn  = row[onIdx]
-        const rawOut = row[offIdx]
-        const absMin  = parseInt(row[absenceIdx], 10) || 0
-        const lateMin = parseInt(row[lateIdx], 10) || 0
-
-        const parseTime = v => {
-          if (!v || v === '' || v === 'NaN') return null
-          if (typeof v === 'string' && v.match(/^\d{1,2}:\d{2}$/)) return v
-          if (v instanceof Date) return v.toTimeString().substring(0, 5)
-          return null
-        }
-
-        const punchIn  = parseTime(rawIn)
-        const punchOut = parseTime(rawOut)
-        const isAbsent = absMin >= 530 && !punchIn
-
-        const earlyLeaveColIdx = headers.findIndex(h => h.toLowerCase().includes('leave early'))
-
-        records.push({
-          employee_id:         empId,
-          date:                dateISO,
-          punch_in:            punchIn,
-          punch_out:           punchOut,
-          late_minutes:        lateMin,
-          early_leave_minutes: parseInt(row[earlyLeaveColIdx] || 0, 10) || 0,
-          is_absent:           isAbsent,
-          uploaded_by:         _user.id,
-          uploaded_at:         new Date().toISOString(),
-        })
-        matched++
       }
 
-      const processed = matched + skipped
-      const status = matched === 0 ? 'failed' : skipped > 0 ? 'partial' : 'success'
+      // "skipped" reported to the user = punch records belonging to unmapped Bio IDs.
+      // Approximate by counting days for skipped employees is noisy, so report employees.
+      skipped = skippedEmps
+      const processed = matched + skippedEmps
+      const status = matched === 0 ? 'failed' : skippedEmps > 0 ? 'partial' : 'success'
 
       // Upsert records
       if (records.length) {
@@ -799,7 +821,7 @@ const LeaveTracker = (() => {
       const logRes = await API.getAttendanceUploadLog()
       _uploadLog = logRes.data || []
 
-      const msg = `Upload complete — ${matched} records processed${skipped > 0 ? `, ${skipped} skipped (Bio ID not mapped)` : ''}.`
+      const msg = `Upload complete — ${matched} day-records saved${skippedEmps > 0 ? `, ${skippedEmps} employee(s) skipped (Bio ID not mapped)` : ''}.`
       Utils.showToast(msg, status === 'failed' ? 'error' : 'success')
       _loadAttendanceTab()
 
