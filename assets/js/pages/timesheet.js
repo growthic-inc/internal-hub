@@ -327,16 +327,16 @@ const Timesheet = (() => {
     const isFuture  = iso > today
     const isLocked  = diffDays > 7
 
-    // Leave / WFH status for this day
+    // Leave / WFH status for this day.
+    // Half-day leaves are intentionally NOT marked on the timesheet — the
+    // employee works the other half and must still log time, so a half-day is
+    // treated as a normal working day. Only a full-day leave blocks the day.
     const isFullLeaveDay = _isFullLeaveDay(iso, _myLeaves)
-    const isHalfLeaveDay = !isFullLeaveDay && _isHalfLeaveDay(iso, _myLeaves)
-    const isLeaveDay     = isFullLeaveDay || isHalfLeaveDay   // any leave
-    const isWfhDay       = !isLeaveDay && _isWfhDay(iso, _myWfhs)
-    const leaveName      = isLeaveDay ? _getLeaveName(iso, _myLeaves) : null
-    const halfDayPeriod  = isHalfLeaveDay ? _getHalfDayPeriod(iso, _myLeaves) : null
+    const isWfhDay       = !isFullLeaveDay && _isWfhDay(iso, _myWfhs)
+    const leaveName      = isFullLeaveDay ? _getLeaveName(iso, _myLeaves) : null
 
-    // Don't warn for missing hours on any approved leave day (full or half)
-    const isPastNoEntry = !isToday && diffDays > 0 && diffDays <= 7 && dayEntries.length === 0 && !isLeaveDay
+    // Warn for missing hours on past working days (full-leave days excluded).
+    const isPastNoEntry = !isToday && diffDays > 0 && diffDays <= 7 && dayEntries.length === 0 && !isFullLeaveDay
 
     // Determine day-level status
     const drafts    = dayEntries.filter(e => e.status === 'draft').length
@@ -371,11 +371,11 @@ const Timesheet = (() => {
     }
 
     return `
-      <div class="ts-col${isToday ? ' ts-col--today' : ''}${isLocked ? ' ts-col--locked' : ''}${isFullLeaveDay ? ' ts-col--leave' : ''}${isHalfLeaveDay ? ' ts-col--half-leave' : ''}">
+      <div class="ts-col${isToday ? ' ts-col--today' : ''}${isLocked ? ' ts-col--locked' : ''}${isFullLeaveDay ? ' ts-col--leave' : ''}">
         <div class="ts-col-header">
           <div class="ts-col-top">
             <span class="ts-col-weekday">${day.toLocaleDateString('en-IN', { weekday:'short' }).toUpperCase()}</span>
-            <span class="ts-col-status-icon">${headerIcon}${isWfhDay ? `<span style="font-size:9px;font-weight:600;background:#ECFDF5;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">WFH</span>` : ''}${isHalfLeaveDay ? `<span style="font-size:9px;font-weight:600;background:#EEF2FF;color:#6366F1;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">½ Leave</span>` : ''}</span>
+            <span class="ts-col-status-icon">${headerIcon}${isWfhDay ? `<span style="font-size:9px;font-weight:600;background:#ECFDF5;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">WFH</span>` : ''}</span>
           </div>
           <span class="ts-col-date${isToday ? ' ts-col-date--today' : ''}">${day.getDate()}</span>
           ${dayHours > 0 ? `<span class="ts-col-hours">${dayHours.toFixed(1)}h</span>` : ''}
@@ -389,15 +389,7 @@ const Timesheet = (() => {
               ${leaveName ? `<span style="font-size:10px;color:var(--text-muted);">${Utils.escapeHtml(leaveName)}</span>` : ''}
             </div>
           ` : ''}
-          ${isHalfLeaveDay && dayEntries.length === 0 ? `
-            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:12px 8px 8px;text-align:center;">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-              <span style="font-size:10px;font-weight:600;color:#6366F1;">Half Day</span>
-              ${halfDayPeriod ? `<span style="font-size:9px;color:var(--text-muted);">${Utils.escapeHtml(halfDayPeriod)}</span>` : ''}
-              ${leaveName ? `<span style="font-size:9px;color:var(--text-muted);">${Utils.escapeHtml(leaveName)}</span>` : ''}
-            </div>
-          ` : ''}
-          ${(!isFullLeaveDay && !isHalfLeaveDay) || dayEntries.length > 0 ? dayEntries.map(e => _renderCard(e)).join('') : ''}
+          ${!isFullLeaveDay || dayEntries.length > 0 ? dayEntries.map(e => _renderCard(e)).join('') : ''}
           ${_p.can_create && !isLocked && !isFuture && !isFullLeaveDay ? `
             <button class="ts-add-btn" data-date="${iso}">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -1297,13 +1289,12 @@ const Timesheet = (() => {
     const isToday    = iso === today
     const dayHours   = dayEntries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
 
-    // Leave / WFH status for this team member on this day
+    // Leave / WFH status for this team member on this day.
+    // Half-day leaves are treated as normal working days (employee logs the
+    // worked half) — only full-day leave is marked here.
     const isFullLeaveDay = _isFullLeaveDay(iso, _teamPersonLeaves)
-    const isHalfLeaveDay = !isFullLeaveDay && _isHalfLeaveDay(iso, _teamPersonLeaves)
-    const isLeaveDay     = isFullLeaveDay || isHalfLeaveDay
-    const isWfhDay       = !isLeaveDay && _isWfhDay(iso, _teamPersonWfhs)
-    const leaveName      = isLeaveDay ? _getLeaveName(iso, _teamPersonLeaves) : null
-    const halfDayPeriod  = isHalfLeaveDay ? _getHalfDayPeriod(iso, _teamPersonLeaves) : null
+    const isWfhDay       = !isFullLeaveDay && _isWfhDay(iso, _teamPersonWfhs)
+    const leaveName      = isFullLeaveDay ? _getLeaveName(iso, _teamPersonLeaves) : null
 
     const drafts    = dayEntries.filter(e => e.status === 'draft').length
     const submitted = dayEntries.filter(e => e.status === 'submitted').length
@@ -1320,11 +1311,11 @@ const Timesheet = (() => {
     }
 
     return `
-      <div class="ts-col${isToday ? ' ts-col--today' : ''}${isFullLeaveDay ? ' ts-col--leave' : ''}${isHalfLeaveDay ? ' ts-col--half-leave' : ''}">
+      <div class="ts-col${isToday ? ' ts-col--today' : ''}${isFullLeaveDay ? ' ts-col--leave' : ''}">
         <div class="ts-col-header">
           <div class="ts-col-top">
             <span class="ts-col-weekday">${day.toLocaleDateString('en-IN', { weekday:'short' }).toUpperCase()}</span>
-            <span class="ts-col-status-icon">${headerIcon}${isWfhDay ? `<span style="font-size:9px;font-weight:600;background:#ECFDF5;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">WFH</span>` : ''}${isHalfLeaveDay ? `<span style="font-size:9px;font-weight:600;background:#EEF2FF;color:#6366F1;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">½ Leave</span>` : ''}</span>
+            <span class="ts-col-status-icon">${headerIcon}${isWfhDay ? `<span style="font-size:9px;font-weight:600;background:#ECFDF5;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">WFH</span>` : ''}</span>
           </div>
           <span class="ts-col-date${isToday ? ' ts-col-date--today' : ''}">${day.getDate()}</span>
           ${dayHours > 0 ? `<span class="ts-col-hours">${dayHours.toFixed(1)}h</span>` : ''}
@@ -1337,15 +1328,7 @@ const Timesheet = (() => {
               ${leaveName ? `<span style="font-size:10px;color:var(--text-muted);">${Utils.escapeHtml(leaveName)}</span>` : ''}
             </div>
           ` : ''}
-          ${isHalfLeaveDay && dayEntries.length === 0 ? `
-            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:12px 8px 8px;text-align:center;">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-              <span style="font-size:10px;font-weight:600;color:#6366F1;">Half Day</span>
-              ${halfDayPeriod ? `<span style="font-size:9px;color:var(--text-muted);">${Utils.escapeHtml(halfDayPeriod)}</span>` : ''}
-              ${leaveName ? `<span style="font-size:9px;color:var(--text-muted);">${Utils.escapeHtml(leaveName)}</span>` : ''}
-            </div>
-          ` : ''}
-          ${(!isFullLeaveDay && !isHalfLeaveDay) || dayEntries.length > 0 ? dayEntries.map(e => _renderPersonCard(e)).join('') : ''}
+          ${!isFullLeaveDay || dayEntries.length > 0 ? dayEntries.map(e => _renderPersonCard(e)).join('') : ''}
         </div>
         ${isFullLeaveDay && dayEntries.length === 0 ? `<div class="ts-col-footer"><div class="ts-day-action" style="background:#EEF2FF;color:#6366F1;border:none;cursor:default;">On Leave</div></div>` : ''}
       </div>
