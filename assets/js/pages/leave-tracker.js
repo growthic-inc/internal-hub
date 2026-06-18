@@ -21,6 +21,9 @@ const LeaveTracker = (() => {
   let _pendingWfh        = []
   let _historyLeave      = []
   let _historyWfh        = []
+  let _clientVisits        = []   // my client-visit requests
+  let _pendingClientVisits = []
+  let _historyClientVisit  = []
   let _isManager          = false
   let _isHR               = false   // can manage settings/holidays/quotas
   let _canApproveLeave    = false   // can approve team leave/WFH requests
@@ -102,6 +105,36 @@ const LeaveTracker = (() => {
     return _user.manager_id || null
   }
 
+  // ── Request-type helpers (leave | wfh | client-visit) ───────
+  function _reqPending(type) {
+    return type === 'leave' ? _pendingApprovals
+         : type === 'wfh'   ? _pendingWfh
+         : _pendingClientVisits
+  }
+  function _reqHistory(type) {
+    return type === 'leave' ? _historyLeave
+         : type === 'wfh'   ? _historyWfh
+         : _historyClientVisit
+  }
+  function _reqUpdateFn(type) {
+    return type === 'leave' ? API.updateLeaveRequest
+         : type === 'wfh'   ? API.updateWfhRequest
+         : API.updateClientVisit
+  }
+  function _reqLabel(type) {
+    return type === 'leave' ? 'leave' : type === 'wfh' ? 'WFH' : 'Client Visit'
+  }
+  // Human label for a client-visit duration_type
+  function _cvDurationLabel(d) {
+    return d === 'first_half' ? 'First Half' : d === 'second_half' ? 'Second Half' : 'Full Day'
+  }
+  // Client + entity display for a client-visit record
+  function _cvClientLabel(r) {
+    const c = r.clients?.client_name || 'Client'
+    const e = r.entity?.entity_name
+    return e ? `${c} — ${e}` : c
+  }
+
   // WFH days used for user in a given month/year
   function _wfhUsed(month, year) {
     return _wfhRequests
@@ -146,6 +179,7 @@ const LeaveTracker = (() => {
       { id: 'attendance',         label: 'Attendance' },
       { id: 'my-leaves',          label: 'My Leaves' },
       { id: 'my-wfh',             label: 'My WFH' },
+      { id: 'my-client-visits',   label: 'My Client Visits' },
       { id: 'pending-approvals',  label: 'Pending Approvals', conditional: true },
       { id: 'team-overview',      label: 'Team Overview',     hrOnly: true },
       { id: 'visibility',         label: 'Visibility',        hrOnly: true },
@@ -200,10 +234,11 @@ const LeaveTracker = (() => {
     }
 
     // Fetch core data in parallel
-    const [ltRes, lrRes, wfhRes, lcRes, holRes, evtRes] = await Promise.all([
+    const [ltRes, lrRes, wfhRes, cvRes, lcRes, holRes, evtRes] = await Promise.all([
       API.getLeaveTypes(true),
       API.getMyLeaveRequests(_user.id),
       API.getMyWfhRequests(_user.id),
+      API.getMyClientVisits(_user.id),
       API.getLeaveCredits(_user.id, currentYear),
       API.getCompanyHolidays(currentYear),
       API.getCompanyEvents(currentYear),
@@ -212,33 +247,41 @@ const LeaveTracker = (() => {
     _leaveTypes    = ltRes.data  || []
     _leaveRequests = lrRes.data  || []
     _wfhRequests   = wfhRes.data || []
+    _clientVisits  = cvRes.data  || []
     _leaveCredits  = lcRes.data  || []
     _holidays      = holRes.data || []
     _events        = evtRes.data || []
 
     // Fetch pending approvals + history if manager, HR, or has approve_leave access
     if (_isManager || _isHR || _canApproveLeave) {
-      const [paRes, pwRes, hlRes, hwRes] = await Promise.all([
+      const [paRes, pwRes, pcvRes, hlRes, hwRes, hcvRes] = await Promise.all([
         API.getPendingLeaveApprovals(_user.id),
         API.getPendingWfhApprovals(_user.id),
+        API.getPendingClientVisitApprovals(_user.id),
         API.getApprovalHistoryLeave(_user.id),
         API.getApprovalHistoryWfh(_user.id),
+        API.getApprovalHistoryClientVisit(_user.id),
       ])
-      _pendingApprovals = paRes.data || []
-      _pendingWfh       = pwRes.data || []
-      _historyLeave     = hlRes.data || []
-      _historyWfh       = hwRes.data || []
+      _pendingApprovals    = paRes.data  || []
+      _pendingWfh          = pwRes.data  || []
+      _pendingClientVisits = pcvRes.data || []
+      _historyLeave        = hlRes.data  || []
+      _historyWfh          = hwRes.data  || []
+      _historyClientVisit  = hcvRes.data || []
 
       if (_isHR) {
-        const [hrLRes, hrWRes] = await Promise.all([
+        const [hrLRes, hrWRes, hrCvRes] = await Promise.all([
           API.getHRLeaveQueue(),
           API.getHRWfhQueue(),
+          API.getHRClientVisitQueue(),
         ])
         // Merge HR queue — deduplicate by id
         const hrLeaves = (hrLRes.data || []).filter(r => !_pendingApprovals.some(p => p.id === r.id))
         const hrWfh    = (hrWRes.data || []).filter(r => !_pendingWfh.some(p => p.id === r.id))
-        _pendingApprovals = [..._pendingApprovals, ...hrLeaves]
-        _pendingWfh       = [..._pendingWfh, ...hrWfh]
+        const hrCv     = (hrCvRes.data || []).filter(r => !_pendingClientVisits.some(p => p.id === r.id))
+        _pendingApprovals    = [..._pendingApprovals, ...hrLeaves]
+        _pendingWfh          = [..._pendingWfh, ...hrWfh]
+        _pendingClientVisits = [..._pendingClientVisits, ...hrCv]
       }
 
       _updateApprovalBadge()
@@ -257,7 +300,7 @@ const LeaveTracker = (() => {
   function _updateApprovalBadge() {
     const badge = document.getElementById('lt-approval-badge')
     if (!badge) return
-    const count = _pendingApprovals.length + _pendingWfh.length
+    const count = _pendingApprovals.length + _pendingWfh.length + _pendingClientVisits.length + _pendingClientVisits.length
     if (count > 0) {
       badge.textContent   = count > 99 ? '99+' : String(count)
       badge.style.display = 'inline-flex'
@@ -284,6 +327,7 @@ const LeaveTracker = (() => {
       case 'attendance':        return _loadAttendanceTab()
       case 'my-leaves':         return _loadMyLeavesTab()
       case 'my-wfh':            return _loadMyWfhTab()
+      case 'my-client-visits':  return _loadMyClientVisitsTab()
       case 'pending-approvals': return _loadPendingApprovalsTab()
       case 'team-overview':     return _loadTeamOverviewTab()
       case 'visibility':        return _loadVisibilityTab()
@@ -332,6 +376,19 @@ const LeaveTracker = (() => {
       }
     })
 
+    // Approved client visits — treated as working days (never absent).
+    // Stores the raw record so both the cell and the date modal can read
+    // clients / entity / duration_type / reason consistently.
+    const clientVisitMap = {}
+    _clientVisits.filter(r => r.status === 'approved').forEach(r => {
+      let d = new Date(r.start_date)
+      const end = new Date(r.end_date)
+      while (d <= end) {
+        clientVisitMap[_toISO(d)] = r
+        d.setDate(d.getDate() + 1)
+      }
+    })
+
     const holidayMap = {}
     _holidays.forEach(h => { holidayMap[h.date] = h.name })
 
@@ -371,6 +428,7 @@ const LeaveTracker = (() => {
       const att     = attMap[iso]
       const leave   = leaveMap[iso]
       const isWfh   = wfhMap[iso]
+      const cv      = clientVisitMap[iso]
       const holiday = holidayMap[iso]
       const dayEvents = eventMap[iso] || []
 
@@ -390,6 +448,15 @@ const LeaveTracker = (() => {
       } else if (isWfh) {
         cellClass += ' att-cal-cell--wfh'
         cellContent += `<span class="att-cal-label">WFH</span>`
+      } else if (cv) {
+        // Client visit = working day. Show client + (if present) punch times.
+        cellClass += ' att-cal-cell--client-visit'
+        const half = cv.duration_type !== 'full_day'
+        cellContent += `<span class="att-cal-label">${half ? '½ ' : ''}Client Visit</span>`
+        cellContent += `<span class="att-cal-time att-cal-time--cv">${Utils.escapeHtml(cv.clients?.client_name || 'Client')}</span>`
+        if (att && !att.is_absent && att.punch_in) {
+          cellContent += `<span class="att-cal-time">${att.punch_in.substring(0,5)}${att.punch_out ? '–' + att.punch_out.substring(0,5) : ''}</span>`
+        }
       } else if (att) {
         if (att.is_absent) {
           cellClass += ' att-cal-cell--absent'
@@ -425,6 +492,7 @@ const LeaveTracker = (() => {
         <span class="att-legend-item"><span class="att-legend-dot" style="background:#F59E0B;"></span>Partial</span>
         <span class="att-legend-item"><span class="att-legend-dot" style="background:#6366F1;"></span>Leave</span>
         <span class="att-legend-item"><span class="att-legend-dot" style="background:#059669;"></span>WFH</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#0EA5E9;"></span>Client Visit</span>
         <span class="att-legend-item"><span class="att-legend-dot" style="background:#D97706;"></span>Holiday</span>
         <span class="att-legend-item"><span class="att-legend-dot" style="background:var(--border);"></span>No Data</span>
         <span class="att-legend-item"><span class="att-legend-dot" style="background:#EC4899;"></span>Event</span>
@@ -542,7 +610,7 @@ const LeaveTracker = (() => {
     // Click any date to view what's marked / manage events (HR can add)
     document.querySelectorAll('.att-cal-cell--clickable[data-att-date]').forEach(cell => {
       cell.addEventListener('click', () => {
-        _openAttendanceDateModal(cell.dataset.attDate, { holidayMap, leaveMap, wfhMap, attMap, eventMap })
+        _openAttendanceDateModal(cell.dataset.attDate, { holidayMap, leaveMap, wfhMap, clientVisitMap, attMap, eventMap })
       })
     })
   }
@@ -552,6 +620,7 @@ const LeaveTracker = (() => {
     const holiday   = maps.holidayMap[dateISO]
     const leave     = maps.leaveMap[dateISO]
     const isWfh     = maps.wfhMap[dateISO]
+    const cv        = maps.clientVisitMap ? maps.clientVisitMap[dateISO] : null
     const att       = maps.attMap[dateISO]
     const dayEvents = maps.eventMap[dateISO] || []
 
@@ -560,6 +629,10 @@ const LeaveTracker = (() => {
     if (holiday) items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--holiday">Holiday</span><span>${Utils.escapeHtml(holiday)}</span></div>`)
     if (leave)   items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--leave">${leave.is_half_day ? 'Half-Day Leave' : 'Leave'}</span><span>${Utils.escapeHtml(leave.name)}</span></div>`)
     if (isWfh)   items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--wfh">WFH</span><span>Work From Home</span></div>`)
+    if (cv) {
+      const dur = cv.duration_type === 'full_day' ? '' : ` (${_cvDurationLabel(cv.duration_type)})`
+      items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--client-visit">Client Visit${dur}</span><span>${Utils.escapeHtml(_cvClientLabel(cv))}${cv.reason ? ' — ' + Utils.escapeHtml(cv.reason) : ''}</span></div>`)
+    }
     if (att && !att.is_absent && att.punch_in) {
       items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--present">Attendance</span><span>${att.punch_in.substring(0,5)} → ${att.punch_out ? att.punch_out.substring(0,5) : '—'}</span></div>`)
     } else if (att && att.is_absent) {
@@ -1320,12 +1393,14 @@ const LeaveTracker = (() => {
   }
 
   async function _refreshMyLeaveData() {
-    const [lrRes, wfhRes] = await Promise.all([
+    const [lrRes, wfhRes, cvRes] = await Promise.all([
       API.getMyLeaveRequests(_user.id),
       API.getMyWfhRequests(_user.id),
+      API.getMyClientVisits(_user.id),
     ])
     _leaveRequests = lrRes.data  || []
     _wfhRequests   = wfhRes.data || []
+    _clientVisits  = cvRes.data  || []
   }
 
   /* ── Apply Leave Modal ────────────────────────────────── */
@@ -1790,6 +1865,347 @@ const LeaveTracker = (() => {
   }
 
   /* ══════════════════════════════════════════════════════════
+     TAB: MY CLIENT VISITS
+  ══════════════════════════════════════════════════════════ */
+  function _loadMyClientVisitsTab() {
+    const toolbar = document.getElementById('lt-toolbar-actions')
+    if (toolbar) {
+      toolbar.innerHTML = `<button class="btn btn--primary btn--sm" id="lt-apply-cv-btn">+ Apply Client Visit</button>`
+      document.getElementById('lt-apply-cv-btn').addEventListener('click', _openApplyClientVisitModal)
+    }
+
+    const content = document.getElementById('lt-content')
+    if (!content) return
+
+    content.innerHTML = `
+      <div class="section-card">
+        <div class="section-card-header"><h3>Client Visit History</h3></div>
+        <div class="section-card-body" style="padding:0;">
+          ${_renderClientVisitTable()}
+        </div>
+      </div>
+    `
+    _bindClientVisitActions()
+  }
+
+  function _renderClientVisitTable() {
+    if (!_clientVisits.length) return '<p class="empty-state">No client visit requests yet.</p>'
+    return `
+      <table class="data-table">
+        <thead><tr>
+          <th>Dates</th><th>Duration</th><th>Client</th>
+          <th>Status</th><th>Reason</th><th>Approver</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${_clientVisits.map(r => `
+            <tr>
+              <td style="white-space:nowrap;font-size:12px;">
+                ${Utils.formatDate(r.start_date)}${r.start_date !== r.end_date ? ' – ' + Utils.formatDate(r.end_date) : ''}
+              </td>
+              <td style="font-size:12px;">${_cvDurationLabel(r.duration_type)}</td>
+              <td style="font-size:12px;">${Utils.escapeHtml(_cvClientLabel(r))}</td>
+              <td>
+                ${STATUS_BADGE[r.status] || r.status}
+                ${r.approver_comment ? `<div class="text-sm text-muted" style="margin-top:2px;white-space:pre-wrap;word-break:break-word;">${Utils.escapeHtml(r.approver_comment)}</div>` : ''}
+              </td>
+              <td class="text-muted" style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-width:220px;">${Utils.escapeHtml(r.reason || '—')}</td>
+              <td style="font-size:12px;">${Utils.escapeHtml(r.approver?.name || '—')}</td>
+              <td style="white-space:nowrap;">
+                ${r.status === 'pending'  ? `<button class="btn btn--xs btn--ghost" data-cancel-cv="${r.id}" style="color:var(--danger);">Cancel</button>` : ''}
+                ${r.status === 'approved' ? `<button class="btn btn--xs btn--ghost" data-cancel-cv-request="${r.id}" style="color:var(--warning);">Request Cancel</button>` : ''}
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `
+  }
+
+  function _bindClientVisitActions() {
+    document.querySelectorAll('[data-cancel-cv]').forEach(btn => {
+      btn.addEventListener('click', () => _cancelClientVisit(btn.dataset.cancelCv))
+    })
+    document.querySelectorAll('[data-cancel-cv-request]').forEach(btn => {
+      btn.addEventListener('click', () => _requestClientVisitCancellation(btn.dataset.cancelCvRequest))
+    })
+  }
+
+  async function _cancelClientVisit(id) {
+    if (!confirm('Cancel this Client Visit request?')) return
+    const { error } = await API.updateClientVisit(id, { status: 'cancelled' })
+    if (error) { Utils.showToast('Failed to cancel: ' + error.message, 'error'); return }
+    Utils.showToast('Client Visit request cancelled.', 'success')
+    await _refreshMyLeaveData()
+    _loadTab(_activeTab)
+  }
+
+  async function _requestClientVisitCancellation(id) {
+    const reason = prompt('Reason for cancellation request (optional):')
+    if (reason === null) return
+    const { error } = await API.updateClientVisit(id, {
+      status: 'cancellation_pending',
+      cancellation_reason: reason || null,
+    })
+    if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
+    Utils.showToast('Cancellation request sent.', 'success')
+    await _refreshMyLeaveData()
+    _loadTab(_activeTab)
+  }
+
+  // ── Conflict detection (period-aware) ───────────────────────
+  function _normHalf(v) {
+    if (v === 'morning'   || v === 'first_half'  || v === 'first')  return 'first'
+    if (v === 'afternoon' || v === 'second_half' || v === 'second') return 'second'
+    return 'full'
+  }
+  // Expand an existing request into [{iso, period, label}] occupancy slots.
+  function _expandOccupancy(rec, kind) {
+    let period = 'full', single = false, label = ''
+    if (kind === 'leave') {
+      period = _normHalf(rec.is_half_day ? rec.half_day_period : 'full')
+      single = !!rec.is_half_day
+      label  = rec.leave_types?.name || 'Leave'
+    } else if (kind === 'wfh') {
+      period = 'full'; label = 'WFH'
+    } else {
+      period = _normHalf(rec.duration_type)
+      single = rec.duration_type !== 'full_day'
+      label  = 'Client Visit' + (rec.clients?.client_name ? ` (${rec.clients.client_name})` : '')
+    }
+    const out = []
+    const cur = _parseLocal(rec.start_date)
+    const end = _parseLocal(single ? rec.start_date : rec.end_date)
+    while (cur <= end) { out.push({ iso: _toISO(cur), period, label }); cur.setDate(cur.getDate() + 1) }
+    return out
+  }
+  // Returns conflicting slots for a proposed client visit. Two slots on the
+  // same date clash if either is full-day or they share the same half.
+  async function _findClientVisitConflicts(start, end, durationType) {
+    const reqSingle = durationType !== 'full_day'
+    const reqPeriod = _normHalf(durationType)
+    const reqEnd    = reqSingle ? start : end
+
+    const { leaves, wfhs, clientVisits } = await API.getAttendanceConflicts(_user.id, start, reqEnd)
+    const existing = [
+      ...leaves.flatMap(r => _expandOccupancy(r, 'leave')),
+      ...wfhs.flatMap(r => _expandOccupancy(r, 'wfh')),
+      ...clientVisits.flatMap(r => _expandOccupancy(r, 'client')),
+    ]
+
+    const reqDates = []
+    { const c = _parseLocal(start), e = _parseLocal(reqEnd)
+      while (c <= e) { reqDates.push(_toISO(c)); c.setDate(c.getDate() + 1) } }
+
+    const hits = []
+    reqDates.forEach(iso => {
+      existing.filter(o => o.iso === iso).forEach(o => {
+        if (reqPeriod === 'full' || o.period === 'full' || reqPeriod === o.period) {
+          hits.push({ iso, label: o.label })
+        }
+      })
+    })
+    return hits
+  }
+
+  function _showConflictPopup(hits) {
+    const rows = hits.map(h =>
+      `<li style="margin-bottom:4px;">${Utils.formatDate(h.iso)} — <strong>${Utils.escapeHtml(h.label)}</strong></li>`
+    ).join('')
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">Attendance Conflict</h3>
+        <button class="modal-close" onclick="Utils.closeModal()">${CLOSE_SVG}</button>
+      </div>
+      <div class="modal-body" style="padding:20px 24px;">
+        <p style="font-size:14px;line-height:1.6;margin:0 0 12px;">
+          This date already has an existing attendance request. Please review or
+          edit the existing request before creating a new one.
+        </p>
+        <ul style="font-size:13px;color:var(--text-muted);margin:0;padding-left:18px;">${rows}</ul>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--primary" onclick="Utils.closeModal()">OK</button>
+      </div>
+    `)
+  }
+
+  /* ── Apply Client Visit Modal ─────────────────────────── */
+  async function _openApplyClientVisitModal() {
+    const todayISO = _toISO(new Date())
+    const clientsRes = await API.getClients(false)
+    const clients = clientsRes.data || []
+
+    if (!clients.length) {
+      Utils.showToast('No clients found in the Client Directory.', 'error')
+      return
+    }
+
+    const clientOptions = clients.map(c =>
+      `<option value="${c.id}">${Utils.escapeHtml(c.client_name)}</option>`
+    ).join('')
+
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">Apply for Client Visit</h3>
+        <button class="modal-close" onclick="Utils.closeModal()">${CLOSE_SVG}</button>
+      </div>
+      <div class="modal-body">
+        <div id="lt-cv-modal-err" class="alert alert--danger" style="display:none;"></div>
+
+        <div class="form-group">
+          <label class="form-label">Client <span class="required">*</span></label>
+          <select class="form-input" id="lt-f-cv-client">
+            <option value="">Select a client…</option>
+            ${clientOptions}
+          </select>
+        </div>
+
+        <div class="form-group" id="lt-cv-entity-wrap" style="display:none;">
+          <label class="form-label">Entity <span class="required">*</span></label>
+          <select class="form-input" id="lt-f-cv-entity"></select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Duration <span class="required">*</span></label>
+          <select class="form-input" id="lt-f-cv-duration">
+            <option value="full_day">Full Day</option>
+            <option value="first_half">First Half</option>
+            <option value="second_half">Second Half</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Start Date <span class="required">*</span></label>
+            <input class="form-input" type="date" id="lt-f-cv-start" value="${todayISO}" />
+          </div>
+          <div class="form-group" id="lt-cv-end-wrap">
+            <label class="form-label">End Date <span class="required">*</span></label>
+            <input class="form-input" type="date" id="lt-f-cv-end" value="${todayISO}" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Reason <span class="required">*</span></label>
+          <textarea class="form-input" id="lt-f-cv-reason" rows="3"
+            placeholder="e.g. Monthly review meeting, production shoot…" style="resize:vertical;"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
+        <button class="btn btn--primary" id="lt-submit-cv-btn">Submit</button>
+      </div>
+    `)
+
+    const clientSel = document.getElementById('lt-f-cv-client')
+    const entityWrap = document.getElementById('lt-cv-entity-wrap')
+    const entitySel  = document.getElementById('lt-f-cv-entity')
+    const durationSel = document.getElementById('lt-f-cv-duration')
+    const endWrap     = document.getElementById('lt-cv-end-wrap')
+    const startEl     = document.getElementById('lt-f-cv-start')
+    const endEl       = document.getElementById('lt-f-cv-end')
+
+    // Populate entities when a client is chosen
+    clientSel.addEventListener('change', () => {
+      const c = clients.find(x => x.id === clientSel.value)
+      const ents = c?.client_entities || []
+      if (ents.length) {
+        entitySel.innerHTML = ents.map(e =>
+          `<option value="${e.id}">${Utils.escapeHtml(e.entity_name)}</option>`
+        ).join('')
+        entityWrap.style.display = ''
+      } else {
+        entitySel.innerHTML = ''
+        entityWrap.style.display = 'none'
+      }
+    })
+
+    // Half-day is single-date only
+    durationSel.addEventListener('change', () => {
+      const isHalf = durationSel.value !== 'full_day'
+      endWrap.style.display = isHalf ? 'none' : ''
+      if (isHalf) endEl.value = startEl.value
+    })
+    startEl.addEventListener('change', () => {
+      if (endEl.value < startEl.value || durationSel.value !== 'full_day') endEl.value = startEl.value
+    })
+
+    document.getElementById('lt-submit-cv-btn').addEventListener('click', async () => {
+      const errEl    = document.getElementById('lt-cv-modal-err')
+      const btn      = document.getElementById('lt-submit-cv-btn')
+      const clientId = clientSel.value
+      const duration = durationSel.value
+      const isHalf   = duration !== 'full_day'
+      const start    = startEl.value
+      const end      = isHalf ? start : endEl.value
+      const reason   = document.getElementById('lt-f-cv-reason').value.trim()
+      const c        = clients.find(x => x.id === clientId)
+      const hasEnts  = (c?.client_entities || []).length > 0
+      const entityId = hasEnts ? entitySel.value : null
+
+      errEl.style.display = 'none'
+      const fail = (m) => { errEl.textContent = m; errEl.style.display = 'block' }
+      if (!clientId)            return fail('Please select a client.')
+      if (hasEnts && !entityId) return fail('Please select an entity.')
+      if (!start)               return fail('Please select a start date.')
+      if (!isHalf && end < start) return fail('End date cannot be before start date.')
+      if (!reason)              return fail('Please provide a reason.')
+
+      btn.disabled = true; btn.textContent = 'Checking…'
+
+      // Period-aware conflict check
+      const hits = await _findClientVisitConflicts(start, end, duration)
+      if (hits.length) {
+        btn.disabled = false; btn.textContent = 'Submit'
+        _showConflictPopup(hits)
+        return
+      }
+
+      const days = isHalf ? 0.5 : _calcLeaveDays(start, end, false)
+      const approverId = _resolveApproverId()
+
+      btn.textContent = 'Submitting…'
+      const { error } = await API.createClientVisit({
+        employee_id:   _user.id,
+        client_id:     clientId,
+        entity_id:     entityId,
+        duration_type: duration,
+        start_date:    start,
+        end_date:      end,
+        days,
+        reason,
+        status:        'pending',
+        approver_id:   approverId,
+      })
+
+      btn.disabled = false; btn.textContent = 'Submit'
+      if (error) return fail(error.message)
+
+      if (approverId) {
+        API.createNotification({
+          recipient_employee_id: approverId,
+          type: 'info',
+          message: `${_user.name} submitted a Client Visit request.`,
+          module: 'leave_tracker',
+        })
+      } else {
+        _employees
+          .filter(e => (e.role === 'super_admin' || Utils.getDeptSystemKey(e.department) === 'people_culture') && e.id !== _user.id)
+          .forEach(hr => API.createNotification({
+            recipient_employee_id: hr.id,
+            type: 'info',
+            message: `${_user.name} submitted a Client Visit request (no manager assigned).`,
+            module: 'leave_tracker',
+          }))
+      }
+      Utils.closeModal()
+      Utils.showToast('Client Visit request submitted.', 'success')
+      await _refreshMyLeaveData()
+      _loadTab('my-client-visits')
+    })
+  }
+
+  /* ══════════════════════════════════════════════════════════
      TAB: PENDING APPROVALS
   ══════════════════════════════════════════════════════════ */
   function _loadPendingApprovalsTab() {
@@ -1817,11 +2233,21 @@ const LeaveTracker = (() => {
         </div>
       </div>
 
+      <div class="section-card mb-4">
+        <div class="section-card-header">
+          <h3>Client Visit Approvals</h3>
+          <span class="badge badge--warning">${_pendingClientVisits.length}</span>
+        </div>
+        <div class="section-card-body" id="lt-cv-approvals-body">
+          ${_renderApprovalCards(_pendingClientVisits, 'client-visit')}
+        </div>
+      </div>
+
       <div class="section-card">
         <div class="section-card-header" style="cursor:pointer;user-select:none;" id="lt-history-header">
           <h3>Approval History</h3>
           <div style="display:flex;align-items:center;gap:8px;">
-            <span style="font-size:12px;color:var(--text-muted);">${_historyLeave.length + _historyWfh.length} decisions</span>
+            <span style="font-size:12px;color:var(--text-muted);">${_historyLeave.length + _historyWfh.length + _historyClientVisit.length} decisions</span>
             <svg id="lt-history-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition:transform .2s;"><polyline points="6 9 12 15 18 9"/></svg>
           </div>
         </div>
@@ -1851,7 +2277,8 @@ const LeaveTracker = (() => {
       const emp         = r.employee || {}
       const initials    = Utils.getInitials(emp.name || '?')
       const isCancPend  = r.status === 'cancellation_pending'
-      const typeName    = type === 'leave' ? (r.leave_types?.name || 'Leave') : 'WFH'
+      const typeName    = type === 'leave' ? (r.leave_types?.name || 'Leave')
+                        : type === 'wfh'   ? 'WFH' : 'Client Visit'
       const dateRange   = r.start_date === r.end_date
         ? Utils.formatDate(r.start_date)
         : `${Utils.formatDate(r.start_date)} – ${Utils.formatDate(r.end_date)}`
@@ -1875,7 +2302,9 @@ const LeaveTracker = (() => {
                 · ${dateRange}
                 · ${r.days} day${Number(r.days) === 1 ? '' : 's'}
                 ${type === 'leave' && r.is_half_day ? `<span class="badge badge--muted" style="font-size:10px;margin-left:4px;">Half-day ${r.half_day_period || ''}</span>` : ''}
+                ${type === 'client-visit' ? `<span class="badge badge--muted" style="font-size:10px;margin-left:4px;">${_cvDurationLabel(r.duration_type)}</span>` : ''}
               </div>
+              ${type === 'client-visit' ? `<div style="font-size:12px;margin-top:4px;"><strong>${Utils.escapeHtml(_cvClientLabel(r))}</strong></div>` : ''}
               ${r.reason ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px;">
                 ${Utils.escapeHtml(reasonPreview)}${hasMore ? `<span style="color:var(--primary);margin-left:4px;font-weight:500;">View more</span>` : ''}
               </div>` : ''}
@@ -1910,7 +2339,10 @@ const LeaveTracker = (() => {
     const wfhRows = _historyWfh.map(r => ({
       ...r, _kind: 'wfh', typeName: 'WFH'
     }))
-    const all = [...leaveRows, ...wfhRows].sort((a, b) => {
+    const cvRows = _historyClientVisit.map(r => ({
+      ...r, _kind: 'client-visit', typeName: 'Client Visit'
+    }))
+    const all = [...leaveRows, ...wfhRows, ...cvRows].sort((a, b) => {
       const da = a.acted_at ? new Date(a.acted_at) : new Date(a.created_at)
       const db = b.acted_at ? new Date(b.acted_at) : new Date(b.created_at)
       return db - da
@@ -1997,13 +2429,14 @@ const LeaveTracker = (() => {
 
   function _openLeaveDetailModal(id, type, readOnly = false) {
     // Search pending arrays first, then history arrays
-    const pendingArr = type === 'leave' ? _pendingApprovals : _pendingWfh
-    const historyArr = type === 'leave' ? _historyLeave     : _historyWfh
+    const pendingArr = _reqPending(type)
+    const historyArr = _reqHistory(type)
     const r = pendingArr.find(x => x.id === id) || historyArr.find(x => x.id === id)
     if (!r) return
 
     const emp      = r.employee || {}
-    const typeName = type === 'leave' ? (r.leave_types?.name || 'Leave') : 'WFH'
+    const typeName = type === 'leave' ? (r.leave_types?.name || 'Leave')
+                   : type === 'wfh'   ? 'WFH' : 'Client Visit'
     const dateRange = r.start_date === r.end_date
       ? Utils.formatDate(r.start_date)
       : `${Utils.formatDate(r.start_date)} – ${Utils.formatDate(r.end_date)}`
@@ -2011,7 +2444,7 @@ const LeaveTracker = (() => {
 
     Utils.openModal(`
       <div class="modal-header">
-        <h3 class="modal-title">Leave Request</h3>
+        <h3 class="modal-title">${Utils.escapeHtml(typeName)} Request</h3>
         <button class="modal-close" onclick="Utils.closeModal()">${CLOSE_SVG}</button>
       </div>
       <div class="modal-body" style="padding:20px 24px;">
@@ -2031,8 +2464,13 @@ const LeaveTracker = (() => {
           </div>
           <div>
             <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:3px;">Duration</div>
-            <div style="font-size:14px;font-weight:500;">${r.days} day${Number(r.days) === 1 ? '' : 's'}${type === 'leave' && r.is_half_day ? ' (half-day)' : ''}</div>
+            <div style="font-size:14px;font-weight:500;">${r.days} day${Number(r.days) === 1 ? '' : 's'}${type === 'leave' && r.is_half_day ? ' (half-day)' : ''}${type === 'client-visit' ? ' · ' + _cvDurationLabel(r.duration_type) : ''}</div>
           </div>
+          ${type === 'client-visit' ? `
+          <div style="grid-column:1/-1;">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:3px;">Client</div>
+            <div style="font-size:14px;font-weight:500;">${Utils.escapeHtml(_cvClientLabel(r))}</div>
+          </div>` : ''}
           <div>
             <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:3px;">Date${r.start_date !== r.end_date ? 's' : ''}</div>
             <div style="font-size:14px;font-weight:500;">${dateRange}</div>
@@ -2093,10 +2531,10 @@ const LeaveTracker = (() => {
   }
 
   async function _approveRequest(id, type) {
-    const arr = type === 'leave' ? _pendingApprovals : _pendingWfh
+    const arr = _reqPending(type)
     const req = arr.find(r => r.id === id)
 
-    const updateFn = type === 'leave' ? API.updateLeaveRequest : API.updateWfhRequest
+    const updateFn = _reqUpdateFn(type)
     const { error } = await updateFn(id, {
       status:   'approved',
       acted_at: new Date().toISOString(),
@@ -2104,7 +2542,7 @@ const LeaveTracker = (() => {
     if (error) {
       Utils.showToast('Failed to approve: ' + error.message, 'error')
     } else {
-      const label     = type === 'leave' ? 'leave' : 'WFH'
+      const label     = _reqLabel(type)
       const empName   = req?.employee?.name || 'An employee'
 
       // Notify the requester
@@ -2142,7 +2580,7 @@ const LeaveTracker = (() => {
   }
 
   function _openRejectModal(id, type) {
-    const arr = type === 'leave' ? _pendingApprovals : _pendingWfh
+    const arr = _reqPending(type)
     const req = arr.find(r => r.id === id)
 
     Utils.openModal(`
@@ -2172,7 +2610,7 @@ const LeaveTracker = (() => {
       btn.disabled    = true
       btn.textContent = 'Rejecting…'
 
-      const updateFn = type === 'leave' ? API.updateLeaveRequest : API.updateWfhRequest
+      const updateFn = _reqUpdateFn(type)
       const { error } = await updateFn(id, {
         status:           'rejected',
         approver_comment: comment,
@@ -2188,7 +2626,7 @@ const LeaveTracker = (() => {
       }
 
       if (req?.employee?.id) {
-        const label = type === 'leave' ? 'leave' : 'WFH'
+        const label = _reqLabel(type)
         API.createNotification({
           recipient_employee_id: req.employee.id,
           type: 'rejection',
@@ -2205,10 +2643,10 @@ const LeaveTracker = (() => {
   }
 
   async function _approveCancellation(id, type) {
-    const arr = type === 'leave' ? _pendingApprovals : _pendingWfh
+    const arr = _reqPending(type)
     const req = arr.find(r => r.id === id)
 
-    const updateFn = type === 'leave' ? API.updateLeaveRequest : API.updateWfhRequest
+    const updateFn = _reqUpdateFn(type)
     const { error } = await updateFn(id, {
       status:   'cancelled',
       acted_at: new Date().toISOString(),
@@ -2217,7 +2655,7 @@ const LeaveTracker = (() => {
       Utils.showToast('Failed: ' + error.message, 'error')
     } else {
       if (req?.employee?.id) {
-        const label = type === 'leave' ? 'leave' : 'WFH'
+        const label = _reqLabel(type)
         API.createNotification({
           recipient_employee_id: req.employee.id,
           type: 'approval',
@@ -2233,16 +2671,16 @@ const LeaveTracker = (() => {
   }
 
   async function _denyCancellation(id, type) {
-    const arr = type === 'leave' ? _pendingApprovals : _pendingWfh
+    const arr = _reqPending(type)
     const req = arr.find(r => r.id === id)
 
-    const updateFn = type === 'leave' ? API.updateLeaveRequest : API.updateWfhRequest
+    const updateFn = _reqUpdateFn(type)
     const { error } = await updateFn(id, { status: 'approved' })
     if (error) {
       Utils.showToast('Failed: ' + error.message, 'error')
     } else {
       if (req?.employee?.id) {
-        const label = type === 'leave' ? 'leave' : 'WFH'
+        const label = _reqLabel(type)
         API.createNotification({
           recipient_employee_id: req.employee.id,
           type: 'rejection',
@@ -2258,26 +2696,33 @@ const LeaveTracker = (() => {
   }
 
   async function _refreshApprovalData() {
-    const [paRes, pwRes, hlRes, hwRes] = await Promise.all([
+    const [paRes, pwRes, pcvRes, hlRes, hwRes, hcvRes] = await Promise.all([
       API.getPendingLeaveApprovals(_user.id),
       API.getPendingWfhApprovals(_user.id),
+      API.getPendingClientVisitApprovals(_user.id),
       API.getApprovalHistoryLeave(_user.id),
       API.getApprovalHistoryWfh(_user.id),
+      API.getApprovalHistoryClientVisit(_user.id),
     ])
-    _pendingApprovals = paRes.data || []
-    _pendingWfh       = pwRes.data || []
-    _historyLeave     = hlRes.data || []
-    _historyWfh       = hwRes.data || []
+    _pendingApprovals    = paRes.data  || []
+    _pendingWfh          = pwRes.data  || []
+    _pendingClientVisits = pcvRes.data || []
+    _historyLeave        = hlRes.data  || []
+    _historyWfh          = hwRes.data  || []
+    _historyClientVisit  = hcvRes.data || []
 
     if (_isHR) {
-      const [hrLRes, hrWRes] = await Promise.all([
+      const [hrLRes, hrWRes, hrCvRes] = await Promise.all([
         API.getHRLeaveQueue(),
         API.getHRWfhQueue(),
+        API.getHRClientVisitQueue(),
       ])
       const hrLeaves = (hrLRes.data || []).filter(r => !_pendingApprovals.some(p => p.id === r.id))
       const hrWfh    = (hrWRes.data || []).filter(r => !_pendingWfh.some(p => p.id === r.id))
-      _pendingApprovals = [..._pendingApprovals, ...hrLeaves]
-      _pendingWfh       = [..._pendingWfh, ...hrWfh]
+      const hrCv     = (hrCvRes.data || []).filter(r => !_pendingClientVisits.some(p => p.id === r.id))
+      _pendingApprovals    = [..._pendingApprovals, ...hrLeaves]
+      _pendingWfh          = [..._pendingWfh, ...hrWfh]
+      _pendingClientVisits = [..._pendingClientVisits, ...hrCv]
     }
 
     _updateApprovalBadge()

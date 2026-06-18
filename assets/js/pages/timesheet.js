@@ -15,8 +15,10 @@ const Timesheet = (() => {
   let _isManager         = false
   let _myLeaves          = []   // user's approved leave requests
   let _myWfhs            = []   // user's approved WFH requests
+  let _myClientVisits    = []   // user's approved client visits
   let _teamPersonLeaves  = []   // selected team member's approved leaves
   let _teamPersonWfhs    = []   // selected team member's approved WFHs
+  let _teamPersonClientVisits = [] // selected team member's approved client visits
   let _weekStart         = null
   let _activeTab         = 'mine'
   let _p                 = null
@@ -97,6 +99,7 @@ const Timesheet = (() => {
     _internalProjects = (internalProjects || []).filter(p => p.status === 'active')
     _myLeaves         = leaveData.leaves
     _myWfhs           = leaveData.wfhs
+    _myClientVisits   = leaveData.clientVisits || []
 
     // Load the full reporting subtree for this user — anyone in their hierarchy
     // (direct or indirect) grants Team tab visibility and scopes team data.
@@ -277,6 +280,25 @@ const Timesheet = (() => {
   function _isWfhDay(iso, wfhs) {
     return wfhs.some(w => iso >= w.start_date && iso <= w.end_date)
   }
+  // Approved client visit covering this date (or null)
+  function _clientVisitForDay(iso, cvs) {
+    return (cvs || []).find(c => iso >= c.start_date && iso <= c.end_date) || null
+  }
+  function _cvDurLabel(d) {
+    return d === 'first_half' ? 'First Half' : d === 'second_half' ? 'Second Half' : 'Full Day'
+  }
+  // Read-only context banner shown for a half-day client visit (full-day
+  // visits auto-create an editable entry instead, so they need no banner).
+  function _cvContextBanner(cv) {
+    const client = cv.clients?.client_name || 'Client'
+    const entity = cv.entity?.entity_name ? ' — ' + Utils.escapeHtml(cv.entity.entity_name) : ''
+    return `
+      <div class="ts-cv-context">
+        <span class="ts-cv-context-tag">${_cvDurLabel(cv.duration_type)} · Client Visit</span>
+        <div class="ts-cv-context-client">${Utils.escapeHtml(client)}${entity}</div>
+        ${cv.reason ? `<div class="ts-cv-context-reason">${Utils.escapeHtml(cv.reason)}</div>` : ''}
+      </div>`
+  }
   function _getLeaveName(iso, leaves) {
     return _getLeave(iso, leaves)?.leave_types?.name || null
   }
@@ -334,6 +356,8 @@ const Timesheet = (() => {
     const isFullLeaveDay = _isFullLeaveDay(iso, _myLeaves)
     const isWfhDay       = !isFullLeaveDay && _isWfhDay(iso, _myWfhs)
     const leaveName      = isFullLeaveDay ? _getLeaveName(iso, _myLeaves) : null
+    const cvDay          = _clientVisitForDay(iso, _myClientVisits)
+    const cvHalf         = cvDay && cvDay.duration_type !== 'full_day'
 
     // Warn for missing hours on past working days (full-leave days excluded).
     const isPastNoEntry = !isToday && diffDays > 0 && diffDays <= 7 && dayEntries.length === 0 && !isFullLeaveDay
@@ -375,7 +399,7 @@ const Timesheet = (() => {
         <div class="ts-col-header">
           <div class="ts-col-top">
             <span class="ts-col-weekday">${day.toLocaleDateString('en-IN', { weekday:'short' }).toUpperCase()}</span>
-            <span class="ts-col-status-icon">${headerIcon}${isWfhDay ? `<span style="font-size:9px;font-weight:600;background:#ECFDF5;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">WFH</span>` : ''}</span>
+            <span class="ts-col-status-icon">${headerIcon}${isWfhDay ? `<span style="font-size:9px;font-weight:600;background:#ECFDF5;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">WFH</span>` : ''}${cvDay ? `<span style="font-size:9px;font-weight:600;background:#E0F2FE;color:#0369A1;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">Visit</span>` : ''}</span>
           </div>
           <span class="ts-col-date${isToday ? ' ts-col-date--today' : ''}">${day.getDate()}</span>
           ${dayHours > 0 ? `<span class="ts-col-hours">${dayHours.toFixed(1)}h</span>` : ''}
@@ -389,6 +413,7 @@ const Timesheet = (() => {
               ${leaveName ? `<span style="font-size:10px;color:var(--text-muted);">${Utils.escapeHtml(leaveName)}</span>` : ''}
             </div>
           ` : ''}
+          ${cvHalf ? _cvContextBanner(cvDay) : ''}
           ${!isFullLeaveDay || dayEntries.length > 0 ? dayEntries.map(e => _renderCard(e)).join('') : ''}
           ${_p.can_create && !isLocked && !isFuture && !isFullLeaveDay ? `
             <button class="ts-add-btn" data-date="${iso}">
@@ -417,6 +442,7 @@ const Timesheet = (() => {
       <div class="ts-card ts-card--${e.status}">
         <div class="ts-card-client">
           ${isInternal ? `<span class="ts-card-type-badge ts-card-type-badge--internal">Internal</span>` : ''}
+          ${e.source_client_visit_id ? `<span class="ts-card-type-badge" style="background:#E0F2FE;color:#0369A1;">Client Visit</span>` : ''}
           <span class="ts-card-client-name">${Utils.escapeHtml(projName || '—')}</span>
           ${projCode ? `<span class="ts-card-code">${Utils.escapeHtml(projCode)}</span>` : ''}
           ${lateIcon}
@@ -1171,6 +1197,7 @@ const Timesheet = (() => {
     _teamPersonEntries = data || []
     _teamPersonLeaves  = leaveData.leaves
     _teamPersonWfhs    = leaveData.wfhs
+    _teamPersonClientVisits = leaveData.clientVisits || []
     _renderPersonView()
   }
 
@@ -1295,6 +1322,8 @@ const Timesheet = (() => {
     const isFullLeaveDay = _isFullLeaveDay(iso, _teamPersonLeaves)
     const isWfhDay       = !isFullLeaveDay && _isWfhDay(iso, _teamPersonWfhs)
     const leaveName      = isFullLeaveDay ? _getLeaveName(iso, _teamPersonLeaves) : null
+    const cvDay          = _clientVisitForDay(iso, _teamPersonClientVisits)
+    const cvHalf         = cvDay && cvDay.duration_type !== 'full_day'
 
     const drafts    = dayEntries.filter(e => e.status === 'draft').length
     const submitted = dayEntries.filter(e => e.status === 'submitted').length
@@ -1315,7 +1344,7 @@ const Timesheet = (() => {
         <div class="ts-col-header">
           <div class="ts-col-top">
             <span class="ts-col-weekday">${day.toLocaleDateString('en-IN', { weekday:'short' }).toUpperCase()}</span>
-            <span class="ts-col-status-icon">${headerIcon}${isWfhDay ? `<span style="font-size:9px;font-weight:600;background:#ECFDF5;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">WFH</span>` : ''}</span>
+            <span class="ts-col-status-icon">${headerIcon}${isWfhDay ? `<span style="font-size:9px;font-weight:600;background:#ECFDF5;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">WFH</span>` : ''}${cvDay ? `<span style="font-size:9px;font-weight:600;background:#E0F2FE;color:#0369A1;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">Visit</span>` : ''}</span>
           </div>
           <span class="ts-col-date${isToday ? ' ts-col-date--today' : ''}">${day.getDate()}</span>
           ${dayHours > 0 ? `<span class="ts-col-hours">${dayHours.toFixed(1)}h</span>` : ''}
@@ -1328,6 +1357,7 @@ const Timesheet = (() => {
               ${leaveName ? `<span style="font-size:10px;color:var(--text-muted);">${Utils.escapeHtml(leaveName)}</span>` : ''}
             </div>
           ` : ''}
+          ${cvHalf ? _cvContextBanner(cvDay) : ''}
           ${!isFullLeaveDay || dayEntries.length > 0 ? dayEntries.map(e => _renderPersonCard(e)).join('') : ''}
         </div>
         ${isFullLeaveDay && dayEntries.length === 0 ? `<div class="ts-col-footer"><div class="ts-day-action" style="background:#EEF2FF;color:#6366F1;border:none;cursor:default;">On Leave</div></div>` : ''}
@@ -1354,6 +1384,7 @@ const Timesheet = (() => {
       <div class="ts-card ts-card--${e.status}">
         <div class="ts-card-client">
           ${isInternal ? `<span class="ts-card-type-badge ts-card-type-badge--internal">Internal</span>` : ''}
+          ${e.source_client_visit_id ? `<span class="ts-card-type-badge" style="background:#E0F2FE;color:#0369A1;">Client Visit</span>` : ''}
           <span class="ts-card-client-name">${Utils.escapeHtml(projName || '—')}</span>
           ${projCode ? `<span class="ts-card-code">${Utils.escapeHtml(projCode)}</span>` : ''}
           ${lateIcon}

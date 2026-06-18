@@ -1325,10 +1325,10 @@ const API = (() => {
       .order('created_at', { ascending: false })
   }
 
-  // Returns all approved leave + WFH records for a given employee.
-  // Used by the Timesheet module to overlay leave/WFH status on day columns.
+  // Returns all approved leave + WFH + client-visit records for an employee.
+  // Used by the Timesheet & Attendance modules to overlay status on days.
   async function getApprovedLeaveForEmployee(employeeId) {
-    const [leaveRes, wfhRes] = await Promise.all([
+    const [leaveRes, wfhRes, cvRes] = await Promise.all([
       supabase.from('leave_requests')
         .select('start_date, end_date, is_half_day, half_day_period, leave_types(name)')
         .eq('employee_id', employeeId)
@@ -1337,8 +1337,16 @@ const API = (() => {
         .select('start_date, end_date')
         .eq('employee_id', employeeId)
         .eq('status', 'approved'),
+      supabase.from('client_visit_requests')
+        .select('id, start_date, end_date, duration_type, reason, clients(client_name), entity:client_entities!entity_id(id, entity_name)')
+        .eq('employee_id', employeeId)
+        .eq('status', 'approved'),
     ])
-    return { leaves: leaveRes.data || [], wfhs: wfhRes.data || [] }
+    return {
+      leaves: leaveRes.data || [],
+      wfhs: wfhRes.data || [],
+      clientVisits: cvRes.data || [],
+    }
   }
 
   async function getPendingWfhApprovals(approverId) {
@@ -1374,6 +1382,84 @@ const API = (() => {
 
   async function updateWfhRequest(id, data) {
     return supabase.from('wfh_requests').update(data).eq('id', id)
+  }
+
+  /* ── Client Visit Requests (mirrors WFH) ──────────────────── */
+  const CV_SEL = '*, clients(client_name, project_code), entity:client_entities!entity_id(id, entity_name)'
+
+  async function getMyClientVisits(employeeId) {
+    return supabase
+      .from('client_visit_requests')
+      .select(`${CV_SEL}, approver:employees!approver_id(name)`)
+      .eq('employee_id', employeeId)
+      .order('created_at', { ascending: false })
+  }
+
+  async function getPendingClientVisitApprovals(approverId) {
+    return supabase
+      .from('client_visit_requests')
+      .select(`${CV_SEL}, employee:employees!employee_id(id, name, department, profile_image_url)`)
+      .eq('approver_id', approverId)
+      .in('status', ['pending', 'cancellation_pending'])
+      .order('created_at', { ascending: true })
+  }
+
+  async function getHRClientVisitQueue() {
+    return supabase
+      .from('client_visit_requests')
+      .select(`${CV_SEL}, employee:employees!employee_id(id, name, department, profile_image_url)`)
+      .is('approver_id', null)
+      .in('status', ['pending', 'cancellation_pending'])
+      .order('created_at', { ascending: true })
+  }
+
+  async function getApprovalHistoryClientVisit(approverId) {
+    return supabase
+      .from('client_visit_requests')
+      .select(`${CV_SEL}, employee:employees!employee_id(id, name, department, profile_image_url)`)
+      .eq('approver_id', approverId)
+      .in('status', ['approved', 'rejected', 'cancelled'])
+      .order('acted_at', { ascending: false })
+      .limit(100)
+  }
+
+  async function getAllClientVisits(filters = {}) {
+    let q = supabase
+      .from('client_visit_requests')
+      .select(`${CV_SEL}, employee:employees!employee_id(id, name, department, designation, profile_image_url), approver:employees!approver_id(name)`)
+      .order('created_at', { ascending: false })
+    if (filters.status) q = q.eq('status', filters.status)
+    return q
+  }
+
+  async function createClientVisit(data) {
+    return supabase.from('client_visit_requests').insert(data).select().single()
+  }
+
+  async function updateClientVisit(id, data) {
+    return supabase.from('client_visit_requests').update(data).eq('id', id)
+  }
+
+  // Conflict check: returns any leave / WFH / client-visit requests for this
+  // employee that overlap [startISO, endISO] and aren't dead (rejected/cancelled).
+  // The caller applies period-aware logic (full-day vs first/second half).
+  async function getAttendanceConflicts(employeeId, startISO, endISO) {
+    const live = ['pending', 'approved', 'cancellation_pending']
+    const [lr, wfh, cv] = await Promise.all([
+      supabase.from('leave_requests')
+        .select('id, start_date, end_date, is_half_day, half_day_period, status, leave_types(name)')
+        .eq('employee_id', employeeId).in('status', live)
+        .lte('start_date', endISO).gte('end_date', startISO),
+      supabase.from('wfh_requests')
+        .select('id, start_date, end_date, status')
+        .eq('employee_id', employeeId).in('status', live)
+        .lte('start_date', endISO).gte('end_date', startISO),
+      supabase.from('client_visit_requests')
+        .select('id, start_date, end_date, duration_type, status, clients(client_name)')
+        .eq('employee_id', employeeId).in('status', live)
+        .lte('start_date', endISO).gte('end_date', startISO),
+    ])
+    return { leaves: lr.data || [], wfhs: wfh.data || [], clientVisits: cv.data || [] }
   }
 
   /* ── WFH Quotas (Phase 7) ─────────────────────────────────── */
@@ -1798,6 +1884,9 @@ const API = (() => {
     createLeaveRequest, updateLeaveRequest,
     getMyWfhRequests, getPendingWfhApprovals, getHRWfhQueue, getAllWfhRequests, getApprovedLeaveForEmployee,
     createWfhRequest, updateWfhRequest,
+    getMyClientVisits, getPendingClientVisitApprovals, getHRClientVisitQueue,
+    getApprovalHistoryClientVisit, getAllClientVisits, createClientVisit, updateClientVisit,
+    getAttendanceConflicts,
     getWfhQuotas, createWfhQuota, deleteWfhQuota,
     getCompanyHolidays, addCompanyHoliday, deleteCompanyHoliday,
     getCompanyEvents, createCompanyEvent, updateCompanyEvent, deleteCompanyEvent,
