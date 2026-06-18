@@ -1785,7 +1785,7 @@ const Assets = (() => {
         // 4. Notify all HR / Super Admin
         const hrEmployees = _employees.filter(e =>
           e.status === 'active' &&
-          (e.role === 'super_admin' || e.department === 'people_culture')
+          (e.role === 'super_admin' || Utils.getDeptSystemKey(e.department) === 'people_culture')
         )
         if (hrEmployees.length) {
           await Promise.all(hrEmployees.map(e => API.createNotification({
@@ -2053,7 +2053,7 @@ const Assets = (() => {
         // Notify all HR/Super Admin
         const hrEmployees = _employees.filter(e =>
           e.status === 'active' &&
-          (e.role === 'super_admin' || e.department === 'people_culture')
+          (e.role === 'super_admin' || Utils.getDeptSystemKey(e.department) === 'people_culture')
         )
         if (hrEmployees.length) {
           await Promise.all(hrEmployees.map(e => API.createNotification({
@@ -2260,7 +2260,7 @@ const Assets = (() => {
           // Notify all HR / Super Admin
           const hrEmployees = _employees.filter(e =>
             e.status === 'active' &&
-            (e.role === 'super_admin' || e.department === 'people_culture')
+            (e.role === 'super_admin' || Utils.getDeptSystemKey(e.department) === 'people_culture')
           )
           if (hrEmployees.length) {
             await Promise.all(hrEmployees.map(e => API.createNotification({

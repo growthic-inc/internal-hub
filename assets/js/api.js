@@ -590,11 +590,13 @@ const API = (() => {
       .order('created_at', { ascending: false })
   }
 
-  async function getEmployeesByDepartment(department) {
+  // `systemKey` is the immutable department system_key (e.g. 'people_culture',
+  // 'finance') — NOT the editable slug — so this survives renames.
+  async function getEmployeesByDepartment(systemKey) {
     return supabase
       .from('employees')
-      .select('id, name')
-      .eq('department', department)
+      .select('id, name, departments!inner(system_key)')
+      .eq('departments.system_key', systemKey)
       .eq('status', 'active')
   }
 
@@ -766,12 +768,13 @@ const API = (() => {
   }
 
   /* ── Access Matrix (new 6-tier feature-level permissions) ──── */
-  async function getAccessMatrix(department) {
-    // Returns all rows for a department: { module, feature, access_level }
+  async function getAccessMatrix(departmentId) {
+    // Returns all rows for a department, keyed by the immutable department_id
+    // (rename-proof): { module, feature, access_level }
     return supabase
       .from('access_matrix')
       .select('module, feature, access_level')
-      .eq('department', department)
+      .eq('department_id', departmentId)
       .order('module')
       .order('feature')
   }
@@ -812,6 +815,19 @@ const API = (() => {
 
   async function deleteDepartment(id) {
     return supabase.from('departments').delete().eq('id', id)
+  }
+
+  // Atomic create: inserts the department and seeds the access matrix
+  // with no_access for every (module, feature). Slug is generated
+  // server-side from the name. Returns the new department row.
+  async function createDepartmentRpc(name) {
+    return supabase.rpc('create_department', { p_name: name })
+  }
+
+  // Atomic rename: updates name, regenerates slug, cascades the slug
+  // to employees + access_matrix. system_key is preserved.
+  async function renameDepartmentRpc(id, name) {
+    return supabase.rpc('rename_department', { p_id: id, p_name: name })
   }
 
   /* ── Employees — full profile (Phase 7) ──────────────────── */
@@ -1772,6 +1788,7 @@ const API = (() => {
     getWhoIsOutToday, getWhoIsWfhToday, getPendingTimesheetApprovalsCount, getBirthdayEmployees,
     // Phase 7
     getDepartments, addDepartment, deleteDepartment,
+    createDepartmentRpc, renameDepartmentRpc,
     getEmployeesFull, updateEmployeeFull, acknowledgePolicy, getEmployeeKyc,
     getOrgChart,
     getLeaveTypes, createLeaveType, updateLeaveType, deleteLeaveType,

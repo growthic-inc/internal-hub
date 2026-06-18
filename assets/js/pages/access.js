@@ -27,22 +27,19 @@ const Access = (() => {
     ModuleRegistry.getAll().map(m => [m.key, { label: m.label, icon: m.icon, features: m.features }])
   )
 
-  const DEPARTMENTS = [
-    { key: 'management',           label: 'Management'           },
-    { key: 'operations_growth',    label: 'Operations & Growth'  },
-    { key: 'people_culture',       label: 'People & Culture'     },
-    { key: 'business_development', label: 'Business Development' },
-    { key: 'content_strategy',     label: 'Content'              },
-    { key: 'creative',             label: 'Creative'             },
-    { key: 'creators',             label: 'Creators'             },
-    { key: 'finance',              label: 'Finance'              },
-  ]
+  // Departments are loaded dynamically from the `departments` table in init().
+  // Each entry: { key (slug), label (name), id, slug, name, system_key }
+  let _departments = []
+
+  function _deptByKey(key) {
+    return _departments.find(d => d.key === key) || { key, label: key, slug: key }
+  }
 
   // Order is determined by the `order` field in each page file's registration.
   const MODULE_ORDER = ModuleRegistry.getAll().map(m => m.key)
 
   /* ── State ───────────────────────────────────────────────── */
-  let _selectedDept  = 'management'
+  let _selectedDept  = null
   // _state: { [module]: { [feature]: access_level_key } }
   let _state         = {}
   let _expandedMods  = new Set(MODULE_ORDER)  // all expanded by default
@@ -74,12 +71,7 @@ const Access = (() => {
           <div class="access-dept-section">
             <div class="access-dept-label">DEPARTMENTS</div>
             <nav class="access-dept-list" id="access-dept-list">
-              ${DEPARTMENTS.map(d => `
-                <button class="access-dept-item${d.key === 'management' ? ' access-dept-item--active' : ''}"
-                  data-dept="${d.key}">
-                  ${d.label}
-                </button>
-              `).join('')}
+              <p class="loading-text" style="padding:12px;">Loading…</p>
             </nav>
           </div>
         </aside>
@@ -108,16 +100,82 @@ const Access = (() => {
   /* ── init ────────────────────────────────────────────────── */
   async function init(user) {
     _currentUser   = user
-    _selectedDept  = 'management'
+    _selectedDept  = null
     _state         = {}
     _expandedMods  = new Set(MODULE_ORDER)
     _saving        = false
 
-    document.querySelectorAll('.access-dept-item').forEach(item => {
+    await _loadDepartments()
+  }
+
+  /* ── Load departments from the table & render the sidebar ──── */
+  async function _loadDepartments(preferSlug) {
+    const nav = document.getElementById('access-dept-list')
+
+    const { data, error } = await API.getDepartments()
+    if (error || !data || !data.length) {
+      if (nav) nav.innerHTML = '<p class="empty-state" style="padding:12px;">No departments found.</p>'
+      return
+    }
+
+    // Normalise: slug is the matrix key, name is the display label.
+    _departments = data.map(d => ({
+      key: d.slug, label: d.name,
+      id: d.id, slug: d.slug, name: d.name, system_key: d.system_key,
+    }))
+
+    // Select the preferred department if given & present, else the first.
+    _selectedDept = (preferSlug && _departments.some(d => d.key === preferSlug))
+      ? preferSlug
+      : _departments[0].key
+
+    _renderDeptList()
+    await _loadDept(_selectedDept)
+  }
+
+  function _canManageDepts() {
+    return _currentUser && (
+      _currentUser.role === 'super_admin' ||
+      Utils.getDeptSystemKey(_currentUser.department) === 'people_culture'
+    )
+  }
+
+  // Frontend slug generator — MUST mirror the SQL slugify() exactly.
+  function _slugify(name) {
+    return (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  }
+
+  const _PENCIL_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>'
+
+  function _renderDeptList() {
+    const nav = document.getElementById('access-dept-list')
+    if (!nav) return
+    const canManage = _canManageDepts()
+
+    nav.innerHTML = _departments.map(d => `
+      <div class="access-dept-row">
+        <button class="access-dept-item${d.key === _selectedDept ? ' access-dept-item--active' : ''}"
+          data-dept="${Utils.escapeHtml(d.key)}">
+          <span class="access-dept-name">${Utils.escapeHtml(d.label)}</span>
+          <span class="access-dept-slug">${Utils.escapeHtml(d.slug)}</span>
+        </button>
+        ${canManage ? `
+          <button class="access-dept-edit" data-edit="${Utils.escapeHtml(d.id)}" title="Edit department" aria-label="Edit ${Utils.escapeHtml(d.label)}">
+            ${_PENCIL_SVG}
+          </button>
+        ` : ''}
+      </div>
+    `).join('') + (canManage ? `
+      <button class="access-dept-add" id="access-dept-add-btn">
+        <span style="font-size:15px;line-height:1;">+</span> Add Department
+      </button>
+    ` : '')
+
+    nav.querySelectorAll('.access-dept-item').forEach(item => {
       item.addEventListener('click', () => {
         const dept = item.dataset.dept
         if (dept === _selectedDept) return
-        document.querySelectorAll('.access-dept-item').forEach(i =>
+        nav.querySelectorAll('.access-dept-item').forEach(i =>
           i.classList.remove('access-dept-item--active')
         )
         item.classList.add('access-dept-item--active')
@@ -125,7 +183,134 @@ const Access = (() => {
       })
     })
 
-    await _loadDept('management')
+    nav.querySelectorAll('.access-dept-edit').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const dept = _departments.find(d => d.id === btn.dataset.edit)
+        if (dept) _openDeptModal(dept)
+      })
+    })
+
+    const addBtn = document.getElementById('access-dept-add-btn')
+    if (addBtn) addBtn.addEventListener('click', () => _openDeptModal(null))
+  }
+
+  /* ── Add / Edit department modal ─────────────────────────── */
+  function _openDeptModal(dept) {
+    const isEdit = !!dept
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">${isEdit ? 'Edit Department' : 'Add Department'}</h3>
+        <button class="modal-close" onclick="Utils.closeModal()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body" style="padding:20px 24px;display:flex;flex-direction:column;gap:16px;">
+        <div id="dept-modal-error" class="alert alert-danger" style="display:none;"></div>
+
+        <div>
+          <label class="form-label" for="dept-name-input">Department Name</label>
+          <input type="text" class="form-input" id="dept-name-input"
+            placeholder="e.g. Client Success"
+            value="${isEdit ? Utils.escapeHtml(dept.name) : ''}" autocomplete="off">
+        </div>
+
+        <div>
+          <label class="form-label">Slug <span style="font-weight:400;color:var(--text-muted);">(auto-generated)</span></label>
+          <div class="dept-slug-preview" id="dept-slug-preview">—</div>
+          <p class="form-hint" id="dept-slug-hint" style="margin-top:6px;">
+            Used internally. Generated automatically from the name.
+          </p>
+        </div>
+
+        ${isEdit ? `
+          <p class="form-hint" style="color:var(--text-muted);">
+            Renaming updates this department everywhere automatically — employees,
+            access control, and reports all stay in sync.
+          </p>
+        ` : `
+          <p class="form-hint" style="color:var(--text-muted);">
+            New departments start with <strong>No Access</strong> for every feature.
+            You can grant access right after creating it.
+          </p>
+        `}
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
+        <button class="btn btn--primary" id="dept-save-btn">${isEdit ? 'Save Changes' : 'Create Department'}</button>
+      </div>
+    `, 'dept-modal')
+
+    const nameInput = document.getElementById('dept-name-input')
+    const preview   = document.getElementById('dept-slug-preview')
+    const hint      = document.getElementById('dept-slug-hint')
+    const saveBtn   = document.getElementById('dept-save-btn')
+    const errEl     = document.getElementById('dept-modal-error')
+
+    function _refresh() {
+      const slug = _slugify(nameInput.value)
+      preview.textContent = slug || '—'
+
+      // Live duplicate check against other departments.
+      const clash = slug && _departments.some(d =>
+        d.slug === slug && (!isEdit || d.id !== dept.id)
+      )
+      if (clash) {
+        hint.textContent = 'A department with this name already exists.'
+        hint.style.color = 'var(--danger, #DC2626)'
+        saveBtn.disabled = true
+      } else {
+        hint.textContent = 'Used internally. Generated automatically from the name.'
+        hint.style.color = 'var(--text-muted)'
+        saveBtn.disabled = !slug
+      }
+    }
+
+    nameInput.addEventListener('input', _refresh)
+    _refresh()
+    setTimeout(() => nameInput.focus(), 50)
+
+    saveBtn.addEventListener('click', () => _submitDept(dept, nameInput.value, saveBtn, errEl))
+    nameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !saveBtn.disabled) _submitDept(dept, nameInput.value, saveBtn, errEl)
+    })
+  }
+
+  async function _submitDept(dept, name, saveBtn, errEl) {
+    const isEdit = !!dept
+    const trimmed = (name || '').trim()
+    if (!trimmed) return
+
+    saveBtn.disabled = true
+    saveBtn.textContent = isEdit ? 'Saving…' : 'Creating…'
+    errEl.style.display = 'none'
+
+    const { data, error } = isEdit
+      ? await API.renameDepartmentRpc(dept.id, trimmed)
+      : await API.createDepartmentRpc(trimmed)
+
+    if (error) {
+      errEl.textContent = error.message || 'Something went wrong.'
+      errEl.style.display = 'block'
+      saveBtn.disabled = false
+      saveBtn.textContent = isEdit ? 'Save Changes' : 'Create Department'
+      return
+    }
+
+    // Refresh the app-wide label cache so renames reflect immediately.
+    try {
+      const { data: all } = await API.getDepartments()
+      if (all) Utils.setDeptCache(all)
+    } catch (_) {}
+
+    Utils.closeModal()
+    Utils.showToast(
+      isEdit ? `Department renamed to “${data.name}”.` : `Department “${data.name}” created.`,
+      'success'
+    )
+
+    // Reload the sidebar and land on the affected department.
+    await _loadDepartments(data.slug)
   }
 
   /* ── Load dept matrix from DB ────────────────────────────── */
@@ -164,7 +349,7 @@ const Access = (() => {
 
   /* ── Render the access matrix panel ─────────────────────── */
   function _renderPanel() {
-    const deptInfo = DEPARTMENTS.find(d => d.key === _selectedDept) || { label: _selectedDept }
+    const deptInfo = _deptByKey(_selectedDept)
     const body     = document.getElementById('access-right-body')
     const footer   = document.getElementById('access-right-footer')
     if (!body) return
@@ -333,7 +518,7 @@ const Access = (() => {
     if (error) {
       Utils.showToast('Failed to save: ' + error.message, 'error')
     } else {
-      const deptLabel = DEPARTMENTS.find(d => d.key === _selectedDept)?.label || _selectedDept
+      const deptLabel = _deptByKey(_selectedDept).label
       Utils.showToast(`Access control saved for ${deptLabel}.`, 'success')
     }
   }

@@ -66,7 +66,7 @@ const ClientDirectory = (() => {
   }
   function _canWrite()            { return !!_p?.can_create }
   function _canEdit()             { return !!_p?.can_edit }
-  function _canCommercial()       { return _user?.role === 'super_admin' || _user?.department === 'business_development' }
+  function _canCommercial()       { return _user?.role === 'super_admin' || Utils.getDeptSystemKey(_user?.department) === 'business_development' }
   function _canUploadBrandBook()  { return App.hasAccess('client_directory', 'brand_book', 'can_upload') }
   function _canDeleteBrandBook()  { return App.hasAccess('client_directory', 'brand_book', 'can_edit') }
 

@@ -1509,7 +1509,7 @@ const LeaveTracker = (() => {
         })
       } else {
         _employees
-          .filter(e => (e.role === 'super_admin' || e.department === 'people_culture') && e.id !== _user.id)
+          .filter(e => (e.role === 'super_admin' || Utils.getDeptSystemKey(e.department) === 'people_culture') && e.id !== _user.id)
           .forEach(hr => API.createNotification({
             recipient_employee_id: hr.id,
             type: 'info',
@@ -1774,7 +1774,7 @@ const LeaveTracker = (() => {
         })
       } else {
         _employees
-          .filter(e => (e.role === 'super_admin' || e.department === 'people_culture') && e.id !== _user.id)
+          .filter(e => (e.role === 'super_admin' || Utils.getDeptSystemKey(e.department) === 'people_culture') && e.id !== _user.id)
           .forEach(hr => API.createNotification({
             recipient_employee_id: hr.id,
             type: 'info',
@@ -2121,7 +2121,7 @@ const LeaveTracker = (() => {
       // Notify all active People & Culture members (excluding requester & current approver)
       const pcTeam = _employees.filter(e =>
         e.status === 'active' &&
-        e.department === 'people_culture' &&
+        Utils.getDeptSystemKey(e.department) === 'people_culture' &&
         e.id !== req?.employee?.id &&
         e.id !== _user.id
       )

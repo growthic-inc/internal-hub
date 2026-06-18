@@ -70,7 +70,7 @@ const App = (() => {
       _matrix = null  // null = full access everywhere
       return
     }
-    if (!currentUser.department) {
+    if (!currentUser.department_id) {
       _matrix = {}    // no dept → deny all
       return
     }
@@ -84,7 +84,7 @@ const App = (() => {
       knownFeatures[m.key] = new Set(Object.keys(m.features || {}))
     })
 
-    const { data } = await API.getAccessMatrix(currentUser.department)
+    const { data } = await API.getAccessMatrix(currentUser.department_id)
     _matrix = {}
     ;(data || []).forEach(row => {
       if (!knownFeatures[row.module])                      return  // unknown module
@@ -92,6 +92,16 @@ const App = (() => {
       if (!_matrix[row.module]) _matrix[row.module] = {}
       _matrix[row.module][row.feature] = row.access_level
     })
+  }
+
+  // Load all departments once and populate the app-wide label cache so
+  // getDeptLabel() resolves names dynamically from the table (covers
+  // newly-added and renamed departments). Non-fatal if it fails.
+  async function _loadDepartmentCache() {
+    try {
+      const { data } = await API.getDepartments()
+      if (data) Utils.setDeptCache(data)
+    } catch (_) { /* non-fatal — falls back to static labels */ }
   }
 
   /* ── hasAccess(module, feature, minLevel) ───────────────── */
@@ -171,6 +181,7 @@ const App = (() => {
     }
 
     await _loadAccessMatrix()
+    await _loadDepartmentCache()
 
     // Super admins are always unlocked. Everyone else needs to acknowledge policies.
     _policyAcknowledged = currentUser.role === 'super_admin' || !!currentUser.policy_acknowledged_at
@@ -224,9 +235,10 @@ const App = (() => {
     Config.supabase
       .channel('access_matrix_sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'access_matrix' }, (payload) => {
-        const dept = payload.new?.department || payload.old?.department
-        // Only react to changes that affect this user's department
-        if (dept && dept !== currentUser.department) return
+        const deptId = payload.new?.department_id || payload.old?.department_id
+        // Only react to changes that affect this user's department.
+        // Keyed by the immutable department_id so renames don't desync this.
+        if (deptId && deptId !== currentUser.department_id) return
         clearTimeout(_refreshTimer)
         // Debounce 800 ms — delete-then-insert fires many events in rapid succession
         _refreshTimer = setTimeout(async () => {

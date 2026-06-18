@@ -90,7 +90,7 @@ const Reimbursements = (() => {
   /* ── render ──────────────────────────────────────────────── */
   function render(user) {
     const isSuperAdmin = user.role === 'super_admin'
-    const isFinance    = user.department === 'finance' || user.role === 'finance'
+    const isFinance    = Utils.getDeptSystemKey(user.department) === 'finance' || user.role === 'finance'
 
     // Approval access driven by Access Control. Minimum level is 'can_manage' so that
     // setting "Approve Requests" to either Manage or Approve in the AC module grants access.
@@ -122,7 +122,7 @@ const Reimbursements = (() => {
   /* ── init ────────────────────────────────────────────────── */
   async function init(user) {
     _user                = user
-    _isHR                = user.department === 'people_culture'
+    _isHR                = Utils.getDeptSystemKey(user.department) === 'people_culture'
     _p                   = {
       can_create:  App.hasAccess('reimbursements', 'raise_pre_approval',  'can_upload'),
       can_approve: user.role === 'super_admin' || App.hasAccess('reimbursements', 'approve_requests', 'can_manage'),
@@ -376,7 +376,7 @@ const Reimbursements = (() => {
       API.getReimbursementInbox('claim'),
     ])
 
-    const hrOnly       = r => r.submitter?.department === 'people_culture'
+    const hrOnly       = r => Utils.getDeptSystemKey(r.submitter?.department) === 'people_culture'
     const preApprovals = (paRes.data || []).filter(hrOnly)
     const claims       = (clRes.data || []).filter(hrOnly)
 

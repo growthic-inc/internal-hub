@@ -79,15 +79,28 @@ const Utils = (() => {
 
   // Dynamic department cache — populated by People/Leave modules after
   // loading from API.getDepartments(). Falls back to DEPT_LABELS if empty.
-  let _deptCache = {}
+  let _deptCache    = {}   // slug -> display name
+  let _deptKeyCache = {}   // slug -> immutable system_key
 
   function setDeptCache(departments) {
-    _deptCache = {}
-    ;(departments || []).forEach(d => { _deptCache[d.slug] = d.name })
+    _deptCache    = {}
+    _deptKeyCache = {}
+    ;(departments || []).forEach(d => {
+      _deptCache[d.slug]    = d.name
+      if (d.system_key) _deptKeyCache[d.slug] = d.system_key
+    })
   }
 
   function getDeptLabel(dept) {
     return _deptCache[dept] || DEPT_LABELS[dept] || dept
+  }
+
+  // Resolve a department slug to its immutable system_key. Privilege
+  // checks use this so they survive renames (the slug may change, the
+  // system_key never does). Falls back to the slug itself — safe because
+  // the original departments' slug == system_key.
+  function getDeptSystemKey(dept) {
+    return _deptKeyCache[dept] || dept
   }
 
   /* ── Employment type labels ───────────────────────────────── */
@@ -238,6 +251,7 @@ const Utils = (() => {
     truncate,
     getRoleLabel,
     getDeptLabel,
+    getDeptSystemKey,
     setDeptCache,
     getExpenseLabel,
     getEmploymentTypeLabel,

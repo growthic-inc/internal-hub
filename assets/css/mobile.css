@@ -63,6 +63,9 @@
 ══════════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
 
+  /* Department edit pencil: no hover on touch, so always show it. */
+  .access-dept-edit { opacity: 1; }
+
   /* ── Sidebar → slide-in drawer ─────────────────────────────── */
   .sidebar {
     position: fixed;
