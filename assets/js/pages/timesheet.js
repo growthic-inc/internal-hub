@@ -356,6 +356,8 @@ const Timesheet = (() => {
     const isFullLeaveDay = _isFullLeaveDay(iso, _myLeaves)
     const isWfhDay       = !isFullLeaveDay && _isWfhDay(iso, _myWfhs)
     const leaveName      = isFullLeaveDay ? _getLeaveName(iso, _myLeaves) : null
+    const halfLeaveDay   = !isFullLeaveDay && _isHalfLeaveDay(iso, _myLeaves)
+    const halfLeavePeriod = halfLeaveDay ? _getHalfDayPeriod(iso, _myLeaves) : null
     const cvDay          = _clientVisitForDay(iso, _myClientVisits)
     const cvHalf         = cvDay && cvDay.duration_type !== 'full_day'
 
@@ -399,7 +401,7 @@ const Timesheet = (() => {
         <div class="ts-col-header">
           <div class="ts-col-top">
             <span class="ts-col-weekday">${day.toLocaleDateString('en-IN', { weekday:'short' }).toUpperCase()}</span>
-            <span class="ts-col-status-icon">${headerIcon}${isWfhDay ? `<span style="font-size:9px;font-weight:600;background:#ECFDF5;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">WFH</span>` : ''}${cvDay ? `<span style="font-size:9px;font-weight:600;background:#E0F2FE;color:#0369A1;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">Visit</span>` : ''}</span>
+            <span class="ts-col-status-icon">${headerIcon}${halfLeaveDay ? `<span style="font-size:9px;font-weight:600;background:#EEF2FF;color:#6366F1;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;" title="Half-day leave${halfLeavePeriod ? ' — ' + halfLeavePeriod : ''}">½ Leave</span>` : ''}${isWfhDay ? `<span style="font-size:9px;font-weight:600;background:#ECFDF5;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">WFH</span>` : ''}${cvDay ? `<span style="font-size:9px;font-weight:600;background:#E0F2FE;color:#0369A1;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">Visit</span>` : ''}</span>
           </div>
           <span class="ts-col-date${isToday ? ' ts-col-date--today' : ''}">${day.getDate()}</span>
           ${dayHours > 0 ? `<span class="ts-col-hours">${dayHours.toFixed(1)}h</span>` : ''}
@@ -1322,6 +1324,8 @@ const Timesheet = (() => {
     const isFullLeaveDay = _isFullLeaveDay(iso, _teamPersonLeaves)
     const isWfhDay       = !isFullLeaveDay && _isWfhDay(iso, _teamPersonWfhs)
     const leaveName      = isFullLeaveDay ? _getLeaveName(iso, _teamPersonLeaves) : null
+    const halfLeaveDay   = !isFullLeaveDay && _isHalfLeaveDay(iso, _teamPersonLeaves)
+    const halfLeavePeriod = halfLeaveDay ? _getHalfDayPeriod(iso, _teamPersonLeaves) : null
     const cvDay          = _clientVisitForDay(iso, _teamPersonClientVisits)
     const cvHalf         = cvDay && cvDay.duration_type !== 'full_day'
 
@@ -1344,7 +1348,7 @@ const Timesheet = (() => {
         <div class="ts-col-header">
           <div class="ts-col-top">
             <span class="ts-col-weekday">${day.toLocaleDateString('en-IN', { weekday:'short' }).toUpperCase()}</span>
-            <span class="ts-col-status-icon">${headerIcon}${isWfhDay ? `<span style="font-size:9px;font-weight:600;background:#ECFDF5;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">WFH</span>` : ''}${cvDay ? `<span style="font-size:9px;font-weight:600;background:#E0F2FE;color:#0369A1;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">Visit</span>` : ''}</span>
+            <span class="ts-col-status-icon">${headerIcon}${halfLeaveDay ? `<span style="font-size:9px;font-weight:600;background:#EEF2FF;color:#6366F1;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;" title="Half-day leave${halfLeavePeriod ? ' — ' + halfLeavePeriod : ''}">½ Leave</span>` : ''}${isWfhDay ? `<span style="font-size:9px;font-weight:600;background:#ECFDF5;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">WFH</span>` : ''}${cvDay ? `<span style="font-size:9px;font-weight:600;background:#E0F2FE;color:#0369A1;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">Visit</span>` : ''}</span>
           </div>
           <span class="ts-col-date${isToday ? ' ts-col-date--today' : ''}">${day.getDate()}</span>
           ${dayHours > 0 ? `<span class="ts-col-hours">${dayHours.toFixed(1)}h</span>` : ''}
