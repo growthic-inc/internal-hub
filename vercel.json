@@ -1,12 +1,23 @@
 {
   "cleanUrls": true,
   "trailingSlash": false,
+  "rewrites": [
+    { "source": "/home/hrms/(.*)", "destination": "/home/hrms/index.html" },
+    { "source": "/home/hrms",      "destination": "/home/hrms/index.html" }
+  ],
   "headers": [
     {
       "source": "/sw.js",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
+        { "key": "Cache-Control",        "value": "no-cache, no-store, must-revalidate" },
         { "key": "Service-Worker-Allowed", "value": "/" }
+      ]
+    },
+    {
+      "source": "/home/hrms/sw.js",
+      "headers": [
+        { "key": "Cache-Control",        "value": "no-cache, no-store, must-revalidate" },
+        { "key": "Service-Worker-Allowed", "value": "/home/hrms/" }
       ]
     },
     {
@@ -17,6 +28,18 @@
     },
     {
       "source": "/assets/css/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/home/hrms/assets/js/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/home/hrms/assets/css/(.*)",
       "headers": [
         { "key": "Cache-Control", "value": "no-cache, must-revalidate" }
       ]
