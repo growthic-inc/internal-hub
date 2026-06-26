@@ -115,6 +115,16 @@
         navigator.serviceWorker.register('/sw.js')
           .catch(err => console.warn('[SW] Registration failed:', err))
       })
+
+      // When a new service worker takes control (after cache version bump +
+      // skipWaiting + clients.claim), reload once so the page runs the
+      // latest JS/CSS instead of what was already in memory.
+      let _swReloading = false
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (_swReloading) return
+        _swReloading = true
+        window.location.reload()
+      })
     }
   </script>
 

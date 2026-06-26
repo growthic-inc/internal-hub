@@ -95,6 +95,13 @@
         navigator.serviceWorker.register('/home/hrms/sw.js', { scope: '/home/hrms/' })
           .catch(err => console.warn('[HRMS SW] Registration failed:', err))
       })
+
+      let _swReloading = false
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (_swReloading) return
+        _swReloading = true
+        window.location.reload()
+      })
     }
   </script>
 
