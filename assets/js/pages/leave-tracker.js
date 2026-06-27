@@ -105,6 +105,36 @@ const LeaveTracker = (() => {
     return _user.manager_id || null
   }
 
+  // Resolve approver with Management fallback.
+  // If the direct manager has an approved full-day leave overlapping
+  // [startISO, endISO], route to the first active Management dept member
+  // instead. WFH does NOT trigger rerouting (manager is still working).
+  // Falls back to the HR queue (null) if Management dept is empty.
+  async function _resolveApproverWithFallback(startISO, endISO) {
+    const managerId = _user.manager_id
+    if (!managerId) return null  // no manager → existing HR queue behavior
+
+    // Fetch manager's approved leaves and check for full-day overlap
+    try {
+      const { leaves } = await API.getApprovedLeaveForEmployee(managerId)
+      const managerOnLeave = (leaves || [])
+        .filter(l => !l.is_half_day)
+        .some(l => l.start_date <= endISO && l.end_date >= startISO)
+
+      if (!managerOnLeave) return managerId  // manager available — normal routing
+
+      // Manager is on approved leave → route to Management dept
+      const mgmt = _employees.filter(e =>
+        e.status === 'active' &&
+        Utils.getDeptSystemKey(e.department) === 'management' &&
+        e.id !== _user.id
+      )
+      return mgmt.length ? mgmt[0].id : null  // null → HR queue if Mgmt is empty
+    } catch (_) {
+      return managerId  // on any error, fall back to normal routing
+    }
+  }
+
   // ── Request-type helpers (leave | wfh | client-visit) ───────
   function _reqPending(type) {
     return type === 'leave' ? _pendingApprovals
@@ -1548,7 +1578,7 @@ const LeaveTracker = (() => {
       if (!reason) { errEl.textContent = 'Please provide a reason.';          errEl.style.display = 'block'; return }
 
       const days       = _calcLeaveDays(start, isHalf ? start : end, isHalf)
-      const approverId = _resolveApproverId()
+      const approverId = await _resolveApproverWithFallback(start, isHalf ? start : end)
 
       btn.disabled    = true
       btn.textContent = 'Submitting…'
@@ -1815,7 +1845,7 @@ const LeaveTracker = (() => {
         }
       }
 
-      const approverId = _resolveApproverId()
+      const approverId = await _resolveApproverWithFallback(start, end)
 
       btn.disabled    = true
       btn.textContent = 'Submitting…'
@@ -2162,7 +2192,7 @@ const LeaveTracker = (() => {
       }
 
       const days = isHalf ? 0.5 : _calcLeaveDays(start, end, false)
-      const approverId = _resolveApproverId()
+      const approverId = await _resolveApproverWithFallback(start, end)
 
       btn.textContent = 'Submitting…'
       const { error } = await API.createClientVisit({
