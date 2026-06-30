@@ -111,6 +111,33 @@
 }
 .hrms-summary-row--net strong { color: #1D9E75; font-size: 16px; }
 
+/* ── Adjustment row (Payroll Processing modal) ───────────── */
+.hrms-adj-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-alt, #F8FAFC);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+[data-theme='dark'] .hrms-adj-row { background: var(--surface); }
+
+/* ── Danger ghost button ─────────────────────────────────── */
+.btn--danger-ghost {
+  color: var(--danger, #EF4444);
+  background: transparent;
+  border: 1px solid transparent;
+}
+.btn--danger-ghost:hover {
+  background: #FEF2F2;
+  border-color: #FECACA;
+}
+[data-theme='dark'] .btn--danger-ghost:hover {
+  background: #2D0A0A;
+  border-color: #7F1D1D;
+}
+
 /* ── Responsive ───────────────────────────────────────────── */
 @media (max-width: 768px) {
   .hrms-stat-row { grid-template-columns: 1fr 1fr; }
