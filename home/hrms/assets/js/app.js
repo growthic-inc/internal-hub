@@ -25,44 +25,55 @@ const HRMSApp = (() => {
 
   /* ── Boot ───────────────────────────────────────────────── */
   async function init() {
-    // 1. Auth check — redirect to login if no session
-    const session = await Auth.requireAuth('/home/hrms')
-    if (!session) return
-
-    // 2. Load current user
-    _currentUser = await Auth.getCurrentUser()
-    if (!_currentUser) {
-      await Auth.signOut()
-      window.location.href = '/'
-      return
-    }
-
-    // 3. Access guard — HR or Super Admin only
-    const isAllowed = _currentUser.role === 'super_admin' ||
-      Utils.getDeptSystemKey(_currentUser.department) === 'people_culture'
-
-    if (!isAllowed) {
-      window.location.href = '/home'
-      return
-    }
-
-    // 4. Load dept cache for label resolution
     try {
-      const { data } = await API.getDepartments()
-      if (data) Utils.setDeptCache(data)
-    } catch (_) {}
+      // 1. Auth check — redirect to login if no session
+      const session = await Auth.requireAuth('/home/hrms')
+      if (!session) return
 
-    // 5. Render chrome
-    _renderSidebar()
-    _renderHeader()
-    _setupUserMenu()
-    _setupLogout()
-    _initTheme()
-    _initMobileNav()
+      // 2. Load current user
+      _currentUser = await Auth.getCurrentUser()
+      if (!_currentUser) {
+        await Auth.signOut()
+        window.location.href = '/'
+        return
+      }
 
-    // 6. Route
-    _router()
-    window.addEventListener('hashchange', _router)
+      // 3. Access guard — HR or Super Admin only
+      const isAllowed = _currentUser.role === 'super_admin' ||
+        Utils.getDeptSystemKey(_currentUser.department) === 'people_culture'
+
+      if (!isAllowed) {
+        window.location.href = '/home'
+        return
+      }
+
+      // 4. Load dept cache for label resolution
+      try {
+        const { data } = await API.getDepartments()
+        if (data) Utils.setDeptCache(data)
+      } catch (_) {}
+
+      // 5. Render chrome
+      _renderSidebar()
+      _renderHeader()
+      _setupUserMenu()
+      _setupLogout()
+      _initTheme()
+      _initMobileNav()
+
+      // 6. Route
+      _router()
+      window.addEventListener('hashchange', _router)
+
+    } catch (err) {
+      console.error('[HRMS] init() failed:', err)
+      const content = document.getElementById('page-content')
+      if (content) content.innerHTML = `
+        <div style="padding:32px;color:var(--danger,#EF4444);">
+          <strong>HRMS failed to load.</strong><br>
+          <code style="font-size:12px;">${err?.message || String(err)}</code>
+        </div>`
+    }
   }
 
   /* ── Router ─────────────────────────────────────────────── */
