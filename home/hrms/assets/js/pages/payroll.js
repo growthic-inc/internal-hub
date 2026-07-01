@@ -372,9 +372,13 @@ const Payroll = (() => {
           </td>
           <td>${statusBadge}</td>
           <td style="text-align:right;font-size:12px;">${_fmt(r.monthly_salary)}</td>
-          <td style="text-align:center;font-size:12px;">${r.days_payable}&nbsp;/&nbsp;30</td>
+          <td style="text-align:center;font-size:12px;">${r.days_payable - (r.unpaid_leave_days || 0)}&nbsp;/&nbsp;30</td>
           <td style="text-align:right;font-size:12px;">${_fmt(r.prorated_salary)}</td>
-          <td style="text-align:right;font-size:12px;color:var(--danger);">${r.deductions > 0 ? '− ' + _fmt(r.deductions) : '—'}</td>
+          <td style="text-align:right;font-size:12px;">
+            ${r.deductions > 0
+              ? `<button class="btn--link-danger" data-open-ded="${r.id}" title="View breakdown / edit">− ${_fmt(r.deductions)}</button>`
+              : `<span style="color:var(--text-muted);">—</span>`}
+          </td>
           <td style="text-align:right;font-size:12px;">
             <span style="color:#1D9E75;">${adjTotal > 0 ? '+ ' + _fmt(adjTotal) : '—'}</span>
             <button class="btn btn--xs btn--ghost" data-open-adj="${r.id}" style="margin-left:4px;" title="Manage adjustments">+</button>
@@ -413,6 +417,7 @@ const Payroll = (() => {
             ${!_procRun ? `<button class="btn btn--primary btn--sm" id="proc-gen-btn">Generate Payroll</button>` : ''}
             ${_procRun?.status === 'draft'
               ? `<span class="badge badge--muted">Draft</span>
+                 <button class="btn btn--xs btn--danger-ghost" id="proc-delete-btn">Delete Run</button>
                  <button class="btn btn--ghost btn--sm" id="proc-finalize-btn">Finalize</button>`
               : _procRun?.status === 'finalized'
               ? `<span class="badge badge--success">Finalized</span>`
@@ -431,7 +436,7 @@ const Payroll = (() => {
                       <th>Employee</th>
                       <th>Status</th>
                       <th style="text-align:right;">Monthly Salary</th>
-                      <th style="text-align:center;">Days</th>
+                      <th style="text-align:center;">Working Days</th>
                       <th style="text-align:right;">Prorated</th>
                       <th style="text-align:right;">Deductions</th>
                       <th style="text-align:right;">Adjustments</th>
@@ -498,6 +503,28 @@ const Payroll = (() => {
       await _loadProcessingTab()
     })
 
+    // Delete Run (draft only)
+    document.getElementById('proc-delete-btn')?.addEventListener('click', async () => {
+      if (!confirm(`Delete payroll run for ${MONTHS[_procMonth - 1]} ${_procYear}?\n\nAll generated records will be removed. You can regenerate fresh payroll after this.`)) return
+      const btn = document.getElementById('proc-delete-btn')
+      btn.disabled    = true
+      btn.textContent = 'Deleting…'
+      const { error } = await Config.supabase
+        .from('payroll_runs')
+        .delete()
+        .eq('id', _procRun.id)
+      if (error) {
+        Utils.showToast('Delete failed: ' + error.message, 'error')
+        btn.disabled    = false
+        btn.textContent = 'Delete Run'
+        return
+      }
+      Utils.showToast('Payroll run deleted. You can now generate a fresh one.', 'success')
+      _procRun     = null
+      _procRecords = []
+      await _loadProcessingTab()
+    })
+
     // Payment status inline update
     content.querySelectorAll('.proc-status-sel').forEach(sel => {
       sel.addEventListener('change', async e => {
@@ -537,6 +564,14 @@ const Payroll = (() => {
       btn.addEventListener('click', () => {
         const rec = _procRecords.find(r => r.id === btn.dataset.procEdit)
         if (rec) _openEditRecordModal(rec)
+      })
+    })
+
+    // Deduction breakdown / override
+    content.querySelectorAll('[data-open-ded]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const rec = _procRecords.find(r => r.id === btn.dataset.openDed)
+        if (rec) _openDeductionModal(rec)
       })
     })
   }
@@ -644,6 +679,117 @@ const Payroll = (() => {
       Utils.closeModal()
       Utils.showToast('Adjustment added.', 'success')
       _renderProcessingTab()
+    })
+  }
+
+  /* ── Deduction breakdown + override modal ────────────────── */
+  function _openDeductionModal(rec) {
+    const emp       = rec.employee || {}
+    const monthly   = Number(rec.monthly_salary)
+    const perDay    = Math.round(monthly / 30)
+    const unpaidDays = rec.unpaid_leave_days || 0
+    const autoCalc  = Math.round(perDay * unpaidDays)
+
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">Deduction Breakdown — ${Utils.escapeHtml(emp.name || '')}</h3>
+        <button class="modal-close" onclick="Utils.closeModal()">${CLOSE_SVG}</button>
+      </div>
+      <div class="modal-body" style="padding:20px 24px;">
+        <div id="ded-err" class="alert alert--danger" style="display:none;margin-bottom:14px;"></div>
+
+        <div class="hrms-salary-summary" style="margin-bottom:20px;">
+          <div class="hrms-summary-row">
+            <span>Monthly Salary</span>
+            <strong>${_fmt(monthly)}</strong>
+          </div>
+          <div class="hrms-summary-row">
+            <span>Per Day Rate</span>
+            <strong>${_fmt(monthly)} ÷ 30 = ${_fmt(perDay)}/day</strong>
+          </div>
+          <div class="hrms-summary-row">
+            <span>Unpaid Leave Days</span>
+            <strong>${unpaidDays} day${unpaidDays !== 1 ? 's' : ''}</strong>
+          </div>
+          <div class="hrms-summary-row hrms-summary-row--deduction" style="padding-top:8px;border-top:1px solid var(--border);margin-top:4px;">
+            <span>Auto-calculated Deduction</span>
+            <strong>− ${_fmt(autoCalc)}</strong>
+          </div>
+          ${Math.abs(Number(rec.deductions) - autoCalc) > 1 ? `
+            <div class="hrms-summary-row" style="font-size:11px;color:var(--warning-text,#92400E);">
+              <span>⚠ Current value manually overridden to ${_fmt(rec.deductions)}</span>
+            </div>
+          ` : ''}
+        </div>
+
+        <div class="hrms-section-label" style="margin-bottom:12px;">Override Deduction</div>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label">Amount (₹)</label>
+          <div class="input-wrapper">
+            <span class="input-prefix">₹</span>
+            <input class="form-input form-input--prefixed" type="number" id="ded-amount"
+              value="${rec.deductions}" min="0">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Reason <span class="required">*</span></label>
+          <input class="form-input" type="text" id="ded-remark"
+            placeholder="e.g. Leave record corrected, approved exception…">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Close</button>
+        <button class="btn btn--primary" id="ded-save-btn">Save Override</button>
+      </div>
+    `, 'ded-modal')
+
+    document.getElementById('ded-save-btn').addEventListener('click', async () => {
+      const errEl      = document.getElementById('ded-err')
+      errEl.style.display = 'none'
+      const remark     = document.getElementById('ded-remark').value.trim()
+      const deductions = parseFloat(document.getElementById('ded-amount').value) || 0
+
+      if (!remark) {
+        errEl.textContent   = 'A reason is required (saved to audit log).'
+        errEl.style.display = 'block'
+        return
+      }
+
+      const btn = document.getElementById('ded-save-btn')
+      btn.disabled    = true
+      btn.textContent = 'Saving…'
+
+      const adjTotal = (rec.adj_items || []).reduce((s, a) => s + Number(a.amount), 0)
+      const newNet   = Number(rec.prorated_salary) - deductions + adjTotal
+
+      const [upd] = await Promise.all([
+        Config.supabase.from('payroll_records').update({
+          deductions,
+          net_pay:    newNet,
+          updated_at: new Date().toISOString(),
+        }).eq('id', rec.id),
+        Config.supabase.from('payroll_audit_log').insert({
+          payroll_record_id: rec.id,
+          field_name:        'deductions',
+          original_value:    String(rec.deductions),
+          updated_value:     String(deductions),
+          remark,
+          changed_by:        _user.id,
+        }),
+      ])
+
+      btn.disabled    = false
+      btn.textContent = 'Save Override'
+
+      if (upd.error) {
+        errEl.textContent   = upd.error.message
+        errEl.style.display = 'block'
+        return
+      }
+
+      Utils.closeModal()
+      Utils.showToast('Deduction updated.', 'success')
+      await _loadProcessingTab()
     })
   }
 

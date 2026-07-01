@@ -123,6 +123,21 @@
 }
 [data-theme='dark'] .hrms-adj-row { background: var(--surface); }
 
+/* ── Inline link button (deduction breakdown) ────────────── */
+.btn--link-danger {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--danger, #EF4444);
+  font-size: inherit;
+  font-weight: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  line-height: inherit;
+}
+.btn--link-danger:hover { opacity: 0.75; }
+
 /* ── Danger ghost button ─────────────────────────────────── */
 .btn--danger-ghost {
   color: var(--danger, #EF4444);
