@@ -3411,7 +3411,7 @@ const LeaveTracker = (() => {
   }
 
   /* ── Leave Credits table ──────────────────────────────── */
-  function _renderCreditsTable(credits, leaveTypes) {
+  function _renderCreditsTable(credits, leaveTypes, editingId = null) {
     if (!credits.length) return '<p class="empty-state">No allocations yet. Use "+ Add Allocation" to credit leave days to employees.</p>'
     return `
       <table class="data-table">
@@ -3427,20 +3427,41 @@ const LeaveTracker = (() => {
           </tr>
         </thead>
         <tbody>
-          ${credits.map(c => `
-            <tr>
-              <td>${Utils.escapeHtml(c.employees?.name || '—')}</td>
-              <td>${Utils.escapeHtml(c.leave_types?.name || '—')}</td>
-              <td><strong>${c.credited_days}</strong></td>
-              <td>${c.year}</td>
-              <td class="text-muted" style="font-size:12px;">${Utils.escapeHtml(c.notes || '—')}</td>
-              <td style="font-size:12px;">${Utils.escapeHtml(c.credited_by_emp?.name || '—')}</td>
-              <td>
-                <button class="btn btn--xs btn--ghost" data-delete-credit="${c.id}"
-                  style="color:var(--danger);">Delete</button>
-              </td>
-            </tr>
-          `).join('')}
+          ${credits.map(c => {
+            if (c.id === editingId) {
+              return `
+                <tr data-credit-row="${c.id}">
+                  <td>${Utils.escapeHtml(c.employees?.name || '—')}</td>
+                  <td>${Utils.escapeHtml(c.leave_types?.name || '—')}</td>
+                  <td><input type="number" id="edit-days-${c.id}" value="${c.credited_days}" min="0" step="0.5"
+                    style="width:60px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;font-weight:600;"></td>
+                  <td>${c.year}</td>
+                  <td><input type="text" id="edit-notes-${c.id}" value="${Utils.escapeHtml(c.notes || '')}"
+                    style="width:100%;padding:2px 4px;border:1px solid var(--border);border-radius:4px;font-size:12px;"></td>
+                  <td style="font-size:12px;">${Utils.escapeHtml(c.credited_by_emp?.name || '—')}</td>
+                  <td style="white-space:nowrap;">
+                    <button class="btn btn--xs btn--primary" data-save-credit="${c.id}">Save</button>
+                    <button class="btn btn--xs btn--ghost" data-cancel-credit="${c.id}" style="margin-left:4px;">Cancel</button>
+                  </td>
+                </tr>
+              `
+            }
+            return `
+              <tr data-credit-row="${c.id}">
+                <td>${Utils.escapeHtml(c.employees?.name || '—')}</td>
+                <td>${Utils.escapeHtml(c.leave_types?.name || '—')}</td>
+                <td><strong>${c.credited_days}</strong></td>
+                <td>${c.year}</td>
+                <td class="text-muted" style="font-size:12px;">${Utils.escapeHtml(c.notes || '—')}</td>
+                <td style="font-size:12px;">${Utils.escapeHtml(c.credited_by_emp?.name || '—')}</td>
+                <td style="white-space:nowrap;">
+                  <button class="btn btn--xs btn--ghost" data-edit-credit="${c.id}" style="margin-right:4px;">Edit</button>
+                  <button class="btn btn--xs btn--ghost" data-delete-credit="${c.id}"
+                    style="color:var(--danger);">Delete</button>
+                </td>
+              </tr>
+            `
+          }).join('')}
         </tbody>
       </table>
     `
@@ -3784,18 +3805,51 @@ const LeaveTracker = (() => {
   }
 
   function _bindCreditDeleteButtons() {
+    async function _refreshCreditsBody(editingId = null) {
+      const yr    = parseInt(document.getElementById('lt-credits-year')?.value || new Date().getFullYear(), 10)
+      const [res, ltRes] = await Promise.all([API.getAllLeaveCredits(yr), API.getLeaveTypes()])
+      const body  = document.getElementById('lt-credits-body')
+      if (body) body.innerHTML = _renderCreditsTable(res.data || [], ltRes.data || [], editingId)
+      _bindCreditDeleteButtons()
+    }
+
+    document.querySelectorAll('[data-edit-credit]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const yr    = parseInt(document.getElementById('lt-credits-year')?.value || new Date().getFullYear(), 10)
+        const [res, ltRes] = await Promise.all([API.getAllLeaveCredits(yr), API.getLeaveTypes()])
+        const body  = document.getElementById('lt-credits-body')
+        if (body) body.innerHTML = _renderCreditsTable(res.data || [], ltRes.data || [], btn.dataset.editCredit)
+        _bindCreditDeleteButtons()
+        document.getElementById(`edit-days-${btn.dataset.editCredit}`)?.focus()
+      })
+    })
+
+    document.querySelectorAll('[data-cancel-credit]').forEach(btn => {
+      btn.addEventListener('click', () => _refreshCreditsBody())
+    })
+
+    document.querySelectorAll('[data-save-credit]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id    = btn.dataset.saveCredit
+        const days  = parseFloat(document.getElementById(`edit-days-${id}`)?.value)
+        const notes = document.getElementById(`edit-notes-${id}`)?.value.trim()
+        if (isNaN(days) || days < 0) { Utils.showToast('Enter a valid number of days.', 'error'); return }
+        btn.disabled = true
+        btn.textContent = 'Saving…'
+        const { error } = await API.updateLeaveCredit(id, { credited_days: days, notes: notes || null })
+        if (error) { Utils.showToast('Failed: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Save'; return }
+        Utils.showToast('Allocation updated.', 'success')
+        _refreshCreditsBody()
+      })
+    })
+
     document.querySelectorAll('[data-delete-credit]').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (!confirm('Delete this leave allocation? This will reduce the employee\'s leave balance.')) return
         const { error } = await API.deleteLeaveCredit(btn.dataset.deleteCredit)
         if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
         Utils.showToast('Allocation deleted.', 'success')
-        const yr  = parseInt(document.getElementById('lt-credits-year')?.value || new Date().getFullYear(), 10)
-        const res = await API.getAllLeaveCredits(yr)
-        const body = document.getElementById('lt-credits-body')
-        const ltRes = await API.getLeaveTypes()
-        if (body) body.innerHTML = _renderCreditsTable(res.data || [], ltRes.data || [])
-        _bindCreditDeleteButtons()
+        _refreshCreditsBody()
       })
     })
   }

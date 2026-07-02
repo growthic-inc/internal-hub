@@ -1246,6 +1246,10 @@ const API = (() => {
     return supabase.from('leave_credits').delete().eq('id', id)
   }
 
+  async function updateLeaveCredit(id, data) {
+    return supabase.from('leave_credits').update(data).eq('id', id)
+  }
+
   /* ── Leave Requests (Phase 7) ─────────────────────────────── */
   async function getMyLeaveRequests(employeeId) {
     return supabase
@@ -1920,5 +1924,7 @@ const API = (() => {
     getEmployeesWithBioId,
     // App Settings
     getAppSettings, upsertAppSetting,
+    // Leave Credits
+    updateLeaveCredit,
   }
 })()
