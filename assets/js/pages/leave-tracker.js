@@ -1000,13 +1000,13 @@ const LeaveTracker = (() => {
               <div class="lt-stat-cat-name">${Utils.escapeHtml(t.name)}</div>
               <div class="lt-stat-cat-body">
                 <div class="lt-stat-cat-col">
-                  <div class="lt-stat-value">${taken}</div>
-                  <div class="lt-stat-label">Total Taken</div>
+                  <div class="lt-stat-value">${credited}</div>
+                  <div class="lt-stat-label">Allocated</div>
                 </div>
                 <div class="lt-stat-cat-sep"></div>
                 <div class="lt-stat-cat-col">
-                  <div class="lt-stat-value ${remaining < 0 ? 'lt-stat-value--warning' : ''}">${remaining}</div>
-                  <div class="lt-stat-label">Pending Leaves</div>
+                  <div class="lt-stat-value">${taken}</div>
+                  <div class="lt-stat-label">Taken</div>
                 </div>
               </div>
               ${notYetCredited ? `<div class="lt-stat-cat-hint">Not yet allocated</div>` : ''}
