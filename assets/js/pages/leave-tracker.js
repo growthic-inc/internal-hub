@@ -30,7 +30,9 @@ const LeaveTracker = (() => {
   let _attendanceRecords  = []      // employee_attendance rows for current month
   let _attendanceMonth    = null    // Date: first day of displayed month
   let _uploadLog          = []      // attendance_upload_log rows
-  let _canUploadAttendance = false
+  let _canUploadAttendance  = false
+  let _lateThreshold        = '10:30'   // HH:MM from app_settings
+  let _lateEffectiveFrom    = ''        // YYYY-MM from app_settings
 
   const currentYear = new Date().getFullYear()
 
@@ -74,6 +76,14 @@ const LeaveTracker = (() => {
 
   // ISO date string (YYYY-MM-DD) using LOCAL date components to avoid
   // UTC conversion shifting the date back for IST/+ve offset timezones
+  function _calcLateMinutes(punchIn, recordDate) {
+    if (!punchIn || !_lateThreshold) return 0
+    if (_lateEffectiveFrom && recordDate.substring(0, 7) < _lateEffectiveFrom) return 0
+    const [ph, pm] = punchIn.split(':').map(Number)
+    const [th, tm] = _lateThreshold.split(':').map(Number)
+    return Math.max(0, (ph * 60 + pm) - (th * 60 + tm))
+  }
+
   function _toISO(date) {
     const d   = new Date(date)
     const y   = d.getFullYear()
@@ -317,7 +327,13 @@ const LeaveTracker = (() => {
       _updateApprovalBadge()
     }
 
-    // Fetch attendance upload log if user can upload
+    // Fetch attendance upload log + app settings
+    const settingsRes = await API.getAppSettings('attendance')
+    ;(settingsRes.data || []).forEach(s => {
+      if (s.key === 'attendance.late_threshold')     _lateThreshold     = s.value
+      if (s.key === 'attendance.late_effective_from') _lateEffectiveFrom = s.value
+    })
+
     if (_canUploadAttendance || _user.role === 'super_admin') {
       const logRes = await API.getAttendanceUploadLog()
       _uploadLog = logRes.data || []
@@ -492,12 +508,14 @@ const LeaveTracker = (() => {
           cellClass += ' att-cal-cell--absent'
           cellContent += `<span class="att-cal-label">Absent</span>`
         } else if (att.punch_in && att.punch_out) {
-          cellClass += ' att-cal-cell--present'
-          cellContent += `<span class="att-cal-time">${att.punch_in.substring(0,5)}</span>`
+          const isLate = att.late_minutes > 0
+          cellClass += isLate ? ' att-cal-cell--late' : ' att-cal-cell--present'
+          cellContent += `<span class="att-cal-time${isLate ? ' att-cal-time--late' : ''}">${att.punch_in.substring(0,5)}${isLate ? ' ▲' : ''}</span>`
           cellContent += `<span class="att-cal-time att-cal-time--out">${att.punch_out.substring(0,5)}</span>`
         } else if (att.punch_in) {
-          cellClass += ' att-cal-cell--partial'
-          cellContent += `<span class="att-cal-time">${att.punch_in.substring(0,5)}</span>`
+          const isLate = att.late_minutes > 0
+          cellClass += isLate ? ' att-cal-cell--late' : ' att-cal-cell--partial'
+          cellContent += `<span class="att-cal-time${isLate ? ' att-cal-time--late' : ''}">${att.punch_in.substring(0,5)}${isLate ? ' ▲' : ''}</span>`
           cellContent += `<span class="att-cal-time att-cal-time--out">—</span>`
         }
       } else if (!isFuture) {
@@ -519,6 +537,7 @@ const LeaveTracker = (() => {
     const legend = `
       <div class="att-legend">
         <span class="att-legend-item"><span class="att-legend-dot" style="background:#1D9E75;"></span>Present</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#FEE2E2;border:1px solid #FECACA;"></span>Late</span>
         <span class="att-legend-item"><span class="att-legend-dot" style="background:#F59E0B;"></span>Partial</span>
         <span class="att-legend-item"><span class="att-legend-dot" style="background:#6366F1;"></span>Leave</span>
         <span class="att-legend-item"><span class="att-legend-dot" style="background:#059669;"></span>WFH</span>
@@ -664,7 +683,9 @@ const LeaveTracker = (() => {
       items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--client-visit">Client Visit${dur}</span><span>${Utils.escapeHtml(_cvClientLabel(cv))}${cv.reason ? ' — ' + Utils.escapeHtml(cv.reason) : ''}</span></div>`)
     }
     if (att && !att.is_absent && att.punch_in) {
-      items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--present">Attendance</span><span>${att.punch_in.substring(0,5)} → ${att.punch_out ? att.punch_out.substring(0,5) : '—'}</span></div>`)
+      const lateNote = att.late_minutes > 0 ? ` · Late by ${att.late_minutes} min` : ''
+      const tagStyle = att.late_minutes > 0 ? ' style="background:#FEE2E2;color:#B91C1C;"' : ''
+      items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--present"${tagStyle}>Attendance${lateNote}</span><span>${att.punch_in.substring(0,5)} → ${att.punch_out ? att.punch_out.substring(0,5) : '—'}</span></div>`)
     } else if (att && att.is_absent) {
       items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--absent">Absent</span><span>No punch recorded</span></div>`)
     }
@@ -878,12 +899,13 @@ const LeaveTracker = (() => {
           const punchIn  = punches[0]
           const punchOut = punches.length > 1 ? punches[punches.length - 1] : null
 
+          const recDate = dateForCol(col)
           records.push({
             employee_id:         empId,
-            date:                dateForCol(col),
+            date:                recDate,
             punch_in:            punchIn,
             punch_out:           punchOut,
-            late_minutes:        0,
+            late_minutes:        _calcLateMinutes(punchIn, recDate),
             early_leave_minutes: 0,
             is_absent:           false,
             uploaded_by:         _user.id,
@@ -3028,13 +3050,17 @@ const LeaveTracker = (() => {
     const curMonth = now.getMonth() + 1
     const curYear  = now.getFullYear()
 
-    const [ltRes, holRes, evtRes, quotaRes, creditsRes] = await Promise.all([
+    const [ltRes, holRes, evtRes, quotaRes, creditsRes, attSettingsRes] = await Promise.all([
       API.getLeaveTypes(),
       API.getCompanyHolidays(curYear),
       API.getCompanyEvents(curYear),
       API.getWfhQuotas(null, curYear),
       API.getAllLeaveCredits(curYear),
+      API.getAppSettings('attendance'),
     ])
+
+    const attSettings = {}
+    ;(attSettingsRes.data || []).forEach(s => { attSettings[s.key] = s.value })
 
     const allLeaveTypes = ltRes.data       || []
     const allHolidays   = holRes.data      || []
@@ -3042,7 +3068,48 @@ const LeaveTracker = (() => {
     const allQuotas     = quotaRes.data    || []
     const allCredits    = creditsRes.data  || []
 
+    const curThreshold    = attSettings['attendance.late_threshold']     || '10:30'
+    const curEffectiveFrom = attSettings['attendance.late_effective_from'] || ''
+
     content.innerHTML = `
+      <!-- ── Attendance Settings ── -->
+      <div class="lt-settings-section section-card mb-4">
+        <div class="section-card-header">
+          <h3>Attendance Settings</h3>
+        </div>
+        <div class="section-card-body" style="padding:16px 20px;">
+          <div style="display:flex;align-items:flex-start;gap:32px;flex-wrap:wrap;">
+            <div>
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Late Arrival Threshold</div>
+              <div style="font-size:20px;font-weight:700;color:var(--text);">${curThreshold} AM</div>
+              ${curEffectiveFrom ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Effective from ${curEffectiveFrom}</div>` : ''}
+            </div>
+            <div style="margin-left:auto;">
+              <button class="btn btn--ghost btn--sm" id="att-settings-edit-btn">Change Threshold</button>
+            </div>
+          </div>
+          <div id="att-settings-form" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+            <div id="att-settings-err" class="alert alert--danger" style="display:none;margin-bottom:12px;"></div>
+            <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;">
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">New Threshold Time</label>
+                <input class="form-input" type="time" id="att-new-threshold" value="${curThreshold}" style="width:140px;">
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Effective From Month</label>
+                <input class="form-input" type="month" id="att-new-effective"
+                  value="${curEffectiveFrom || new Date().toISOString().substring(0,7)}" style="width:160px;">
+              </div>
+              <button class="btn btn--primary btn--sm" id="att-settings-save-btn">Save</button>
+              <button class="btn btn--ghost btn--sm" id="att-settings-cancel-btn">Cancel</button>
+            </div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:10px;">
+              Attendance uploads for months before the effective month will not be affected.
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ── Leave Types ── -->
       <div class="lt-settings-section section-card mb-4">
         <div class="section-card-header">
@@ -3381,6 +3448,47 @@ const LeaveTracker = (() => {
 
   /* ── Settings event binding ───────────────────────────── */
   function _bindSettingsActions(allLeaveTypes, allQuotas, allHolidays, allEvents, allCredits, curMonth, curYear) {
+
+    /* ── Attendance Settings ── */
+    document.getElementById('att-settings-edit-btn')?.addEventListener('click', () => {
+      document.getElementById('att-settings-form').style.display = 'block'
+      document.getElementById('att-settings-edit-btn').style.display = 'none'
+    })
+    document.getElementById('att-settings-cancel-btn')?.addEventListener('click', () => {
+      document.getElementById('att-settings-form').style.display = 'none'
+      document.getElementById('att-settings-edit-btn').style.display = ''
+    })
+    document.getElementById('att-settings-save-btn')?.addEventListener('click', async () => {
+      const errEl     = document.getElementById('att-settings-err')
+      errEl.style.display = 'none'
+      const threshold = document.getElementById('att-new-threshold').value.trim()
+      const effFrom   = document.getElementById('att-new-effective').value.trim()
+      if (!threshold) { errEl.textContent = 'Please set a threshold time.'; errEl.style.display = 'block'; return }
+      if (!effFrom)   { errEl.textContent = 'Please select the effective from month.'; errEl.style.display = 'block'; return }
+
+      if (!confirm(`Set late arrival threshold to ${threshold} AM, effective from ${effFrom}?\n\nExisting uploaded records before ${effFrom} will not be changed.`)) return
+
+      const btn = document.getElementById('att-settings-save-btn')
+      btn.disabled = true; btn.textContent = 'Saving…'
+
+      const [r1, r2] = await Promise.all([
+        API.upsertAppSetting('attendance.late_threshold',     threshold, 'attendance', 'Late Arrival Threshold',                     _user.id),
+        API.upsertAppSetting('attendance.late_effective_from', effFrom,  'attendance', 'Late Marking Effective From (YYYY-MM)', _user.id),
+      ])
+
+      btn.disabled = false; btn.textContent = 'Save'
+
+      if (r1.error || r2.error) {
+        errEl.textContent = (r1.error || r2.error).message
+        errEl.style.display = 'block'
+        return
+      }
+
+      _lateThreshold     = threshold
+      _lateEffectiveFrom = effFrom
+      Utils.showToast('Attendance settings saved.', 'success')
+      _loadSettingsTab()
+    })
 
     /* ── Leave Type actions ── */
     document.getElementById('lt-add-type-btn')?.addEventListener('click', () => {

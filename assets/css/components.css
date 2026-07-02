@@ -6790,6 +6790,7 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 .att-cal-cell--client-visit { background: #E0F2FE; border-color: #0EA5E9; }
 .att-cal-cell--present { background: #D1FAE5; border-color: #1D9E75; }
 .att-cal-cell--partial { background: #FEF3C7; border-color: #F59E0B; }
+.att-cal-cell--late    { background: #FEE2E2; border-color: #FECACA; }
 .att-cal-cell--absent  { background: #FEE2E2; border-color: #EF4444; }
 .att-cal-cell--no-data { background: var(--surface); opacity: 0.5; }
 .att-cal-cell--future  { background: var(--bg); opacity: 0.4; }
@@ -6812,8 +6813,9 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   color: #065F46;
   line-height: 1.3;
 }
-.att-cal-time--out { color: #1F2937; }
-.att-cal-time--cv  { color: #0369A1; }
+.att-cal-time--out  { color: #1F2937; }
+.att-cal-time--cv   { color: #0369A1; }
+.att-cal-time--late { color: #B91C1C; }
 .att-legend {
   display: flex;
   flex-wrap: wrap;

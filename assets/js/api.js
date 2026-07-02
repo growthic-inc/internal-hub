@@ -1515,6 +1515,21 @@ const API = (() => {
     return supabase.from('company_events').delete().eq('id', id)
   }
 
+  /* ── App Settings ────────────────────────────────────────── */
+  async function getAppSettings(module) {
+    let q = supabase.from('app_settings').select('key, value, label, module')
+    if (module) q = q.eq('module', module)
+    return q
+  }
+
+  async function upsertAppSetting(key, value, module, label, updatedBy) {
+    return supabase.from('app_settings').upsert({
+      key, value, module, label,
+      updated_by: updatedBy,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'key' })
+  }
+
   /* ── Announcements (Phase 7) ──────────────────────────────── */
   async function getAnnouncements() {
     return supabase
@@ -1903,5 +1918,7 @@ const API = (() => {
     getEmployeeAttendance, upsertAttendanceRecords,
     getAttendanceUploadLog, insertAttendanceUploadLog,
     getEmployeesWithBioId,
+    // App Settings
+    getAppSettings, upsertAppSetting,
   }
 })()
