@@ -993,7 +993,21 @@ const LeaveTracker = (() => {
           const credited  = creditedByType[t.id] || 0
           const taken     = takenByType[t.id]    || 0
           const remaining = credited - taken
-          // Card dims slightly when HR hasn't credited this type yet
+
+          if (t.is_unpaid) {
+            return `
+              <div class="lt-stat-card lt-stat-card--category section-card">
+                <div class="lt-stat-cat-name">${Utils.escapeHtml(t.name)}</div>
+                <div class="lt-stat-cat-body">
+                  <div class="lt-stat-cat-col">
+                    <div class="lt-stat-value">${taken}</div>
+                    <div class="lt-stat-label">Days Taken</div>
+                  </div>
+                </div>
+              </div>
+            `
+          }
+
           const notYetCredited = credited === 0
           return `
             <div class="lt-stat-card lt-stat-card--category section-card${notYetCredited ? ' lt-stat-card--uncredited' : ''}">
