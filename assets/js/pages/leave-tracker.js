@@ -1561,6 +1561,17 @@ const LeaveTracker = (() => {
       const el      = document.getElementById('lt-balance-display')
       if (!el) return
       if (!typeId) { el.style.display = 'none'; return }
+      const leaveType = _leaveTypes.find(t => t.id === typeId)
+      if (leaveType?.is_unpaid) {
+        el.style.display    = 'block'
+        el.style.color      = 'var(--text-muted)'
+        el.style.background = 'var(--surface-2, #F9FAFB)'
+        el.style.border     = '1px solid var(--border)'
+        el.textContent      = 'Heads up: This leave is unpaid — days taken will be deducted from your monthly salary.'
+        return
+      }
+      el.style.background = ''
+      el.style.border     = ''
       const balance = _getBalance(typeId, currentYear)
       el.style.display     = 'block'
       el.style.color       = balance < 0 ? 'var(--warning)' : 'var(--success)'
