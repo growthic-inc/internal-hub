@@ -1854,6 +1854,44 @@ const API = (() => {
       .eq('status', 'active')
   }
 
+  async function getMonthlyExemptionCount(empId, yearMonth) {
+    return supabase
+      .from('employee_attendance')
+      .select('id', { count: 'exact', head: true })
+      .eq('employee_id', empId)
+      .gte('date', `${yearMonth}-01`)
+      .lte('date', `${yearMonth}-31`)
+      .eq('is_exempted', true)
+  }
+
+  async function applyAttendanceExemption(empId, date, reason, exemptedBy) {
+    const { data: existing } = await supabase
+      .from('employee_attendance')
+      .select('id')
+      .eq('employee_id', empId)
+      .eq('date', date)
+      .maybeSingle()
+
+    if (existing) {
+      return supabase.from('employee_attendance')
+        .update({ is_exempted: true, exemption_reason: reason || null, exempted_by: exemptedBy })
+        .eq('employee_id', empId)
+        .eq('date', date)
+    }
+    return supabase.from('employee_attendance').insert({
+      employee_id: empId,
+      date,
+      punch_in: null,
+      punch_out: null,
+      late_minutes: 0,
+      early_leave_minutes: 0,
+      is_absent: true,
+      is_exempted: true,
+      exemption_reason: reason || null,
+      exempted_by: exemptedBy,
+    })
+  }
+
   return {
     getClients, getClient, getClientByProjectCode, updateEntityProfileType,
     getClientTeam, setClientTeam,
@@ -1922,6 +1960,7 @@ const API = (() => {
     getEmployeeAttendance, upsertAttendanceRecords,
     getAttendanceUploadLog, insertAttendanceUploadLog,
     getEmployeesWithBioId,
+    getMonthlyExemptionCount, applyAttendanceExemption,
     // App Settings
     getAppSettings, upsertAppSetting,
     // Leave Credits

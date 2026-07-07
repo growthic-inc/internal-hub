@@ -395,10 +395,15 @@ const LeaveTracker = (() => {
     if (!content) return
 
     // Fetch attendance for current month
-    const mStart = _toISO(_attendanceMonth)
-    const mEnd   = _toISO(new Date(_attendanceMonth.getFullYear(), _attendanceMonth.getMonth() + 1, 0))
-    const attRes = await API.getEmployeeAttendance(_user.id, mStart, mEnd)
+    const mStart    = _toISO(_attendanceMonth)
+    const mEnd      = _toISO(new Date(_attendanceMonth.getFullYear(), _attendanceMonth.getMonth() + 1, 0))
+    const yearMonth = _toISO(_attendanceMonth).slice(0, 7)
+    const [attRes, exemptRes] = await Promise.all([
+      API.getEmployeeAttendance(_user.id, mStart, mEnd),
+      API.getMonthlyExemptionCount(_user.id, yearMonth),
+    ])
     _attendanceRecords = attRes.data || []
+    const exemptCount = exemptRes.count || 0
 
     const monthLabel = _attendanceMonth.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
     const today = _toISO(new Date())
@@ -534,6 +539,9 @@ const LeaveTracker = (() => {
       if (dayEvents.length) {
         cellContent += `<span class="att-cal-event-dot" title="${dayEvents.map(e => Utils.escapeHtml(e.title)).join(', ')}"></span>`
       }
+      if (att?.is_exempted) {
+        cellContent += `<span class="att-cal-exempt-badge" title="${att.exemption_reason ? Utils.escapeHtml(att.exemption_reason) : 'Correction applied'}">✓</span>`
+      }
 
       if (iso === today) cellClass += ' att-cal-cell--today'
       calCells += `<div class="${cellClass}" data-att-date="${iso}">${cellContent}</div>`
@@ -610,7 +618,10 @@ const LeaveTracker = (() => {
             <div class="section-card-body">
               <!-- Month nav -->
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-                <h3 style="margin:0;font-size:15px;font-weight:700;">Attendance — ${monthLabel}</h3>
+                <div>
+                  <h3 style="margin:0;font-size:15px;font-weight:700;">Attendance — ${monthLabel}</h3>
+                  <div style="font-size:12px;color:${exemptCount >= 4 ? '#DC2626' : '#059669'};margin-top:3px;font-weight:500;">${exemptCount} of 4 corrections used this month</div>
+                </div>
                 <div style="display:flex;align-items:center;gap:6px;">
                   <button class="btn btn--ghost btn--sm" id="att-cal-prev">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
@@ -665,14 +676,14 @@ const LeaveTracker = (() => {
 
     // Click any date to view what's marked / manage events (HR can add)
     document.querySelectorAll('.att-cal-cell--clickable[data-att-date]').forEach(cell => {
-      cell.addEventListener('click', () => {
-        _openAttendanceDateModal(cell.dataset.attDate, { holidayMap, leaveMap, wfhMap, clientVisitMap, attMap, eventMap })
+      cell.addEventListener('click', async () => {
+        await _openAttendanceDateModal(cell.dataset.attDate, { holidayMap, leaveMap, wfhMap, clientVisitMap, attMap, eventMap }, exemptCount)
       })
     })
   }
 
   /* View what's marked on a date + (HR only) add holiday / event */
-  function _openAttendanceDateModal(dateISO, maps) {
+  async function _openAttendanceDateModal(dateISO, maps, exemptCount = 0) {
     const holiday   = maps.holidayMap[dateISO]
     const leave     = maps.leaveMap[dateISO]
     const isWfh     = maps.wfhMap[dateISO]
@@ -703,6 +714,38 @@ const LeaveTracker = (() => {
     const summaryHtml = items.length
       ? items.join('')
       : `<p style="font-size:13px;color:var(--text-muted);margin:0;">Nothing marked on this day.</p>`
+
+    // Exemption section — employee can self-correct up to 4 times per month
+    const todayISO  = _toISO(new Date())
+    const isPast    = dateISO < todayISO
+    const isSunday  = new Date(dateISO + 'T00:00:00').getDay() === 0
+    const hasIssue  = att?.is_absent || att?.late_minutes > 0 || (att?.punch_in && !att?.punch_out) || (!att && !leave && !isWfh && !cv && !holiday)
+    const isExemptEligible = isPast && !isSunday && !holiday && !leave && !isWfh && !cv && hasIssue
+
+    let exemptSectionHtml = ''
+    if (isExemptEligible && att?.is_exempted) {
+      exemptSectionHtml = `
+        <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px;">
+          <span style="background:#ECFDF5;color:#065F46;font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;border:1px solid #6EE7B7;display:inline-block;margin-bottom:6px;">✓ Correction Applied</span>
+          ${att.exemption_reason ? `<div style="font-size:13px;color:var(--text-muted);margin-top:4px;">${Utils.escapeHtml(att.exemption_reason)}</div>` : ''}
+        </div>`
+    } else if (isExemptEligible && exemptCount < 4) {
+      exemptSectionHtml = `
+        <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px;">
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:8px;">Log Correction (${4 - exemptCount} of 4 remaining)</div>
+          <div id="att-exempt-err" class="alert alert--danger" style="display:none;margin-bottom:8px;"></div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <input class="form-input" type="text" id="att-exempt-reason" placeholder="Reason for correction (optional)" style="font-size:13px;">
+            <button class="btn btn--primary btn--sm" id="att-exempt-submit" style="align-self:flex-start;">Apply Correction</button>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">No approval needed · marks this day as corrected.</div>
+        </div>`
+    } else if (isExemptEligible && exemptCount >= 4) {
+      exemptSectionHtml = `
+        <div id="att-exempt-bal-wrap" style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px;">
+          <p style="font-size:13px;color:var(--text-muted);margin:0;">Loading leave balance…</p>
+        </div>`
+    }
 
     // HR add form
     const addFormHtml = _isHR ? `
@@ -749,9 +792,91 @@ const LeaveTracker = (() => {
       </div>
       <div class="modal-body">
         <div style="display:flex;flex-direction:column;gap:8px;">${summaryHtml}</div>
+        ${exemptSectionHtml}
         ${addFormHtml}
       </div>
     `)
+
+    // Wire up exemption handler
+    if (isExemptEligible && !att?.is_exempted && exemptCount < 4) {
+      document.getElementById('att-exempt-submit')?.addEventListener('click', async () => {
+        const reason = document.getElementById('att-exempt-reason')?.value?.trim() || ''
+        const errEl  = document.getElementById('att-exempt-err')
+        const btn    = document.getElementById('att-exempt-submit')
+        btn.disabled = true; btn.textContent = 'Saving…'
+        const { error } = await API.applyAttendanceExemption(_user.id, dateISO, reason, _user.id)
+        if (error) {
+          errEl.style.display = ''; errEl.textContent = error.message
+          btn.disabled = false; btn.textContent = 'Apply Correction'
+          return
+        }
+        Utils.closeModal()
+        Utils.showToast('Correction applied.', 'success')
+        _loadAttendanceTab()
+      })
+    } else if (isExemptEligible && exemptCount >= 4) {
+      // Async-fill the leave balance section
+      const year = new Date(dateISO).getFullYear()
+      const [creditsRes, takenRes] = await Promise.all([
+        API.getLeaveCredits(_user.id, year),
+        API.getMyLeaveRequests(),
+      ])
+      const wrap = document.getElementById('att-exempt-bal-wrap')
+      if (wrap) {
+        const credits = creditsRes.data || []
+        const taken   = (takenRes.data || []).filter(r => r.status === 'approved' && new Date(r.start_date).getFullYear() === year)
+        const balMap  = {}
+        credits.forEach(c => { balMap[c.leave_type_id] = (balMap[c.leave_type_id] || 0) + Number(c.credited_days) })
+        taken.forEach(r => { balMap[r.leave_type_id] = (balMap[r.leave_type_id] || 0) - Number(r.days) })
+        const eligibleTypes = _leaveTypes.filter(t => t.is_active && (t.is_unpaid || (balMap[t.id] || 0) > 0))
+        if (!eligibleTypes.length) {
+          wrap.innerHTML = '<div style="font-size:13px;color:#DC2626;">All 4 corrections used. No leave balance available — contact HR.</div>'
+        } else {
+          const opts = eligibleTypes.map(t => {
+            const bal = t.is_unpaid ? null : (balMap[t.id] || 0)
+            return `<option value="${t.id}">${Utils.escapeHtml(t.name)}${bal !== null ? ' (' + bal + ' days)' : ' (Unpaid)'}</option>`
+          }).join('')
+          wrap.innerHTML = `
+            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:6px;">Apply Leave (Corrections Exhausted)</div>
+            <div style="font-size:12px;color:#DC2626;margin-bottom:10px;">All 4 corrections used this month. This leave request will go to your manager for approval.</div>
+            <div id="att-exempt-err" class="alert alert--danger" style="display:none;margin-bottom:8px;"></div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <select id="att-exempt-lt" class="form-control" style="font-size:13px;">${opts}</select>
+              <input class="form-input" type="text" id="att-exempt-reason" placeholder="Reason (optional)" style="font-size:13px;">
+              <button class="btn btn--primary btn--sm" id="att-exempt-submit" style="align-self:flex-start;">Submit for Approval</button>
+            </div>`
+          document.getElementById('att-exempt-submit')?.addEventListener('click', async () => {
+            const typeId = document.getElementById('att-exempt-lt')?.value
+            const reason = document.getElementById('att-exempt-reason')?.value?.trim() || ''
+            const errEl  = document.getElementById('att-exempt-err')
+            const btn    = document.getElementById('att-exempt-submit')
+            if (!typeId) return
+            btn.disabled = true; btn.textContent = 'Submitting…'
+            const me        = _employees.find(e => e.id === _user.id)
+            const managerId = me?.reports_to || null
+            const { error } = await API.createLeaveRequest({
+              employee_id:   _user.id,
+              leave_type_id: typeId,
+              start_date:    dateISO,
+              end_date:      dateISO,
+              days:          1,
+              is_half_day:   false,
+              reason:        reason || 'Attendance correction',
+              status:        'pending',
+              approver_id:   managerId,
+            })
+            if (error) {
+              errEl.style.display = ''; errEl.textContent = error.message
+              btn.disabled = false; btn.textContent = 'Submit for Approval'
+              return
+            }
+            Utils.closeModal()
+            Utils.showToast('Leave request submitted for approval.', 'success')
+            _loadAttendanceTab()
+          })
+        }
+      }
+    }
 
     if (_isHR) {
       document.querySelectorAll('[name="att-add-type"]').forEach(radio => {
@@ -3131,6 +3256,9 @@ const LeaveTracker = (() => {
       if (dayEvents.length) {
         cellContent += `<span class="att-cal-event-dot" title="${dayEvents.map(e => Utils.escapeHtml(e.title)).join(', ')}"></span>`
       }
+      if (att?.is_exempted) {
+        cellContent += `<span class="att-cal-exempt-badge" title="${att.exemption_reason ? Utils.escapeHtml(att.exemption_reason) : 'Correction applied'}">✓</span>`
+      }
       if (iso === today) cellClass += ' att-cal-cell--today'
 
       calCells += `<div class="${cellClass}" data-iso="${iso}" data-state="${dayState}">${cellContent}</div>`
@@ -3203,6 +3331,7 @@ const LeaveTracker = (() => {
     const empName    = emp?.name || '—'
     const dateLabel  = new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
     const canMark    = (state === 'absent' || state === 'no-data') && iso < _toISO(new Date())
+    const canExempt  = (state === 'absent' || state === 'no-data' || state === 'late' || state === 'partial') && iso < _toISO(new Date()) && !att?.is_exempted
 
     // Attendance row
     let attRows = ''
@@ -3217,57 +3346,81 @@ const LeaveTracker = (() => {
       attRows += `<div class="att-day-row"><span class="att-day-tag" style="background:var(--surface);color:var(--text-muted);">No Attendance Data</span></div>`
     }
 
+    if (att?.is_exempted) {
+      attRows += `<div class="att-day-row"><span class="att-cal-exempt-badge" style="position:static;font-size:11px;padding:2px 8px;border-radius:20px;">✓ Correction Applied</span>${att.exemption_reason ? `<span style="font-size:13px;">${Utils.escapeHtml(att.exemption_reason)}</span>` : ''}</div>`
+    }
     if (leave)    attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--leave">${leave.status === 'pending' ? 'Pending Leave' : 'On Leave'}</span><span>${Utils.escapeHtml(leave.name)}${leave.is_half_day ? ' (½ day)' : ''}</span></div>`
     if (isWfh)   attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--wfh">WFH</span></div>`
     if (cv)      attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--client-visit">Client Visit</span><span>${Utils.escapeHtml(cv.clients?.client_name || 'Client')}</span></div>`
     if (holiday) attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--holiday">Holiday</span><span>${Utils.escapeHtml(holiday)}</span></div>`
 
-    // Mark as Leave section — fetch employee balance live
+    // Mark as Leave + Grant Exemption — fetch employee balance and exemption count in parallel
     let markSection = ''
-    if (canMark) {
-      const year = new Date(iso).getFullYear()
-      const [creditsRes, takenRes] = await Promise.all([
-        API.getLeaveCredits(empId, year),
-        API.getAllLeaveRequests({ status: 'approved', employeeId: empId }),
-      ])
-      const credits  = creditsRes.data  || []
-      const taken    = (takenRes.data   || []).filter(r => new Date(r.start_date).getFullYear() === year)
+    if (canMark || canExempt) {
+      const year       = new Date(iso).getFullYear()
+      const yearMonth  = iso.slice(0, 7)
+      const fetchItems = [
+        API.getMonthlyExemptionCount(empId, yearMonth),
+      ]
+      if (canMark) {
+        fetchItems.push(API.getLeaveCredits(empId, year))
+        fetchItems.push(API.getAllLeaveRequests({ status: 'approved', employeeId: empId }))
+      }
+      const [exemptRes, creditsRes, takenRes] = await Promise.all(fetchItems)
+      const empExemptCount = exemptRes.count || 0
 
-      // Build balance per leave type
-      const balMap = {}
-      credits.forEach(c => {
-        balMap[c.leave_type_id] = (balMap[c.leave_type_id] || 0) + Number(c.credited_days)
-      })
-      taken.forEach(r => {
-        balMap[r.leave_type_id] = (balMap[r.leave_type_id] || 0) - Number(r.days)
-      })
+      // Grant Exemption section
+      if (canExempt) {
+        if (empExemptCount < 4) {
+          markSection += `
+            <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+              <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:8px;">Grant Correction (${empExemptCount} of 4 used)</div>
+              <div id="lt-exempt-err" class="alert alert--danger" style="display:none;margin-bottom:8px;font-size:13px;"></div>
+              <div style="display:flex;flex-direction:column;gap:8px;">
+                <input id="lt-exempt-reason" class="form-input" type="text" placeholder="Reason (optional)" style="font-size:13px;">
+                <button class="btn btn--ghost btn--sm" id="lt-exempt-confirm" style="align-self:flex-start;">Grant Correction</button>
+              </div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">No leave deduction · marks day as corrected.</div>
+            </div>`
+        } else {
+          markSection += `
+            <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);font-size:12px;color:#DC2626;">
+              All 4 corrections used for this month. Mark as leave below instead.
+            </div>`
+        }
+      }
 
-      // Active leave types: unpaid always shown, others only if balance > 0
-      const eligibleTypes = (leaveTypes || _leaveTypes).filter(t =>
-        t.is_active && (t.is_unpaid || (balMap[t.id] || 0) > 0)
-      )
-
-      if (eligibleTypes.length) {
-        const opts = eligibleTypes.map(t => {
-          const bal = t.is_unpaid ? null : (balMap[t.id] || 0)
-          return `<option value="${t.id}">${Utils.escapeHtml(t.name)}${bal !== null ? ' (' + bal + ' days remaining)' : ' (Unpaid)'}</option>`
-        }).join('')
-
-        markSection = `
-          <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
-            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:10px;">Mark as Leave</div>
-            <div id="lt-mark-leave-err" class="alert alert--danger" style="display:none;margin-bottom:10px;font-size:13px;"></div>
-            <div style="display:flex;flex-direction:column;gap:10px;">
-              <select id="lt-mark-leave-type" class="form-control" style="font-size:13px;">${opts}</select>
-              <input id="lt-mark-leave-reason" class="form-input" type="text" placeholder="Reason (optional)" style="font-size:13px;">
-              <button class="btn btn--primary btn--sm" id="lt-mark-leave-confirm" style="align-self:flex-start;">Apply Leave</button>
-            </div>
-          </div>`
-      } else {
-        markSection = `
-          <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--text-muted);">
-            No leave balance available for this employee.
-          </div>`
+      // Mark as Leave section
+      if (canMark && creditsRes) {
+        const credits  = creditsRes.data  || []
+        const taken    = (takenRes?.data  || []).filter(r => new Date(r.start_date).getFullYear() === year)
+        const balMap   = {}
+        credits.forEach(c => { balMap[c.leave_type_id] = (balMap[c.leave_type_id] || 0) + Number(c.credited_days) })
+        taken.forEach(r => { balMap[r.leave_type_id] = (balMap[r.leave_type_id] || 0) - Number(r.days) })
+        const eligibleTypes = (leaveTypes || _leaveTypes).filter(t =>
+          t.is_active && (t.is_unpaid || (balMap[t.id] || 0) > 0)
+        )
+        if (eligibleTypes.length) {
+          const opts = eligibleTypes.map(t => {
+            const bal = t.is_unpaid ? null : (balMap[t.id] || 0)
+            return `<option value="${t.id}">${Utils.escapeHtml(t.name)}${bal !== null ? ' (' + bal + ' days remaining)' : ' (Unpaid)'}</option>`
+          }).join('')
+          markSection += `
+            <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+              <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:10px;">Mark as Leave</div>
+              <div id="lt-mark-leave-err" class="alert alert--danger" style="display:none;margin-bottom:10px;font-size:13px;"></div>
+              <div style="display:flex;flex-direction:column;gap:10px;">
+                <select id="lt-mark-leave-type" class="form-control" style="font-size:13px;">${opts}</select>
+                <input id="lt-mark-leave-reason" class="form-input" type="text" placeholder="Reason (optional)" style="font-size:13px;">
+                <button class="btn btn--primary btn--sm" id="lt-mark-leave-confirm" style="align-self:flex-start;">Apply Leave</button>
+              </div>
+            </div>`
+        } else {
+          markSection += `
+            <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--text-muted);">
+              No leave balance available for this employee.
+            </div>`
+        }
       }
     }
 
@@ -3293,6 +3446,24 @@ const LeaveTracker = (() => {
     document.body.appendChild(overlay)
     overlay.querySelector('#lt-team-day-close').addEventListener('click', () => overlay.remove())
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+
+    const exemptBtn = overlay.querySelector('#lt-exempt-confirm')
+    if (exemptBtn) {
+      exemptBtn.addEventListener('click', async () => {
+        const reason = overlay.querySelector('#lt-exempt-reason')?.value?.trim() || ''
+        const errEl  = overlay.querySelector('#lt-exempt-err')
+        exemptBtn.disabled = true; exemptBtn.textContent = 'Saving…'
+        const { error } = await API.applyAttendanceExemption(empId, iso, reason, _user.id)
+        if (error) {
+          if (errEl) { errEl.style.display = ''; errEl.textContent = error.message || 'Failed to save.' }
+          exemptBtn.disabled = false; exemptBtn.textContent = 'Grant Correction'
+          return
+        }
+        overlay.remove()
+        Utils.showToast('Correction granted.', 'success')
+        _loadTeamAttCal()
+      })
+    }
 
     const confirmBtn = overlay.querySelector('#lt-mark-leave-confirm')
     if (confirmBtn) {
