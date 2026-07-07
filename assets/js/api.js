@@ -1861,7 +1861,7 @@ const API = (() => {
       .eq('employee_id', empId)
       .gte('date', `${yearMonth}-01`)
       .lte('date', `${yearMonth}-31`)
-      .eq('is_exempted', true)
+      .not('exempted_by', 'is', null)
   }
 
   async function applyAttendanceExemption(empId, date, reason, exemptedBy, punchIn, punchOut, lateMinutes, originalPunchIn, originalPunchOut) {
