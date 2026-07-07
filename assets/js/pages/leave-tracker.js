@@ -31,6 +31,9 @@ const LeaveTracker = (() => {
   let _attendanceMonth    = null    // Date: first day of displayed month
   let _uploadLog          = []      // attendance_upload_log rows
   let _canUploadAttendance  = false
+  let _canViewTeamAtt       = false     // view_team_attendance access
+  let _teamAttMonth         = null      // Date: first of month for team attendance view
+  let _teamAttEmpId         = null      // employee id selected in team attendance view
   let _lateThreshold        = '10:30'   // HH:MM from app_settings
   let _lateEffectiveFrom    = ''        // YYYY-MM from app_settings
 
@@ -258,8 +261,10 @@ const LeaveTracker = (() => {
     _isHR             = App.hasAccess('leave_tracker', 'manage_leave_settings', 'can_manage')
     _canApproveLeave  = App.hasAccess('leave_tracker', 'approve_leave', 'can_approve')
     _canUploadAttendance = App.hasAccess('leave_tracker', 'upload_attendance', 'can_manage')
+    _canViewTeamAtt   = App.hasAccess('leave_tracker', 'view_team_attendance', 'view_only')
     _calMonth         = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
     _attendanceMonth  = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+    _teamAttMonth     = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
     _activeTab        = 'attendance'
 
     // Fetch all employees to determine manager status
@@ -2904,7 +2909,34 @@ const LeaveTracker = (() => {
           ${_renderTeamPendingTable(allLeaves, allWfh)}
         </div>
       </div>
+
+      ${_canViewTeamAtt ? `
+      <div class="section-card mt-4">
+        <div class="section-card-header" style="justify-content:space-between;align-items:center;gap:12px;">
+          <h3 style="margin:0;white-space:nowrap;">Employee Attendance</h3>
+          <select id="lt-team-att-emp" class="form-control" style="width:220px;font-size:13px;">
+            <option value="">Select employee…</option>
+            ${_employees.filter(e => e.status === 'active').sort((a,b) => a.name.localeCompare(b.name)).map(e =>
+              `<option value="${e.id}"${e.id === _teamAttEmpId ? ' selected' : ''}>${Utils.escapeHtml(e.name)}</option>`
+            ).join('')}
+          </select>
+        </div>
+        <div class="section-card-body">
+          <div id="lt-team-att-cal">
+            <p class="empty-state" style="padding:16px 0;">Select an employee to view their attendance.</p>
+          </div>
+        </div>
+      </div>
+      ` : ''}
     `
+
+    if (_canViewTeamAtt) {
+      document.getElementById('lt-team-att-emp')?.addEventListener('change', e => {
+        _teamAttEmpId = e.target.value || null
+        _loadTeamAttCal()
+      })
+      if (_teamAttEmpId) _loadTeamAttCal()
+    }
   }
 
   function _renderTeamPendingTable(leaves, wfh) {
@@ -2934,6 +2966,187 @@ const LeaveTracker = (() => {
         </tbody>
       </table>
     `
+  }
+
+  async function _loadTeamAttCal() {
+    const wrap = document.getElementById('lt-team-att-cal')
+    if (!wrap) return
+
+    if (!_teamAttEmpId) {
+      wrap.innerHTML = '<p class="empty-state" style="padding:16px 0;">Select an employee to view their attendance.</p>'
+      return
+    }
+
+    wrap.innerHTML = '<p class="loading-text" style="padding:16px 0;">Loading…</p>'
+
+    const month  = _teamAttMonth
+    const mStart = _toISO(month)
+    const mEnd   = _toISO(new Date(month.getFullYear(), month.getMonth() + 1, 0))
+
+    const [attRes, leaveData] = await Promise.all([
+      API.getEmployeeAttendance(_teamAttEmpId, mStart, mEnd),
+      API.getApprovedLeaveForEmployee(_teamAttEmpId),
+    ])
+
+    const attRecs = attRes.data || []
+    const { leaves = [], wfhs = [], clientVisits = [] } = leaveData
+
+    const attMap = {}
+    attRecs.forEach(r => { attMap[r.date] = r })
+
+    const leaveMap = {}
+    leaves.forEach(r => {
+      let d = new Date(r.start_date)
+      const end = new Date(r.end_date)
+      while (d <= end) {
+        const iso = _toISO(d)
+        leaveMap[iso] = { name: r.leave_types?.name || 'Leave', is_half_day: r.is_half_day, half_day_period: r.half_day_period }
+        d.setDate(d.getDate() + 1)
+      }
+    })
+
+    const wfhMap = {}
+    wfhs.forEach(r => {
+      let d = new Date(r.start_date)
+      const end = new Date(r.end_date)
+      while (d <= end) { wfhMap[_toISO(d)] = true; d.setDate(d.getDate() + 1) }
+    })
+
+    const clientVisitMap = {}
+    clientVisits.forEach(r => {
+      let d = new Date(r.start_date)
+      const end = new Date(r.end_date)
+      while (d <= end) { clientVisitMap[_toISO(d)] = r; d.setDate(d.getDate() + 1) }
+    })
+
+    const holidayMap = {}
+    _holidays.forEach(h => { holidayMap[h.date] = h.name })
+
+    const eventMap = {}
+    ;(_events || []).forEach(ev => {
+      let d = new Date(ev.start_date)
+      const end = new Date(ev.end_date || ev.start_date)
+      while (d <= end) {
+        const iso = _toISO(d)
+        if (!eventMap[iso]) eventMap[iso] = []
+        eventMap[iso].push(ev)
+        d.setDate(d.getDate() + 1)
+      }
+    })
+
+    const today    = _toISO(new Date())
+    const year     = month.getFullYear()
+    const mo       = month.getMonth()
+    const firstDay = new Date(year, mo, 1)
+    const lastDay  = new Date(year, mo + 1, 0)
+    const startDow = (firstDay.getDay() + 6) % 7
+
+    let calCells = ''
+    for (let i = 0; i < startDow; i++) calCells += `<div class="att-cal-cell att-cal-cell--empty"></div>`
+
+    for (let day = 1; day <= lastDay.getDate(); day++) {
+      const dateObj   = new Date(year, mo, day)
+      const iso       = _toISO(dateObj)
+      const isSunday  = dateObj.getDay() === 0
+      const isFuture  = iso > today
+      const att       = attMap[iso]
+      const leave     = leaveMap[iso]
+      const isWfh     = wfhMap[iso]
+      const cv        = clientVisitMap[iso]
+      const holiday   = holidayMap[iso]
+      const dayEvents = eventMap[iso] || []
+
+      let cellClass   = 'att-cal-cell'
+      let cellContent = `<span class="att-cal-day">${day}</span>`
+
+      if (isSunday) {
+        cellClass += ' att-cal-cell--weekend'
+        cellContent += `<span class="att-cal-label">Weekly Off</span>`
+      } else if (holiday) {
+        cellClass += ' att-cal-cell--holiday'
+        cellContent += `<span class="att-cal-label">${Utils.escapeHtml(holiday)}</span>`
+      } else if (leave) {
+        cellClass += ' att-cal-cell--leave'
+        const lbl = leave.is_half_day ? `½ ${Utils.escapeHtml(leave.name)}` : Utils.escapeHtml(leave.name)
+        cellContent += `<span class="att-cal-label">${lbl}</span>`
+      } else if (isWfh) {
+        cellClass += ' att-cal-cell--wfh'
+        cellContent += `<span class="att-cal-label">WFH</span>`
+      } else if (cv) {
+        cellClass += ' att-cal-cell--client-visit'
+        const half = cv.duration_type !== 'full_day'
+        cellContent += `<span class="att-cal-label">${half ? '½ ' : ''}Client Visit</span>`
+        cellContent += `<span class="att-cal-time att-cal-time--cv">${Utils.escapeHtml(cv.clients?.client_name || 'Client')}</span>`
+        if (att && !att.is_absent && att.punch_in) {
+          cellContent += `<span class="att-cal-time">${att.punch_in.substring(0,5)}${att.punch_out ? '–' + att.punch_out.substring(0,5) : ''}</span>`
+        }
+      } else if (att) {
+        if (att.is_absent) {
+          cellClass += ' att-cal-cell--absent'
+          cellContent += `<span class="att-cal-label">Absent</span>`
+        } else if (att.punch_in && att.punch_out) {
+          const isLate = att.late_minutes > 0
+          cellClass += isLate ? ' att-cal-cell--late' : ' att-cal-cell--present'
+          cellContent += `<span class="att-cal-time${isLate ? ' att-cal-time--late' : ''}">${att.punch_in.substring(0,5)}${isLate ? ' ▲' : ''}</span>`
+          cellContent += `<span class="att-cal-time att-cal-time--out">${att.punch_out.substring(0,5)}</span>`
+        } else if (att.punch_in) {
+          const isLate = att.late_minutes > 0
+          cellClass += isLate ? ' att-cal-cell--late' : ' att-cal-cell--partial'
+          cellContent += `<span class="att-cal-time${isLate ? ' att-cal-time--late' : ''}">${att.punch_in.substring(0,5)}${isLate ? ' ▲' : ''}</span>`
+          cellContent += `<span class="att-cal-time att-cal-time--out">—</span>`
+        }
+      } else if (!isFuture) {
+        cellClass += ' att-cal-cell--no-data'
+      } else {
+        cellClass += ' att-cal-cell--future'
+      }
+
+      if (dayEvents.length) {
+        cellContent += `<span class="att-cal-event-dot" title="${dayEvents.map(e => Utils.escapeHtml(e.title)).join(', ')}"></span>`
+      }
+      if (iso === today) cellClass += ' att-cal-cell--today'
+
+      calCells += `<div class="${cellClass}">${cellContent}</div>`
+    }
+
+    const monthLabel = month.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+
+    wrap.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <span style="font-size:14px;font-weight:600;">${monthLabel}</span>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button class="btn btn--ghost btn--sm" id="lt-team-att-prev">${CHEVRON_L}</button>
+          <button class="btn btn--ghost btn--sm" id="lt-team-att-next" ${_toISO(_teamAttMonth).slice(0,7) >= today.slice(0,7) ? 'disabled' : ''}>${CHEVRON_R}</button>
+        </div>
+      </div>
+      <div class="att-cal-grid att-cal-grid--header">
+        ${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => `<div class="att-cal-dow">${d}</div>`).join('')}
+      </div>
+      <div class="att-cal-grid">${calCells}</div>
+      <div class="att-legend" style="margin-top:12px;">
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#1D9E75;"></span>Present</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#FEE2E2;border:1px solid #FECACA;"></span>Late</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#F59E0B;"></span>Partial</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#6366F1;"></span>Leave</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#059669;"></span>WFH</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#0EA5E9;"></span>Client Visit</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#D97706;"></span>Holiday</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:var(--border);"></span>No Data</span>
+      </div>
+    `
+
+    document.getElementById('lt-team-att-prev')?.addEventListener('click', () => {
+      _teamAttMonth = new Date(_teamAttMonth.getFullYear(), _teamAttMonth.getMonth() - 1, 1)
+      _loadTeamAttCal()
+    })
+    document.getElementById('lt-team-att-next')?.addEventListener('click', () => {
+      const next = new Date(_teamAttMonth.getFullYear(), _teamAttMonth.getMonth() + 1, 1)
+      const now  = new Date()
+      if (next <= new Date(now.getFullYear(), now.getMonth(), 1)) {
+        _teamAttMonth = next
+        _loadTeamAttCal()
+      }
+    })
   }
 
   function _getMondayOf(date) {
@@ -3902,5 +4115,6 @@ ModuleRegistry.register({
     manage_wfh_quotas:     'Manage WFH Quotas',
     manage_leave_credits:  'Manage Leave Allocations',
     upload_attendance:     'Upload Attendance Data',
+    view_team_attendance:  'View Team Attendance Calendars',
   },
 })
