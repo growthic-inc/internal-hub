@@ -1855,12 +1855,14 @@ const API = (() => {
   }
 
   async function getMonthlyExemptionCount(empId, yearMonth) {
+    const [y, m] = yearMonth.split('-').map(Number)
+    const nextMonth = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
     return supabase
       .from('employee_attendance')
       .select('date')
       .eq('employee_id', empId)
       .gte('date', `${yearMonth}-01`)
-      .lte('date', `${yearMonth}-31`)
+      .lt('date', `${nextMonth}-01`)
       .not('exempted_by', 'is', null)
   }
 
