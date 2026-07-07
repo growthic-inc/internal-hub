@@ -515,7 +515,13 @@ const LeaveTracker = (() => {
           cellContent += `<span class="att-cal-time">${att.punch_in.substring(0,5)}${att.punch_out ? '–' + att.punch_out.substring(0,5) : ''}</span>`
         }
       } else if (att) {
-        if (att.is_absent) {
+        if (att.is_exempted) {
+          cellClass += ' att-cal-cell--present'
+          const inT  = att.punch_in  ? att.punch_in.slice(0, 5)  : '—'
+          const outT = att.punch_out ? att.punch_out.slice(0, 5) : '—'
+          cellContent += `<span class="att-cal-time">${inT}</span>`
+          cellContent += `<span class="att-cal-time att-cal-time--out">${outT}</span>`
+        } else if (att.is_absent) {
           cellClass += ' att-cal-cell--absent'
           cellContent += `<span class="att-cal-label">Absent</span>`
         } else if (att.punch_in && att.punch_out) {
@@ -723,11 +729,16 @@ const LeaveTracker = (() => {
     const isExemptEligible = isPast && !isSunday && !holiday && !leave && !isWfh && !cv && hasIssue
 
     let exemptSectionHtml = ''
-    if (isExemptEligible && att?.is_exempted) {
+    if (att?.is_exempted) {
+      const corrIn  = att.punch_in  ? att.punch_in.slice(0, 5)  : '—'
+      const corrOut = att.punch_out ? att.punch_out.slice(0, 5) : '—'
       exemptSectionHtml = `
         <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px;">
-          <span style="background:#ECFDF5;color:#065F46;font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;border:1px solid #6EE7B7;display:inline-block;margin-bottom:6px;">✓ Correction Applied</span>
-          ${att.exemption_reason ? `<div style="font-size:13px;color:var(--text-muted);margin-top:4px;">${Utils.escapeHtml(att.exemption_reason)}</div>` : ''}
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:10px;">Correction History</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <div class="att-day-row"><span class="att-day-tag" style="background:#ECFDF5;color:#065F46;border:1px solid #6EE7B7;">✓ Corrected</span><span style="font-size:13px;">${corrIn} → ${corrOut}</span></div>
+            ${att.exemption_reason ? `<div class="att-day-row"><span class="att-day-tag" style="background:var(--surface);color:var(--text-muted);">Reason</span><span style="font-size:13px;">${Utils.escapeHtml(att.exemption_reason)}</span></div>` : ''}
+          </div>
         </div>`
     } else if (isExemptEligible && exemptCount < 4) {
       const preIn  = att?.punch_in  ? att.punch_in.slice(0, 5)  : ''
@@ -869,7 +880,17 @@ const LeaveTracker = (() => {
         const balMap  = {}
         credits.forEach(c => { balMap[c.leave_type_id] = (balMap[c.leave_type_id] || 0) + Number(c.credited_days) })
         taken.forEach(r => { balMap[r.leave_type_id] = (balMap[r.leave_type_id] || 0) - Number(r.days) })
-        const eligibleTypes = _leaveTypes.filter(t => t.is_active && (t.is_unpaid || (balMap[t.id] || 0) > 0))
+        const eligibleTypes = _leaveTypes
+          .filter(t => t.is_active && (t.is_unpaid || (balMap[t.id] || 0) > 0))
+          .sort((a, b) => {
+            const aC = a.name.toLowerCase().includes('casual')
+            const bC = b.name.toLowerCase().includes('casual')
+            if (aC && !bC) return -1
+            if (!aC && bC) return 1
+            if (a.is_unpaid && !b.is_unpaid) return 1
+            if (!a.is_unpaid && b.is_unpaid) return -1
+            return a.name.localeCompare(b.name)
+          })
         if (!eligibleTypes.length) {
           wrap.innerHTML = '<div style="font-size:13px;color:#DC2626;">All 4 corrections used. No leave balance available — contact HR.</div>'
         } else {
@@ -3272,7 +3293,14 @@ const LeaveTracker = (() => {
         }
         dayState = 'client-visit'
       } else if (att) {
-        if (att.is_absent) {
+        if (att.is_exempted) {
+          cellClass += ' att-cal-cell--present'
+          const inT  = att.punch_in  ? att.punch_in.slice(0, 5)  : '—'
+          const outT = att.punch_out ? att.punch_out.slice(0, 5) : '—'
+          cellContent += `<span class="att-cal-time">${inT}</span>`
+          cellContent += `<span class="att-cal-time att-cal-time--out">${outT}</span>`
+          dayState = 'present'
+        } else if (att.is_absent) {
           cellClass += ' att-cal-cell--absent'
           cellContent += `<span class="att-cal-label">Absent</span>`
           dayState = 'absent'
@@ -3454,9 +3482,17 @@ const LeaveTracker = (() => {
         const balMap   = {}
         credits.forEach(c => { balMap[c.leave_type_id] = (balMap[c.leave_type_id] || 0) + Number(c.credited_days) })
         taken.forEach(r => { balMap[r.leave_type_id] = (balMap[r.leave_type_id] || 0) - Number(r.days) })
-        const eligibleTypes = (leaveTypes || _leaveTypes).filter(t =>
-          t.is_active && (t.is_unpaid || (balMap[t.id] || 0) > 0)
-        )
+        const eligibleTypes = (leaveTypes || _leaveTypes)
+          .filter(t => t.is_active && (t.is_unpaid || (balMap[t.id] || 0) > 0))
+          .sort((a, b) => {
+            const aC = a.name.toLowerCase().includes('casual')
+            const bC = b.name.toLowerCase().includes('casual')
+            if (aC && !bC) return -1
+            if (!aC && bC) return 1
+            if (a.is_unpaid && !b.is_unpaid) return 1
+            if (!a.is_unpaid && b.is_unpaid) return -1
+            return a.name.localeCompare(b.name)
+          })
         if (eligibleTypes.length) {
           const opts = eligibleTypes.map(t => {
             const bal = t.is_unpaid ? null : (balMap[t.id] || 0)
