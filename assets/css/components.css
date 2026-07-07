@@ -6887,15 +6887,15 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 14px;
+  padding: 12px;
   overflow: hidden;
 }
-.ts-missed-section--compact { padding: 12px; }
+.ts-missed-section--compact { padding: 10px; }
 .ts-missed-header {
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 .ts-missed-kpi-value {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 700;
   line-height: 1;
   color: var(--text);
@@ -6911,42 +6911,43 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
   width: 100%;
-  margin: 8px 0 10px;
+  margin: 6px 0 8px;
 }
 .ts-missed-month-label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  min-width: 90px;
+  min-width: 82px;
   text-align: center;
 }
 .ts-missed-cal-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 2px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
 }
 .ts-missed-cal-hdr {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
   text-align: center;
   color: var(--text-muted);
-  padding-bottom: 4px;
+  padding-bottom: 3px;
 }
 .ts-missed-cal-day {
-  font-size: 10px;
+  font-size: 9px;
   text-align: center;
-  padding: 3px 0;
-  border-radius: 4px;
+  padding: 3px 1px;
+  border-radius: 3px;
   font-weight: 500;
+  min-width: 0;
 }
 .ts-missed-cal-day--missed  { background: #FEE2E2; color: #B91C1C; font-weight: 700; }
 .ts-missed-cal-day--off     { background: rgba(0,0,0,0.05); color: var(--text-muted); }
 .ts-missed-cal-day--ok      { color: var(--text); }
 .ts-missed-legend {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
-  margin-top: 8px;
+  margin-top: 6px;
   display: flex;
   align-items: center;
   gap: 4px;
