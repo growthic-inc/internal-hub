@@ -1857,7 +1857,7 @@ const API = (() => {
   async function getMonthlyExemptionCount(empId, yearMonth) {
     return supabase
       .from('employee_attendance')
-      .select('id')
+      .select('date')
       .eq('employee_id', empId)
       .gte('date', `${yearMonth}-01`)
       .lte('date', `${yearMonth}-31`)
