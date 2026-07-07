@@ -6875,3 +6875,83 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 .att-day-tag--present { background: #D1FAE5; color: #065F46; }
 .att-day-tag--absent  { background: #FEE2E2; color: #B91C1C; }
 .att-day-tag--event   { background: #FCE7F3; color: #BE185D; }
+
+/* ── Missed Timesheet Days ─────────────────────────────────── */
+.ts-missed-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+.ts-missed-section--compact { padding: 12px; }
+.ts-missed-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 8px;
+}
+.ts-missed-kpi-value {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+}
+.ts-missed-kpi-value--alert { color: #EF4444; }
+.ts-missed-kpi-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+}
+.ts-missed-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.ts-missed-month-label {
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 90px;
+  text-align: center;
+}
+.ts-missed-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.ts-missed-cal-hdr {
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-muted);
+  padding-bottom: 4px;
+}
+.ts-missed-cal-day {
+  font-size: 10px;
+  text-align: center;
+  padding: 3px 0;
+  border-radius: 4px;
+  font-weight: 500;
+}
+.ts-missed-cal-day--missed  { background: #FEE2E2; color: #B91C1C; font-weight: 700; }
+.ts-missed-cal-day--off     { color: var(--text-muted); }
+.ts-missed-cal-day--ok      { color: var(--text); }
+.ts-missed-legend {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ts-missed-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.ts-missed-dot--missed { background: #FEE2E2; border: 1px solid #EF4444; }
+.ts-missed-dot--off    { background: var(--border); }

@@ -19,6 +19,10 @@ const Timesheet = (() => {
   let _teamPersonLeaves  = []   // selected team member's approved leaves
   let _teamPersonWfhs    = []   // selected team member's approved WFHs
   let _teamPersonClientVisits = [] // selected team member's approved client visits
+  let _holidays          = []   // company_holidays dates (YYYY-MM-DD strings)
+  // Missed days navigation
+  let _missedNavMonth    = null // Date: first day of displayed missed-days month (My Timesheet)
+  let _missedTeamMonth   = null // Date: first day of displayed missed-days month (Team person view)
   let _weekStart         = null
   let _activeTab         = 'mine'
   let _p                 = null
@@ -90,22 +94,29 @@ const Timesheet = (() => {
     const _requestedTab = sessionStorage.getItem('timesheet:tab') || null
     if (_requestedTab) sessionStorage.removeItem('timesheet:tab')
 
-    const [{ data: clients }, { data: internalProjects }, leaveData] = await Promise.all([
+    const year = new Date().getFullYear()
+    const [{ data: clients }, { data: internalProjects }, leaveData, { data: holidaysData }] = await Promise.all([
       API.getClients(false),
       API.getInternalProjects(),
       API.getApprovedLeaveForEmployee(_user.id),
+      API.getCompanyHolidays(year),
     ])
     _clients          = clients || []
     _internalProjects = (internalProjects || []).filter(p => p.status === 'active')
     _myLeaves         = leaveData.leaves
     _myWfhs           = leaveData.wfhs
     _myClientVisits   = leaveData.clientVisits || []
+    _holidays         = (holidaysData || []).map(h => h.date)
 
-    // Load the full reporting subtree for this user — anyone in their hierarchy
-    // (direct or indirect) grants Team tab visibility and scopes team data.
-    const { data: reports } = await API.getAllSubordinates(_user.id)
-    _directReports = reports || []
-    _isManager     = _directReports.length > 0
+    // HR (can_approve) sees all active employees; managers see their reporting subtree
+    if (_p.can_approve) {
+      const { data: allEmps } = await API.getEmployees()
+      _directReports = (allEmps || []).filter(e => e.id !== _user.id)
+    } else {
+      const { data: reports } = await API.getAllSubordinates(_user.id)
+      _directReports = reports || []
+    }
+    _isManager = _directReports.length > 0
 
     // Hide the Team tab if the user is neither an approver nor a reporting manager
     if (!_p.can_approve && !_isManager) {
@@ -260,6 +271,7 @@ const Timesheet = (() => {
     )
 
     _initSidebarChart(clientHours)
+    _loadMissedSection()
   }
 
   /* ── Day column ─────────────────────────────────────────── */
@@ -553,7 +565,39 @@ const Timesheet = (() => {
       ` : ''}
 
       ${pendingHtml}
+
+      <div id="ts-missed-wrap" style="margin-top:20px;">
+        <p class="loading-text" style="font-size:12px;">Loading missed days…</p>
+      </div>
     `
+  }
+
+  async function _loadMissedSection() {
+    const wrap = document.getElementById('ts-missed-wrap')
+    if (!wrap) return
+    if (!_missedNavMonth) _missedNavMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+
+    const y  = _missedNavMonth.getFullYear()
+    const m  = _missedNavMonth.getMonth() + 1
+    const mS = `${y}-${String(m).padStart(2,'0')}-01`
+    const mE = `${y}-${String(m).padStart(2,'0')}-${new Date(y, m, 0).getDate()}`
+
+    const [{ data: monthEntries }, { data: myLeaves }] = await Promise.all([
+      API.getTimesheetEntries(_user.id, mS, mE),
+      API.getApprovedLeaveForEmployee(_user.id),
+    ])
+
+    const missed = _getMissedDays(y, m, monthEntries || [], (myLeaves?.leaves || []))
+    wrap.innerHTML = _renderMissedSection(missed, _missedNavMonth)
+
+    wrap.querySelector('.ts-missed-prev')?.addEventListener('click', () => {
+      _missedNavMonth = new Date(_missedNavMonth.getFullYear(), _missedNavMonth.getMonth() - 1, 1)
+      _loadMissedSection()
+    })
+    wrap.querySelector('.ts-missed-next')?.addEventListener('click', () => {
+      const next = new Date(_missedNavMonth.getFullYear(), _missedNavMonth.getMonth() + 1, 1)
+      if (next <= new Date()) { _missedNavMonth = next; _loadMissedSection() }
+    })
   }
 
   function _initSidebarChart(clientHours) {
@@ -936,6 +980,94 @@ const Timesheet = (() => {
   }
 
   /* ══════════════════════════════════════════════════════════
+     MISSED DAYS — helpers + rendering
+  ══════════════════════════════════════════════════════════ */
+
+  function _isHoliday(isoDate) {
+    return _holidays.includes(isoDate)
+  }
+
+  // Returns array of YYYY-MM-DD strings that are missed/locked for the given month
+  function _getMissedDays(year, month, entries, leaves) {
+    const today   = new Date()
+    const cutoff  = new Date(today)
+    cutoff.setDate(cutoff.getDate() - 7)
+    cutoff.setHours(23, 59, 59, 999)
+
+    const daysInMonth = new Date(year, month, 0).getDate()
+    const entryDates  = new Set((entries || []).map(e => e.date))
+    const missed      = []
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(year, month - 1, d)
+      if (date > cutoff) continue               // still within editable window
+      const iso = date.toISOString().slice(0, 10)
+      if (date.getDay() === 0) continue          // Sunday
+      if (_isHoliday(iso)) continue              // company holiday
+      if (_isFullLeaveDay(iso, leaves)) continue // approved full-day leave
+      if (!entryDates.has(iso)) missed.push(iso)
+    }
+    return missed
+  }
+
+  function _renderMissedSection(missed, navMonth, onPrev, onNext, compact = false) {
+    const monthLabel = navMonth.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+    const year       = navMonth.getFullYear()
+    const month      = navMonth.getMonth() + 1
+    const daysInMonth = new Date(year, month, 0).getDate()
+    const missedSet  = new Set(missed)
+
+    // Build mini calendar
+    const firstDay  = new Date(year, month - 1, 1).getDay() // 0=Sun
+    // Shift so Mon=0 … Sun=6
+    const startOffset = firstDay === 0 ? 6 : firstDay - 1
+
+    const dayHeaders = ['M','T','W','T','F','S','S'].map(d =>
+      `<div class="ts-missed-cal-hdr">${d}</div>`
+    ).join('')
+
+    let cells = ''
+    for (let i = 0; i < startOffset; i++) cells += `<div></div>`
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso    = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+      const date   = new Date(year, month - 1, d)
+      const isSun  = date.getDay() === 0
+      const isHol  = _isHoliday(iso)
+      const isMiss = missedSet.has(iso)
+      const cls    = isMiss ? 'ts-missed-cal-day--missed'
+                   : (isSun || isHol) ? 'ts-missed-cal-day--off'
+                   : 'ts-missed-cal-day--ok'
+      cells += `<div class="ts-missed-cal-day ${cls}" title="${iso}">${d}</div>`
+    }
+
+    return `
+      <div class="ts-missed-section${compact ? ' ts-missed-section--compact' : ''}">
+        <div class="ts-missed-header">
+          <div class="ts-missed-kpi">
+            <div class="ts-missed-kpi-value${missed.length > 0 ? ' ts-missed-kpi-value--alert' : ''}">${missed.length}</div>
+            <div class="ts-missed-kpi-label">Missed Timesheet Day${missed.length !== 1 ? 's' : ''}</div>
+          </div>
+          <div class="ts-missed-nav">
+            <button class="btn btn--ghost btn--xs ts-missed-prev">&lsaquo;</button>
+            <span class="ts-missed-month-label">${monthLabel}</span>
+            <button class="btn btn--ghost btn--xs ts-missed-next">&rsaquo;</button>
+          </div>
+        </div>
+        <div class="ts-missed-calendar">
+          <div class="ts-missed-cal-grid">
+            ${dayHeaders}
+            ${cells}
+          </div>
+          ${missed.length > 0
+            ? `<div class="ts-missed-legend"><span class="ts-missed-dot ts-missed-dot--missed"></span> Missed &nbsp; <span class="ts-missed-dot ts-missed-dot--off"></span> Off / Holiday</div>`
+            : `<div class="ts-missed-legend" style="color:var(--success);">No missed days this month</div>`
+          }
+        </div>
+      </div>
+    `
+  }
+
+  /* ══════════════════════════════════════════════════════════
      TEAM'S TIMESHEET TAB — two-panel layout
   ══════════════════════════════════════════════════════════ */
   async function _loadTeamTab() {
@@ -1089,6 +1221,7 @@ const Timesheet = (() => {
         _teamPersonTab       = 'week'
         _teamPersonWeek      = _getMondayOf(new Date())
         _insightsPersonMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+        _missedTeamMonth     = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
         _updateTeamToolbar()
         _renderTeamSidebar()
         _loadPersonWeek()
@@ -1261,8 +1394,11 @@ const Timesheet = (() => {
       body.innerHTML = '<p class="loading-text">Loading summary…</p>'
       const from = _toISO((() => { const d = new Date(); d.setMonth(d.getMonth() - 6); return _getMondayOf(d) })())
       const to   = _toISO(new Date())
-      const { data } = await API.getTimesheetEntries(_teamSelEmpObj.id, from, to)
-      _renderPersonMonthly(body, data || [])
+      const [{ data }, leaveData] = await Promise.all([
+        API.getTimesheetEntries(_teamSelEmpObj.id, from, to),
+        API.getApprovedLeaveForEmployee(_teamSelEmpObj.id),
+      ])
+      _renderPersonMonthly(body, data || [], leaveData?.leaves || [])
     } else if (_teamPersonTab === 'insights') {
       await _loadPersonInsights()
     }
@@ -1469,10 +1605,9 @@ const Timesheet = (() => {
   }
 
   /* ── Person: Monthly Summary sub-tab ─────────────────────── */
-  function _renderPersonMonthly(container, entries) {
+  function _renderPersonMonthly(container, entries, leaves = []) {
     if (!entries.length) {
       container.innerHTML = `<p class="empty-state">No entries in the last 6 months.</p>`
-      return
     }
 
     // Group by YYYY-MM
@@ -1519,7 +1654,58 @@ const Timesheet = (() => {
       `
     }).join('')
 
-    container.innerHTML = cardsHtml
+    // Missed days section
+    if (!_missedTeamMonth) _missedTeamMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+    const ty = _missedTeamMonth.getFullYear()
+    const tm = _missedTeamMonth.getMonth() + 1
+    const tmS = `${ty}-${String(tm).padStart(2,'0')}-01`
+    const tmE = `${ty}-${String(tm).padStart(2,'0')}-${new Date(ty, tm, 0).getDate()}`
+    const { data: mEntries } = await API.getTimesheetEntries(_teamSelEmpObj.id, tmS, tmE)
+    const missed = _getMissedDays(ty, tm, mEntries || [], leaves)
+
+    container.innerHTML = (entries.length ? cardsHtml : '') + `<div id="ts-team-missed-wrap" style="margin-top:20px;">${_renderMissedSection(missed, _missedTeamMonth, null, null, true)}</div>`
+
+    container.querySelector('.ts-missed-prev')?.addEventListener('click', async () => {
+      _missedTeamMonth = new Date(_missedTeamMonth.getFullYear(), _missedTeamMonth.getMonth() - 1, 1)
+      const { data: e2 } = await API.getTimesheetEntries(_teamSelEmpObj.id,
+        `${_missedTeamMonth.getFullYear()}-${String(_missedTeamMonth.getMonth()+1).padStart(2,'0')}-01`,
+        `${_missedTeamMonth.getFullYear()}-${String(_missedTeamMonth.getMonth()+1).padStart(2,'0')}-${new Date(_missedTeamMonth.getFullYear(), _missedTeamMonth.getMonth()+1, 0).getDate()}`)
+      const wrap = document.getElementById('ts-team-missed-wrap')
+      if (wrap) { wrap.innerHTML = _renderMissedSection(_getMissedDays(_missedTeamMonth.getFullYear(), _missedTeamMonth.getMonth()+1, e2||[], leaves), _missedTeamMonth, null, null, true); _bindTeamMissedNav(leaves) }
+    })
+    container.querySelector('.ts-missed-next')?.addEventListener('click', async () => {
+      const next = new Date(_missedTeamMonth.getFullYear(), _missedTeamMonth.getMonth() + 1, 1)
+      if (next > new Date()) return
+      _missedTeamMonth = next
+      const { data: e2 } = await API.getTimesheetEntries(_teamSelEmpObj.id,
+        `${_missedTeamMonth.getFullYear()}-${String(_missedTeamMonth.getMonth()+1).padStart(2,'0')}-01`,
+        `${_missedTeamMonth.getFullYear()}-${String(_missedTeamMonth.getMonth()+1).padStart(2,'0')}-${new Date(_missedTeamMonth.getFullYear(), _missedTeamMonth.getMonth()+1, 0).getDate()}`)
+      const wrap = document.getElementById('ts-team-missed-wrap')
+      if (wrap) { wrap.innerHTML = _renderMissedSection(_getMissedDays(_missedTeamMonth.getFullYear(), _missedTeamMonth.getMonth()+1, e2||[], leaves), _missedTeamMonth, null, null, true); _bindTeamMissedNav(leaves) }
+    })
+  }
+
+  function _bindTeamMissedNav(leaves) {
+    const wrap = document.getElementById('ts-team-missed-wrap')
+    if (!wrap) return
+    wrap.querySelector('.ts-missed-prev')?.addEventListener('click', async () => {
+      _missedTeamMonth = new Date(_missedTeamMonth.getFullYear(), _missedTeamMonth.getMonth() - 1, 1)
+      const { data: e2 } = await API.getTimesheetEntries(_teamSelEmpObj.id,
+        `${_missedTeamMonth.getFullYear()}-${String(_missedTeamMonth.getMonth()+1).padStart(2,'0')}-01`,
+        `${_missedTeamMonth.getFullYear()}-${String(_missedTeamMonth.getMonth()+1).padStart(2,'0')}-${new Date(_missedTeamMonth.getFullYear(), _missedTeamMonth.getMonth()+1, 0).getDate()}`)
+      wrap.innerHTML = _renderMissedSection(_getMissedDays(_missedTeamMonth.getFullYear(), _missedTeamMonth.getMonth()+1, e2||[], leaves), _missedTeamMonth, null, null, true)
+      _bindTeamMissedNav(leaves)
+    })
+    wrap.querySelector('.ts-missed-next')?.addEventListener('click', async () => {
+      const next = new Date(_missedTeamMonth.getFullYear(), _missedTeamMonth.getMonth() + 1, 1)
+      if (next > new Date()) return
+      _missedTeamMonth = next
+      const { data: e2 } = await API.getTimesheetEntries(_teamSelEmpObj.id,
+        `${_missedTeamMonth.getFullYear()}-${String(_missedTeamMonth.getMonth()+1).padStart(2,'0')}-01`,
+        `${_missedTeamMonth.getFullYear()}-${String(_missedTeamMonth.getMonth()+1).padStart(2,'0')}-${new Date(_missedTeamMonth.getFullYear(), _missedTeamMonth.getMonth()+1, 0).getDate()}`)
+      wrap.innerHTML = _renderMissedSection(_getMissedDays(_missedTeamMonth.getFullYear(), _missedTeamMonth.getMonth()+1, e2||[], leaves), _missedTeamMonth, null, null, true)
+      _bindTeamMissedNav(leaves)
+    })
   }
 
   async function _loadPersonInsights() {
