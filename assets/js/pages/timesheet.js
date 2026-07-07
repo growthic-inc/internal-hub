@@ -604,12 +604,12 @@ const Timesheet = (() => {
     const mS = `${y}-${String(m).padStart(2,'0')}-01`
     const mE = `${y}-${String(m).padStart(2,'0')}-${new Date(y, m, 0).getDate()}`
 
-    const [{ data: monthEntries }, { data: myLeaves }] = await Promise.all([
+    const [{ data: monthEntries }, leaveData] = await Promise.all([
       API.getTimesheetEntries(_user.id, mS, mE),
       API.getApprovedLeaveForEmployee(_user.id),
     ])
 
-    const missed = _getMissedDays(y, m, monthEntries || [], (myLeaves?.leaves || []))
+    const missed = _getMissedDays(y, m, monthEntries || [], leaveData.leaves || [])
     wrap.innerHTML = _renderMissedSection(missed, _missedNavMonth, null, null, true)
 
     wrap.querySelector('.ts-missed-prev')?.addEventListener('click', () => {
