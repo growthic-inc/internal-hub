@@ -1712,7 +1712,7 @@ const Timesheet = (() => {
     const tm = _missedTeamMonth.getMonth() + 1
     const missed = _getMissedDays(ty, tm, mEntries, leaves)
 
-    container.innerHTML = (entries.length ? cardsHtml : '') + `<div id="ts-team-missed-wrap" style="margin-top:20px;">${_renderMissedSection(missed, _missedTeamMonth, null, null, true)}</div>`
+    container.innerHTML = `<div id="ts-team-missed-wrap" style="margin-bottom:20px;">${_renderMissedSection(missed, _missedTeamMonth, null, null, true)}</div>` + (entries.length ? cardsHtml : '')
 
     container.querySelector('.ts-missed-prev')?.addEventListener('click', async () => {
       _missedTeamMonth = new Date(_missedTeamMonth.getFullYear(), _missedTeamMonth.getMonth() - 1, 1)
