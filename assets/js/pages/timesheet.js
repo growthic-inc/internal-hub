@@ -1044,7 +1044,7 @@ const Timesheet = (() => {
     // Shift so Mon=0 … Sun=6
     const startOffset = firstDay === 0 ? 6 : firstDay - 1
 
-    const dayHeaders = ['M','T','W','T','F','S'].map(d =>
+    const dayHeaders = ['M','T','W','T','F','S','S'].map(d =>
       `<div class="ts-missed-cal-hdr">${d}</div>`
     ).join('')
 
@@ -1054,11 +1054,10 @@ const Timesheet = (() => {
       const iso    = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`
       const date   = new Date(year, month - 1, d)
       const isSun  = date.getDay() === 0
-      if (isSun) continue
       const isHol  = _isHoliday(iso)
       const isMiss = missedSet.has(iso)
       const cls    = isMiss ? 'ts-missed-cal-day--missed'
-                   : isHol  ? 'ts-missed-cal-day--off'
+                   : (isSun || isHol) ? 'ts-missed-cal-day--off'
                    : 'ts-missed-cal-day--ok'
       cells += `<div class="ts-missed-cal-day ${cls}" title="${iso}">${d}</div>`
     }
