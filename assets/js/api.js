@@ -1864,7 +1864,7 @@ const API = (() => {
       .eq('is_exempted', true)
   }
 
-  async function applyAttendanceExemption(empId, date, reason, exemptedBy, punchIn, punchOut, lateMinutes) {
+  async function applyAttendanceExemption(empId, date, reason, exemptedBy, punchIn, punchOut, lateMinutes, originalPunchIn, originalPunchOut) {
     const { data: existing } = await supabase
       .from('employee_attendance')
       .select('id')
@@ -1877,6 +1877,8 @@ const API = (() => {
       exemption_reason: reason || null,
       exempted_by: exemptedBy,
       late_minutes: lateMinutes ?? 0,
+      original_punch_in:  originalPunchIn  || null,
+      original_punch_out: originalPunchOut || null,
     }
     if (punchIn  != null) { updates.punch_in  = punchIn;  updates.is_absent = false }
     if (punchOut != null) { updates.punch_out = punchOut; updates.is_absent = false }
@@ -1898,6 +1900,8 @@ const API = (() => {
       is_exempted: true,
       exemption_reason: reason || null,
       exempted_by: exemptedBy,
+      original_punch_in:  originalPunchIn  || null,
+      original_punch_out: originalPunchOut || null,
     })
   }
 

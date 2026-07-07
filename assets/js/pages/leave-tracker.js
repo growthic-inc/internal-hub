@@ -730,12 +730,15 @@ const LeaveTracker = (() => {
 
     let exemptSectionHtml = ''
     if (att?.is_exempted) {
+      const origIn  = att.original_punch_in  ? att.original_punch_in.slice(0, 5)  : '—'
+      const origOut = att.original_punch_out ? att.original_punch_out.slice(0, 5) : '—'
       const corrIn  = att.punch_in  ? att.punch_in.slice(0, 5)  : '—'
       const corrOut = att.punch_out ? att.punch_out.slice(0, 5) : '—'
       exemptSectionHtml = `
         <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px;">
           <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:10px;">Correction History</div>
           <div style="display:flex;flex-direction:column;gap:6px;">
+            <div class="att-day-row"><span class="att-day-tag" style="background:var(--surface);color:var(--text-muted);">Biometric</span><span style="font-size:13px;">${origIn} → ${origOut}</span></div>
             <div class="att-day-row"><span class="att-day-tag" style="background:#ECFDF5;color:#065F46;border:1px solid #6EE7B7;">✓ Corrected</span><span style="font-size:13px;">${corrIn} → ${corrOut}</span></div>
             ${att.exemption_reason ? `<div class="att-day-row"><span class="att-day-tag" style="background:var(--surface);color:var(--text-muted);">Reason</span><span style="font-size:13px;">${Utils.escapeHtml(att.exemption_reason)}</span></div>` : ''}
           </div>
@@ -854,9 +857,13 @@ const LeaveTracker = (() => {
           lateMins = Math.max(0, (ph * 60 + pm) - (th * 60 + tm))
         }
 
+        // Capture original biometric times before overwriting
+        const origIn  = att?.punch_in  || null
+        const origOut = att?.punch_out || null
+
         errEl.style.display = 'none'
         btn.disabled = true; btn.textContent = 'Saving…'
-        const { error } = await API.applyAttendanceExemption(_user.id, dateISO, reason, _user.id, punchIn || null, punchOut || null, lateMins)
+        const { error } = await API.applyAttendanceExemption(_user.id, dateISO, reason, _user.id, punchIn || null, punchOut || null, lateMins, origIn, origOut)
         if (error) {
           errEl.style.display = ''; errEl.textContent = error.message
           btn.disabled = false; btn.textContent = 'Apply Correction'
@@ -3570,9 +3577,12 @@ const LeaveTracker = (() => {
           lateMins = Math.max(0, (ph * 60 + pm) - (th * 60 + tm))
         }
 
+        const origIn  = att?.punch_in  || null
+        const origOut = att?.punch_out || null
+
         if (errEl) errEl.style.display = 'none'
         exemptBtn.disabled = true; exemptBtn.textContent = 'Saving…'
-        const { error } = await API.applyAttendanceExemption(empId, iso, reason, _user.id, punchIn || null, punchOut || null, lateMins)
+        const { error } = await API.applyAttendanceExemption(empId, iso, reason, _user.id, punchIn || null, punchOut || null, lateMins, origIn, origOut)
         if (error) {
           if (errEl) { errEl.style.display = ''; errEl.textContent = error.message || 'Failed to save.' }
           exemptBtn.disabled = false; exemptBtn.textContent = 'Grant Correction'
