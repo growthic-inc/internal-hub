@@ -898,15 +898,32 @@ const LeaveTracker = (() => {
         if (!punchRow) continue
 
         for (let col = 0; col < numDays; col++) {
-          const cell = punchRow[col]
-          if (cell === '' || cell == null) continue   // no punch this day → leave as "no data"
-          const punches = splitPunches(cell)
-          if (!punches.length) continue
+          const cell    = punchRow[col]
+          const recDate = dateForCol(col)
+          const punches = (cell === '' || cell == null) ? [] : splitPunches(cell)
+
+          if (!punches.length) {
+            // No punch data for this day — mark as absent so calendar shows "Absent"
+            // not blank "No Data". Calendar rendering checks Sunday/Holiday/Leave first,
+            // so those days still display correctly regardless of is_absent.
+            records.push({
+              employee_id:         empId,
+              date:                recDate,
+              punch_in:            null,
+              punch_out:           null,
+              late_minutes:        0,
+              early_leave_minutes: 0,
+              is_absent:           true,
+              uploaded_by:         _user.id,
+              uploaded_at:         new Date().toISOString(),
+            })
+            matched++
+            continue
+          }
 
           const punchIn  = punches[0]
           const punchOut = punches.length > 1 ? punches[punches.length - 1] : null
 
-          const recDate = dateForCol(col)
           records.push({
             employee_id:         empId,
             date:                recDate,
