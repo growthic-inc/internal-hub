@@ -111,7 +111,7 @@ const Timesheet = (() => {
     // HR (can_approve) sees all active employees; managers see their reporting subtree
     if (_p.can_approve) {
       const { data: allEmps } = await API.getEmployees()
-      _directReports = (allEmps || []).filter(e => e.id !== _user.id)
+      _directReports = allEmps || []
     } else {
       const { data: reports } = await API.getAllSubordinates(_user.id)
       _directReports = reports || []
@@ -360,6 +360,7 @@ const Timesheet = (() => {
     const diffDays  = Math.floor((new Date(today) - new Date(iso)) / 86400000)
     const isFuture  = iso > today
     const isLocked  = diffDays > 7
+    const isHoliday = _isHoliday(iso)
 
     // Leave / WFH status for this day.
     // Half-day leaves are intentionally NOT marked on the timesheet — the
@@ -373,8 +374,8 @@ const Timesheet = (() => {
     const cvDay          = _clientVisitForDay(iso, _myClientVisits)
     const cvHalf         = cvDay && cvDay.duration_type !== 'full_day'
 
-    // Warn for missing hours on past working days (full-leave days excluded).
-    const isPastNoEntry = !isToday && diffDays > 0 && diffDays <= 7 && dayEntries.length === 0 && !isFullLeaveDay
+    // Warn for missing hours on past working days (leave and holiday days excluded).
+    const isPastNoEntry = !isToday && diffDays > 0 && diffDays <= 7 && dayEntries.length === 0 && !isFullLeaveDay && !isHoliday
 
     // Determine day-level status
     const drafts    = dayEntries.filter(e => e.status === 'draft').length
@@ -396,6 +397,8 @@ const Timesheet = (() => {
     let footerHtml = ''
     if (isLocked) {
       footerHtml = `<div class="ts-day-action ts-day-action--locked">Locked</div>`
+    } else if (isHoliday && dayEntries.length === 0) {
+      footerHtml = `<div class="ts-day-action" style="background:#F0FDF4;color:#059669;border:none;cursor:default;">Holiday</div>`
     } else if (isFullLeaveDay && dayEntries.length === 0) {
       footerHtml = `<div class="ts-day-action" style="background:#EEF2FF;color:#6366F1;border:none;cursor:default;">On Leave</div>`
     } else if (drafts > 0 && _p.can_edit) {
@@ -409,18 +412,24 @@ const Timesheet = (() => {
     }
 
     return `
-      <div class="ts-col${isToday ? ' ts-col--today' : ''}${isLocked ? ' ts-col--locked' : ''}${isFullLeaveDay ? ' ts-col--leave' : ''}">
+      <div class="ts-col${isToday ? ' ts-col--today' : ''}${isLocked ? ' ts-col--locked' : ''}${isFullLeaveDay ? ' ts-col--leave' : ''}${isHoliday ? ' ts-col--holiday' : ''}">
         <div class="ts-col-header">
           <div class="ts-col-top">
             <span class="ts-col-weekday">${day.toLocaleDateString('en-IN', { weekday:'short' }).toUpperCase()}</span>
-            <span class="ts-col-status-icon">${headerIcon}${halfLeaveDay ? `<span style="font-size:9px;font-weight:600;background:#EEF2FF;color:#6366F1;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;" title="Half-day leave${halfLeavePeriod ? ' — ' + halfLeavePeriod : ''}">½ Leave</span>` : ''}${isWfhDay ? `<span style="font-size:9px;font-weight:600;background:#ECFDF5;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">WFH</span>` : ''}${cvDay ? `<span style="font-size:9px;font-weight:600;background:#E0F2FE;color:#0369A1;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">Visit</span>` : ''}</span>
+            <span class="ts-col-status-icon">${headerIcon}${isHoliday ? `<span style="font-size:9px;font-weight:600;background:#F0FDF4;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">Holiday</span>` : ''}${halfLeaveDay ? `<span style="font-size:9px;font-weight:600;background:#EEF2FF;color:#6366F1;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;" title="Half-day leave${halfLeavePeriod ? ' — ' + halfLeavePeriod : ''}">½ Leave</span>` : ''}${isWfhDay ? `<span style="font-size:9px;font-weight:600;background:#ECFDF5;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">WFH</span>` : ''}${cvDay ? `<span style="font-size:9px;font-weight:600;background:#E0F2FE;color:#0369A1;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">Visit</span>` : ''}</span>
           </div>
           <span class="ts-col-date${isToday ? ' ts-col-date--today' : ''}">${day.getDate()}</span>
           ${dayHours > 0 ? `<span class="ts-col-hours">${dayHours.toFixed(1)}h</span>` : ''}
         </div>
 
         <div class="ts-col-body">
-          ${isFullLeaveDay && dayEntries.length === 0 ? `
+          ${isHoliday && dayEntries.length === 0 ? `
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:20px 8px;text-align:center;flex:1;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              <span style="font-size:11px;font-weight:600;color:#059669;">Holiday</span>
+            </div>
+          ` : ''}
+          ${!isHoliday && isFullLeaveDay && dayEntries.length === 0 ? `
             <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:20px 8px;text-align:center;flex:1;">
               <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
               <span style="font-size:11px;font-weight:600;color:#6366F1;">On Leave</span>
@@ -428,8 +437,8 @@ const Timesheet = (() => {
             </div>
           ` : ''}
           ${cvHalf ? _cvContextBanner(cvDay) : ''}
-          ${!isFullLeaveDay || dayEntries.length > 0 ? dayEntries.map(e => _renderCard(e)).join('') : ''}
-          ${_p.can_create && !isLocked && !isFuture && !isFullLeaveDay ? `
+          ${(!isFullLeaveDay && !isHoliday) || dayEntries.length > 0 ? dayEntries.map(e => _renderCard(e)).join('') : ''}
+          ${_p.can_create && !isLocked && !isFuture && !isFullLeaveDay && !isHoliday ? `
             <button class="ts-add-btn" data-date="${iso}">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Entry
@@ -1861,7 +1870,7 @@ const Timesheet = (() => {
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
           <div>
             <div style="font-size:15px;font-weight:700;">Employee Overview</div>
-            <div style="font-size:12px;color:var(--text-muted);">${monthLabel} · Public holidays not yet included</div>
+            <div style="font-size:12px;color:var(--text-muted);">${monthLabel}</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;">
             <button class="btn btn--ghost btn--sm" id="pi-prev">

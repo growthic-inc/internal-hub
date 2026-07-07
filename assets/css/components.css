@@ -1682,6 +1682,7 @@
 /* Locked day column */
 .ts-col--locked { opacity: .55; pointer-events: none; }
 .ts-col--locked .ts-col-body { background: repeating-linear-gradient(135deg, transparent, transparent 6px, rgba(0,0,0,.025) 6px, rgba(0,0,0,.025) 7px); }
+.ts-col--holiday .ts-col-body { background: rgba(5, 150, 105, 0.03); }
 
 /* Work-type toggle in entry modal */
 .ts-work-type-toggle {
