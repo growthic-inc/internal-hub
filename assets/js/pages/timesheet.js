@@ -1394,11 +1394,17 @@ const Timesheet = (() => {
       body.innerHTML = '<p class="loading-text">Loading summary…</p>'
       const from = _toISO((() => { const d = new Date(); d.setMonth(d.getMonth() - 6); return _getMondayOf(d) })())
       const to   = _toISO(new Date())
-      const [{ data }, leaveData] = await Promise.all([
+      if (!_missedTeamMonth) _missedTeamMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+      const ty  = _missedTeamMonth.getFullYear()
+      const tm  = _missedTeamMonth.getMonth() + 1
+      const tmS = `${ty}-${String(tm).padStart(2,'0')}-01`
+      const tmE = `${ty}-${String(tm).padStart(2,'0')}-${new Date(ty, tm, 0).getDate()}`
+      const [{ data }, leaveData, { data: mEntries }] = await Promise.all([
         API.getTimesheetEntries(_teamSelEmpObj.id, from, to),
         API.getApprovedLeaveForEmployee(_teamSelEmpObj.id),
+        API.getTimesheetEntries(_teamSelEmpObj.id, tmS, tmE),
       ])
-      _renderPersonMonthly(body, data || [], leaveData?.leaves || [])
+      _renderPersonMonthly(body, data || [], leaveData?.leaves || [], mEntries || [])
     } else if (_teamPersonTab === 'insights') {
       await _loadPersonInsights()
     }
@@ -1605,7 +1611,7 @@ const Timesheet = (() => {
   }
 
   /* ── Person: Monthly Summary sub-tab ─────────────────────── */
-  function _renderPersonMonthly(container, entries, leaves = []) {
+  function _renderPersonMonthly(container, entries, leaves = [], mEntries = []) {
     if (!entries.length) {
       container.innerHTML = `<p class="empty-state">No entries in the last 6 months.</p>`
     }
@@ -1658,10 +1664,7 @@ const Timesheet = (() => {
     if (!_missedTeamMonth) _missedTeamMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
     const ty = _missedTeamMonth.getFullYear()
     const tm = _missedTeamMonth.getMonth() + 1
-    const tmS = `${ty}-${String(tm).padStart(2,'0')}-01`
-    const tmE = `${ty}-${String(tm).padStart(2,'0')}-${new Date(ty, tm, 0).getDate()}`
-    const { data: mEntries } = await API.getTimesheetEntries(_teamSelEmpObj.id, tmS, tmE)
-    const missed = _getMissedDays(ty, tm, mEntries || [], leaves)
+    const missed = _getMissedDays(ty, tm, mEntries, leaves)
 
     container.innerHTML = (entries.length ? cardsHtml : '') + `<div id="ts-team-missed-wrap" style="margin-top:20px;">${_renderMissedSection(missed, _missedTeamMonth, null, null, true)}</div>`
 
