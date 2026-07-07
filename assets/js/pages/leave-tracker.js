@@ -541,14 +541,15 @@ const LeaveTracker = (() => {
     // Legend
     const legend = `
       <div class="att-legend">
-        <span class="att-legend-item"><span class="att-legend-dot" style="background:#1D9E75;"></span>Present</span>
-        <span class="att-legend-item"><span class="att-legend-dot" style="background:#FEE2E2;border:1px solid #FECACA;"></span>Late</span>
-        <span class="att-legend-item"><span class="att-legend-dot" style="background:#F59E0B;"></span>Partial</span>
-        <span class="att-legend-item"><span class="att-legend-dot" style="background:#6366F1;"></span>Leave</span>
-        <span class="att-legend-item"><span class="att-legend-dot" style="background:#059669;"></span>WFH</span>
-        <span class="att-legend-item"><span class="att-legend-dot" style="background:#0EA5E9;"></span>Client Visit</span>
-        <span class="att-legend-item"><span class="att-legend-dot" style="background:#D97706;"></span>Holiday</span>
-        <span class="att-legend-item"><span class="att-legend-dot" style="background:var(--border);"></span>No Data</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#D1FAE5;border:1.5px solid #1D9E75;border-radius:3px;"></span>Present</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#FEE2E2;border:1.5px solid #FECACA;border-radius:3px;"></span>Late</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#FEF3C7;border:1.5px solid #F59E0B;border-radius:3px;"></span>Partial</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#FEE2E2;border:1.5px solid #EF4444;border-radius:3px;"></span>Absent</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#EEF2FF;border:1.5px solid #6366F1;border-radius:3px;"></span>Leave</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#ECFDF5;border:1.5px solid #059669;border-radius:3px;"></span>WFH</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#E0F2FE;border:1.5px solid #0EA5E9;border-radius:3px;"></span>Client Visit</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#FEF3C7;border:1.5px solid #F59E0B;border-radius:3px;"></span>Holiday</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:var(--surface);border:1.5px solid var(--border);border-radius:3px;opacity:0.6;"></span>No Data</span>
         <span class="att-legend-item"><span class="att-legend-dot" style="background:#EC4899;"></span>Event</span>
       </div>`
 
@@ -3124,14 +3125,15 @@ const LeaveTracker = (() => {
       </div>
       <div class="att-cal-grid">${calCells}</div>
       <div class="att-legend" style="margin-top:12px;">
-        <span class="att-legend-item"><span class="att-legend-dot" style="background:#1D9E75;"></span>Present</span>
-        <span class="att-legend-item"><span class="att-legend-dot" style="background:#FEE2E2;border:1px solid #FECACA;"></span>Late</span>
-        <span class="att-legend-item"><span class="att-legend-dot" style="background:#F59E0B;"></span>Partial</span>
-        <span class="att-legend-item"><span class="att-legend-dot" style="background:#6366F1;"></span>Leave</span>
-        <span class="att-legend-item"><span class="att-legend-dot" style="background:#059669;"></span>WFH</span>
-        <span class="att-legend-item"><span class="att-legend-dot" style="background:#0EA5E9;"></span>Client Visit</span>
-        <span class="att-legend-item"><span class="att-legend-dot" style="background:#D97706;"></span>Holiday</span>
-        <span class="att-legend-item"><span class="att-legend-dot" style="background:var(--border);"></span>No Data</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#D1FAE5;border:1.5px solid #1D9E75;border-radius:3px;"></span>Present</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#FEE2E2;border:1.5px solid #FECACA;border-radius:3px;"></span>Late</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#FEF3C7;border:1.5px solid #F59E0B;border-radius:3px;"></span>Partial</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#FEE2E2;border:1.5px solid #EF4444;border-radius:3px;"></span>Absent</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#EEF2FF;border:1.5px solid #6366F1;border-radius:3px;"></span>Leave</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#ECFDF5;border:1.5px solid #059669;border-radius:3px;"></span>WFH</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#E0F2FE;border:1.5px solid #0EA5E9;border-radius:3px;"></span>Client Visit</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:#FEF3C7;border:1.5px solid #F59E0B;border-radius:3px;"></span>Holiday</span>
+        <span class="att-legend-item"><span class="att-legend-dot" style="background:var(--surface);border:1.5px solid var(--border);border-radius:3px;opacity:0.6;"></span>No Data</span>
       </div>
     `
 
