@@ -6800,6 +6800,7 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 .att-cal-cell--weekend { background: var(--bg); opacity: 0.6; }
 .att-cal-cell--holiday { background: #FEF3C7; border-color: #F59E0B; }
 .att-cal-cell--leave   { background: #EEF2FF; border-color: #6366F1; }
+.att-cal-cell--leave-pending { border-style: dashed; opacity: 0.85; }
 .att-cal-cell--wfh     { background: #ECFDF5; border-color: #059669; }
 .att-cal-cell--client-visit { background: #E0F2FE; border-color: #0EA5E9; }
 .att-cal-cell--present { background: #D1FAE5; border-color: #1D9E75; }

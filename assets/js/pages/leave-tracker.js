@@ -408,12 +408,12 @@ const LeaveTracker = (() => {
     _attendanceRecords.forEach(r => { attMap[r.date] = r })
 
     const leaveMap = {}
-    _leaveRequests.filter(r => r.status === 'approved').forEach(r => {
+    _leaveRequests.filter(r => r.status === 'approved' || r.status === 'pending').forEach(r => {
       let d = new Date(r.start_date)
       const end = new Date(r.end_date)
       while (d <= end) {
         const iso = _toISO(d)
-        leaveMap[iso] = { type: 'leave', name: r.leave_types?.name || 'Leave', is_half_day: r.is_half_day, half_day_period: r.half_day_period }
+        leaveMap[iso] = { type: 'leave', name: r.leave_types?.name || 'Leave', is_half_day: r.is_half_day, half_day_period: r.half_day_period, status: r.status }
         d.setDate(d.getDate() + 1)
       }
     })
@@ -494,9 +494,9 @@ const LeaveTracker = (() => {
         cellClass += ' att-cal-cell--holiday'
         cellContent += `<span class="att-cal-label">${Utils.escapeHtml(holiday)}</span>`
       } else if (leave) {
-        cellClass += ' att-cal-cell--leave'
+        cellClass += leave.status === 'pending' ? ' att-cal-cell--leave att-cal-cell--leave-pending' : ' att-cal-cell--leave'
         const lbl = leave.is_half_day ? `½ ${Utils.escapeHtml(leave.name)}` : Utils.escapeHtml(leave.name)
-        cellContent += `<span class="att-cal-label">${lbl}</span>`
+        cellContent += `<span class="att-cal-label">${lbl}${leave.status === 'pending' ? ' <em style="font-size:10px;font-style:normal;opacity:0.7;">(Pending)</em>' : ''}</span>`
       } else if (isWfh) {
         cellClass += ' att-cal-cell--wfh'
         cellContent += `<span class="att-cal-label">WFH</span>`
@@ -3019,7 +3019,7 @@ const LeaveTracker = (() => {
       const end = new Date(r.end_date)
       while (d <= end) {
         const iso = _toISO(d)
-        leaveMap[iso] = { name: r.leave_types?.name || 'Leave', is_half_day: r.is_half_day, half_day_period: r.half_day_period }
+        leaveMap[iso] = { name: r.leave_types?.name || 'Leave', is_half_day: r.is_half_day, half_day_period: r.half_day_period, status: r.status }
         d.setDate(d.getDate() + 1)
       }
     })
@@ -3075,22 +3075,27 @@ const LeaveTracker = (() => {
       const holiday   = holidayMap[iso]
       const dayEvents = eventMap[iso] || []
 
-      let cellClass   = 'att-cal-cell'
+      let cellClass   = 'att-cal-cell att-cal-cell--clickable'
       let cellContent = `<span class="att-cal-day">${day}</span>`
+      let dayState    = 'future'
 
       if (isSunday) {
         cellClass += ' att-cal-cell--weekend'
         cellContent += `<span class="att-cal-label">Weekly Off</span>`
+        dayState = 'weekend'
       } else if (holiday) {
         cellClass += ' att-cal-cell--holiday'
         cellContent += `<span class="att-cal-label">${Utils.escapeHtml(holiday)}</span>`
+        dayState = 'holiday'
       } else if (leave) {
-        cellClass += ' att-cal-cell--leave'
+        cellClass += leave.status === 'pending' ? ' att-cal-cell--leave att-cal-cell--leave-pending' : ' att-cal-cell--leave'
         const lbl = leave.is_half_day ? `½ ${Utils.escapeHtml(leave.name)}` : Utils.escapeHtml(leave.name)
-        cellContent += `<span class="att-cal-label">${lbl}</span>`
+        cellContent += `<span class="att-cal-label">${lbl}${leave.status === 'pending' ? ' <em style="font-size:10px;font-style:normal;opacity:0.7;">(Pending)</em>' : ''}</span>`
+        dayState = 'leave'
       } else if (isWfh) {
         cellClass += ' att-cal-cell--wfh'
         cellContent += `<span class="att-cal-label">WFH</span>`
+        dayState = 'wfh'
       } else if (cv) {
         cellClass += ' att-cal-cell--client-visit'
         const half = cv.duration_type !== 'full_day'
@@ -3099,25 +3104,28 @@ const LeaveTracker = (() => {
         if (att && !att.is_absent && att.punch_in) {
           cellContent += `<span class="att-cal-time">${att.punch_in.substring(0,5)}${att.punch_out ? '–' + att.punch_out.substring(0,5) : ''}</span>`
         }
+        dayState = 'client-visit'
       } else if (att) {
         if (att.is_absent) {
           cellClass += ' att-cal-cell--absent'
           cellContent += `<span class="att-cal-label">Absent</span>`
+          dayState = 'absent'
         } else if (att.punch_in && att.punch_out) {
           const isLate = att.late_minutes > 0
           cellClass += isLate ? ' att-cal-cell--late' : ' att-cal-cell--present'
           cellContent += `<span class="att-cal-time${isLate ? ' att-cal-time--late' : ''}">${att.punch_in.substring(0,5)}${isLate ? ' ▲' : ''}</span>`
           cellContent += `<span class="att-cal-time att-cal-time--out">${att.punch_out.substring(0,5)}</span>`
+          dayState = isLate ? 'late' : 'present'
         } else if (att.punch_in) {
           const isLate = att.late_minutes > 0
           cellClass += isLate ? ' att-cal-cell--late' : ' att-cal-cell--partial'
           cellContent += `<span class="att-cal-time${isLate ? ' att-cal-time--late' : ''}">${att.punch_in.substring(0,5)}${isLate ? ' ▲' : ''}</span>`
           cellContent += `<span class="att-cal-time att-cal-time--out">—</span>`
+          dayState = 'partial'
         }
       } else if (!isFuture) {
         cellClass += ' att-cal-cell--no-data'
-      } else {
-        cellClass += ' att-cal-cell--future'
+        dayState = 'no-data'
       }
 
       if (dayEvents.length) {
@@ -3125,7 +3133,7 @@ const LeaveTracker = (() => {
       }
       if (iso === today) cellClass += ' att-cal-cell--today'
 
-      calCells += `<div class="${cellClass}">${cellContent}</div>`
+      calCells += `<div class="${cellClass}" data-iso="${iso}" data-state="${dayState}">${cellContent}</div>`
     }
 
     const monthLabel = month.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
@@ -3167,6 +3175,159 @@ const LeaveTracker = (() => {
         _loadTeamAttCal()
       }
     })
+
+    // Day click → detail modal
+    wrap.querySelectorAll('.att-cal-cell--clickable[data-iso]').forEach(cell => {
+      cell.addEventListener('click', () => {
+        const iso   = cell.dataset.iso
+        const state = cell.dataset.state
+        _openTeamDayModal({
+          iso, state,
+          att:          attMap[iso],
+          leave:        leaveMap[iso],
+          isWfh:        !!wfhMap[iso],
+          cv:           clientVisitMap[iso],
+          holiday:      holidayMap[iso],
+          empId:        _teamAttEmpId,
+          leaveTypes:   _leaveTypes,
+        })
+      })
+    })
+  }
+
+  async function _openTeamDayModal({ iso, state, att, leave, isWfh, cv, holiday, empId, leaveTypes }) {
+    const existing = document.getElementById('lt-team-day-overlay')
+    if (existing) existing.remove()
+
+    const emp        = _employees.find(e => e.id === empId)
+    const empName    = emp?.name || '—'
+    const dateLabel  = new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    const canMark    = (state === 'absent' || state === 'no-data') && iso < _toISO(new Date())
+
+    // Attendance row
+    let attRows = ''
+    if (att && !att.is_absent && att.punch_in) {
+      const isLate = att.late_minutes > 0
+      attRows += `
+        <div class="att-day-row"><span class="att-day-tag att-day-tag--present${isLate ? '" style="background:#FEE2E2;color:#B91C1C;' : ''}">Punch In${isLate ? ' · Late ' + att.late_minutes + ' min' : ''}</span><span>${att.punch_in.substring(0,5)}</span></div>
+        <div class="att-day-row"><span class="att-day-tag att-day-tag--present">Punch Out</span><span>${att.punch_out ? att.punch_out.substring(0,5) : '—'}</span></div>`
+    } else if (att?.is_absent) {
+      attRows += `<div class="att-day-row"><span class="att-day-tag" style="background:#FEE2E2;color:#B91C1C;">No Punch Recorded</span></div>`
+    } else {
+      attRows += `<div class="att-day-row"><span class="att-day-tag" style="background:var(--surface);color:var(--text-muted);">No Attendance Data</span></div>`
+    }
+
+    if (leave)    attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--leave">${leave.status === 'pending' ? 'Pending Leave' : 'On Leave'}</span><span>${Utils.escapeHtml(leave.name)}${leave.is_half_day ? ' (½ day)' : ''}</span></div>`
+    if (isWfh)   attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--wfh">WFH</span></div>`
+    if (cv)      attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--client-visit">Client Visit</span><span>${Utils.escapeHtml(cv.clients?.client_name || 'Client')}</span></div>`
+    if (holiday) attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--holiday">Holiday</span><span>${Utils.escapeHtml(holiday)}</span></div>`
+
+    // Mark as Leave section — fetch employee balance live
+    let markSection = ''
+    if (canMark) {
+      const year = new Date(iso).getFullYear()
+      const [creditsRes, takenRes] = await Promise.all([
+        API.getLeaveCredits(empId, year),
+        API.getAllLeaveRequests({ status: 'approved', employeeId: empId }),
+      ])
+      const credits  = creditsRes.data  || []
+      const taken    = (takenRes.data   || []).filter(r => new Date(r.start_date).getFullYear() === year)
+
+      // Build balance per leave type
+      const balMap = {}
+      credits.forEach(c => {
+        balMap[c.leave_type_id] = (balMap[c.leave_type_id] || 0) + Number(c.credited_days)
+      })
+      taken.forEach(r => {
+        balMap[r.leave_type_id] = (balMap[r.leave_type_id] || 0) - Number(r.days)
+      })
+
+      // Active leave types: unpaid always shown, others only if balance > 0
+      const eligibleTypes = (leaveTypes || _leaveTypes).filter(t =>
+        t.is_active && (t.is_unpaid || (balMap[t.id] || 0) > 0)
+      )
+
+      if (eligibleTypes.length) {
+        const opts = eligibleTypes.map(t => {
+          const bal = t.is_unpaid ? null : (balMap[t.id] || 0)
+          return `<option value="${t.id}">${Utils.escapeHtml(t.name)}${bal !== null ? ' (' + bal + ' days remaining)' : ' (Unpaid)'}</option>`
+        }).join('')
+
+        markSection = `
+          <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:10px;">Mark as Leave</div>
+            <div id="lt-mark-leave-err" class="alert alert--danger" style="display:none;margin-bottom:10px;font-size:13px;"></div>
+            <div style="display:flex;flex-direction:column;gap:10px;">
+              <select id="lt-mark-leave-type" class="form-control" style="font-size:13px;">${opts}</select>
+              <input id="lt-mark-leave-reason" class="form-input" type="text" placeholder="Reason (optional)" style="font-size:13px;">
+              <button class="btn btn--primary btn--sm" id="lt-mark-leave-confirm" style="align-self:flex-start;">Apply Leave</button>
+            </div>
+          </div>`
+      } else {
+        markSection = `
+          <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--text-muted);">
+            No leave balance available for this employee.
+          </div>`
+      }
+    }
+
+    const overlay = document.createElement('div')
+    overlay.id        = 'lt-team-day-overlay'
+    overlay.className = 'modal-overlay'
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:440px;">
+        <div class="modal-header" style="border-bottom:1px solid var(--border);padding-bottom:14px;margin-bottom:0;">
+          <div>
+            <h3 class="modal-title" style="font-size:15px;font-weight:700;margin:0;">${Utils.escapeHtml(empName)}</h3>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${dateLabel}</div>
+          </div>
+          <button class="btn btn--ghost btn--sm" id="lt-team-day-close" style="margin-left:auto;">${CLOSE_SVG}</button>
+        </div>
+        <div class="modal-body" style="padding:16px 0 4px;">
+          ${attRows}
+          ${markSection}
+        </div>
+      </div>
+    `
+
+    document.body.appendChild(overlay)
+    overlay.querySelector('#lt-team-day-close').addEventListener('click', () => overlay.remove())
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+
+    const confirmBtn = overlay.querySelector('#lt-mark-leave-confirm')
+    if (confirmBtn) {
+      confirmBtn.addEventListener('click', async () => {
+        const typeId = overlay.querySelector('#lt-mark-leave-type')?.value
+        const reason = overlay.querySelector('#lt-mark-leave-reason')?.value?.trim() || ''
+        const errEl  = overlay.querySelector('#lt-mark-leave-err')
+        if (!typeId) return
+
+        confirmBtn.disabled = true
+        confirmBtn.textContent = 'Saving…'
+
+        const { error } = await API.createLeaveRequest({
+          employee_id:  empId,
+          leave_type_id: typeId,
+          start_date:   iso,
+          end_date:     iso,
+          days:         1,
+          is_half_day:  false,
+          reason:       reason || 'Marked by HR',
+          status:       'approved',
+          approver_id:  _user.id,
+        })
+
+        if (error) {
+          if (errEl) { errEl.style.display = ''; errEl.textContent = error.message || 'Failed to save leave.' }
+          confirmBtn.disabled = false
+          confirmBtn.textContent = 'Apply Leave'
+          return
+        }
+
+        overlay.remove()
+        _loadTeamAttCal()
+      })
+    }
   }
 
   function _getMondayOf(date) {
