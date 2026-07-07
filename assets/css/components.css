@@ -6887,10 +6887,11 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 12px;
+  padding: 14px;
   overflow: hidden;
+  max-width: 420px;
 }
-.ts-missed-section--compact { padding: 10px; }
+.ts-missed-section--compact { padding: 12px; max-width: 360px; }
 .ts-missed-header {
   margin-bottom: 2px;
 }
