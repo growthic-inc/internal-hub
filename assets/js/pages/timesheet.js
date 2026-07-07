@@ -218,7 +218,7 @@ const Timesheet = (() => {
     const content = document.getElementById('ts-content')
     if (!content) return
 
-    const days = Array.from({ length: 6 }, (_, i) => {
+    const days = Array.from({ length: 7 }, (_, i) => {
       const d = new Date(_weekStart)
       d.setDate(d.getDate() + i)
       return d
@@ -361,6 +361,7 @@ const Timesheet = (() => {
     const isFuture  = iso > today
     const isLocked  = diffDays > 7
     const isHoliday = _isHoliday(iso)
+    const isSunday  = day.getDay() === 0
 
     // Leave / WFH status for this day.
     // Half-day leaves are intentionally NOT marked on the timesheet — the
@@ -374,8 +375,8 @@ const Timesheet = (() => {
     const cvDay          = _clientVisitForDay(iso, _myClientVisits)
     const cvHalf         = cvDay && cvDay.duration_type !== 'full_day'
 
-    // Warn for missing hours on past working days (leave and holiday days excluded).
-    const isPastNoEntry = !isToday && diffDays > 0 && diffDays <= 7 && dayEntries.length === 0 && !isFullLeaveDay && !isHoliday
+    // Warn for missing hours on past working days (leave, holiday, and Sunday excluded).
+    const isPastNoEntry = !isToday && diffDays > 0 && diffDays <= 7 && dayEntries.length === 0 && !isFullLeaveDay && !isHoliday && !isSunday
 
     // Determine day-level status
     const drafts    = dayEntries.filter(e => e.status === 'draft').length
@@ -395,8 +396,14 @@ const Timesheet = (() => {
     }
 
     let footerHtml = ''
-    if (isLocked) {
+    if (isLocked && (isSunday || isHoliday) && dayEntries.length === 0) {
+      footerHtml = isSunday
+        ? `<div class="ts-day-action ts-day-action--locked">Day Off</div>`
+        : `<div class="ts-day-action" style="background:#F0FDF4;color:#059669;border:none;cursor:default;">Holiday</div>`
+    } else if (isLocked) {
       footerHtml = `<div class="ts-day-action ts-day-action--locked">Locked</div>`
+    } else if (isSunday && dayEntries.length === 0) {
+      footerHtml = `<div class="ts-day-action" style="background:var(--surface-2,#F9FAFB);color:var(--text-muted);border:none;cursor:default;">Day Off</div>`
     } else if (isHoliday && dayEntries.length === 0) {
       footerHtml = `<div class="ts-day-action" style="background:#F0FDF4;color:#059669;border:none;cursor:default;">Holiday</div>`
     } else if (isFullLeaveDay && dayEntries.length === 0) {
@@ -412,24 +419,30 @@ const Timesheet = (() => {
     }
 
     return `
-      <div class="ts-col${isToday ? ' ts-col--today' : ''}${isLocked ? ' ts-col--locked' : ''}${isFullLeaveDay ? ' ts-col--leave' : ''}${isHoliday ? ' ts-col--holiday' : ''}">
+      <div class="ts-col${isToday ? ' ts-col--today' : ''}${isLocked ? ' ts-col--locked' : ''}${isFullLeaveDay ? ' ts-col--leave' : ''}${isHoliday ? ' ts-col--holiday' : ''}${isSunday ? ' ts-col--off' : ''}">
         <div class="ts-col-header">
           <div class="ts-col-top">
             <span class="ts-col-weekday">${day.toLocaleDateString('en-IN', { weekday:'short' }).toUpperCase()}</span>
-            <span class="ts-col-status-icon">${headerIcon}${isHoliday ? `<span style="font-size:9px;font-weight:600;background:#F0FDF4;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">Holiday</span>` : ''}${halfLeaveDay ? `<span style="font-size:9px;font-weight:600;background:#EEF2FF;color:#6366F1;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;" title="Half-day leave${halfLeavePeriod ? ' — ' + halfLeavePeriod : ''}">½ Leave</span>` : ''}${isWfhDay ? `<span style="font-size:9px;font-weight:600;background:#ECFDF5;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">WFH</span>` : ''}${cvDay ? `<span style="font-size:9px;font-weight:600;background:#E0F2FE;color:#0369A1;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">Visit</span>` : ''}</span>
+            <span class="ts-col-status-icon">${headerIcon}${isSunday ? `<span style="font-size:9px;font-weight:600;background:var(--surface-2,#F3F4F6);color:var(--text-muted);border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">Day Off</span>` : ''}${isHoliday ? `<span style="font-size:9px;font-weight:600;background:#F0FDF4;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">Holiday</span>` : ''}${halfLeaveDay ? `<span style="font-size:9px;font-weight:600;background:#EEF2FF;color:#6366F1;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;" title="Half-day leave${halfLeavePeriod ? ' — ' + halfLeavePeriod : ''}">½ Leave</span>` : ''}${isWfhDay ? `<span style="font-size:9px;font-weight:600;background:#ECFDF5;color:#059669;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">WFH</span>` : ''}${cvDay ? `<span style="font-size:9px;font-weight:600;background:#E0F2FE;color:#0369A1;border-radius:99px;padding:1px 6px;margin-left:2px;white-space:nowrap;">Visit</span>` : ''}</span>
           </div>
           <span class="ts-col-date${isToday ? ' ts-col-date--today' : ''}">${day.getDate()}</span>
           ${dayHours > 0 ? `<span class="ts-col-hours">${dayHours.toFixed(1)}h</span>` : ''}
         </div>
 
         <div class="ts-col-body">
-          ${isHoliday && dayEntries.length === 0 ? `
+          ${isSunday && dayEntries.length === 0 ? `
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:20px 8px;text-align:center;flex:1;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              <span style="font-size:11px;font-weight:600;color:var(--text-muted);">Day Off</span>
+            </div>
+          ` : ''}
+          ${!isSunday && isHoliday && dayEntries.length === 0 ? `
             <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:20px 8px;text-align:center;flex:1;">
               <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
               <span style="font-size:11px;font-weight:600;color:#059669;">Holiday</span>
             </div>
           ` : ''}
-          ${!isHoliday && isFullLeaveDay && dayEntries.length === 0 ? `
+          ${!isSunday && !isHoliday && isFullLeaveDay && dayEntries.length === 0 ? `
             <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:20px 8px;text-align:center;flex:1;">
               <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
               <span style="font-size:11px;font-weight:600;color:#6366F1;">On Leave</span>
@@ -437,8 +450,8 @@ const Timesheet = (() => {
             </div>
           ` : ''}
           ${cvHalf ? _cvContextBanner(cvDay) : ''}
-          ${(!isFullLeaveDay && !isHoliday) || dayEntries.length > 0 ? dayEntries.map(e => _renderCard(e)).join('') : ''}
-          ${_p.can_create && !isLocked && !isFuture && !isFullLeaveDay && !isHoliday ? `
+          ${(!isFullLeaveDay && !isHoliday && !isSunday) || dayEntries.length > 0 ? dayEntries.map(e => _renderCard(e)).join('') : ''}
+          ${_p.can_create && !isLocked && !isFuture && !isFullLeaveDay && !isHoliday && !isSunday ? `
             <button class="ts-add-btn" data-date="${iso}">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Entry
@@ -597,7 +610,7 @@ const Timesheet = (() => {
     ])
 
     const missed = _getMissedDays(y, m, monthEntries || [], (myLeaves?.leaves || []))
-    wrap.innerHTML = _renderMissedSection(missed, _missedNavMonth)
+    wrap.innerHTML = _renderMissedSection(missed, _missedNavMonth, null, null, true)
 
     wrap.querySelector('.ts-missed-prev')?.addEventListener('click', () => {
       _missedNavMonth = new Date(_missedNavMonth.getFullYear(), _missedNavMonth.getMonth() - 1, 1)
@@ -1421,7 +1434,7 @@ const Timesheet = (() => {
 
   /* ── Person: Week View sub-tab ───────────────────────────── */
   function _renderPersonWeekView(container) {
-    const days = Array.from({ length: 6 }, (_, i) => {
+    const days = Array.from({ length: 7 }, (_, i) => {
       const d = new Date(_teamPersonWeek)
       d.setDate(d.getDate() + i)
       return d
@@ -1468,6 +1481,32 @@ const Timesheet = (() => {
     const dayEntries = weekEntries.filter(e => e.date === iso)
     const isToday    = iso === today
     const dayHours   = dayEntries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+    const isSunday   = day.getDay() === 0
+    const isHoliday  = _isHoliday(iso)
+
+    if ((isSunday || isHoliday) && dayEntries.length === 0) {
+      const label = isSunday ? 'Day Off' : 'Holiday'
+      const color = isSunday ? 'var(--text-muted)' : '#059669'
+      const bg    = isSunday ? 'var(--surface-2,#F9FAFB)' : '#F0FDF4'
+      return `
+        <div class="ts-col${isToday ? ' ts-col--today' : ''}${isSunday ? ' ts-col--off' : ' ts-col--holiday'}">
+          <div class="ts-col-header">
+            <div class="ts-col-top">
+              <span class="ts-col-weekday">${day.toLocaleDateString('en-IN', { weekday:'short' }).toUpperCase()}</span>
+              <span class="ts-col-status-icon"><span style="font-size:9px;font-weight:600;background:${bg};color:${color};border-radius:99px;padding:1px 6px;white-space:nowrap;">${label}</span></span>
+            </div>
+            <span class="ts-col-date${isToday ? ' ts-col-date--today' : ''}">${day.getDate()}</span>
+          </div>
+          <div class="ts-col-body" style="align-items:center;justify-content:center;flex:1;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:20px 8px;text-align:center;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              <span style="font-size:11px;font-weight:600;color:${color};">${label}</span>
+            </div>
+          </div>
+          <div class="ts-col-footer"><div class="ts-day-action" style="background:${bg};color:${color};border:none;cursor:default;">${label}</div></div>
+        </div>
+      `
+    }
 
     // Leave / WFH status for this team member on this day.
     // Half-day leaves are treated as normal working days (employee logs the
@@ -2713,7 +2752,7 @@ const Timesheet = (() => {
     const d = String(date.getDate()).padStart(2, '0')
     return `${y}-${m}-${d}`
   }
-  function _weekEnd(ws)   { const e = new Date(ws); e.setDate(e.getDate() + 5); return e }
+  function _weekEnd(ws)   { const e = new Date(ws); e.setDate(e.getDate() + 6); return e }
   function _weekLabel(ws) {
     const opts = { month:'short', day:'numeric' }
     return `${ws.toLocaleDateString('en-IN', opts)} – ${_weekEnd(ws).toLocaleDateString('en-IN', { ...opts, year:'numeric' })}`

@@ -1579,10 +1579,10 @@
   align-items: start;
 }
 
-/* 6 day columns */
+/* 7 day columns (Mon–Sun) */
 .ts-day-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(7, 1fr);
   gap: 12px;
   align-items: start;
 }
@@ -1683,6 +1683,8 @@
 .ts-col--locked { opacity: .55; pointer-events: none; }
 .ts-col--locked .ts-col-body { background: repeating-linear-gradient(135deg, transparent, transparent 6px, rgba(0,0,0,.025) 6px, rgba(0,0,0,.025) 7px); }
 .ts-col--holiday .ts-col-body { background: rgba(5, 150, 105, 0.03); }
+.ts-col--off { opacity: .7; }
+.ts-col--off .ts-col-body { background: rgba(0,0,0,0.02); }
 
 /* Work-type toggle in entry modal */
 .ts-work-type-toggle {
@@ -1985,11 +1987,11 @@
   .ts-layout { grid-template-columns: 1fr; }
   .ts-sidebar { position: static; }
 }
-@media (max-width: 800px) {
-  .ts-day-grid { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 900px) {
+  .ts-day-grid { grid-template-columns: repeat(4, 1fr); }
 }
 @media (max-width: 560px) {
-  .ts-day-grid { grid-template-columns: 1fr 1fr; }
+  .ts-day-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -6937,7 +6939,7 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   font-weight: 500;
 }
 .ts-missed-cal-day--missed  { background: #FEE2E2; color: #B91C1C; font-weight: 700; }
-.ts-missed-cal-day--off     { background: var(--surface); color: var(--text-muted); }
+.ts-missed-cal-day--off     { background: rgba(0,0,0,0.05); color: var(--text-muted); }
 .ts-missed-cal-day--ok      { color: var(--text); }
 .ts-missed-legend {
   font-size: 11px;
