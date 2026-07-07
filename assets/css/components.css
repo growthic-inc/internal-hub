@@ -6885,6 +6885,7 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 14px;
+  overflow: hidden;
 }
 .ts-missed-section--compact { padding: 12px; }
 .ts-missed-header {
@@ -6916,7 +6917,7 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 .ts-missed-month-label {
   font-size: 12px;
   font-weight: 600;
-  min-width: 90px;
+  min-width: 76px;
   text-align: center;
 }
 .ts-missed-cal-grid {
