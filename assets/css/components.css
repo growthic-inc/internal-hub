@@ -6893,6 +6893,9 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 }
 .ts-missed-section--compact { padding: 12px; max-width: 360px; }
 .ts-missed-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 2px;
 }
 .ts-missed-kpi-value {
@@ -6911,10 +6914,8 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 .ts-missed-nav {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 4px;
-  width: 100%;
-  margin: 6px 0 8px;
+  flex-shrink: 0;
 }
 .ts-missed-month-label {
   font-size: 11px;

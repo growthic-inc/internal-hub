@@ -1066,13 +1066,13 @@ const Timesheet = (() => {
       <div class="ts-missed-section${compact ? ' ts-missed-section--compact' : ''}">
         <div class="ts-missed-header">
           <div class="ts-missed-kpi-value${missed.length > 0 ? ' ts-missed-kpi-value--alert' : ''}">${missed.length}</div>
-          <div class="ts-missed-kpi-label">Missed Timesheet Day${missed.length !== 1 ? 's' : ''}</div>
+          <div class="ts-missed-nav">
+            <button class="btn btn--ghost btn--xs ts-missed-prev">&lsaquo;</button>
+            <span class="ts-missed-month-label">${monthLabel}</span>
+            <button class="btn btn--ghost btn--xs ts-missed-next">&rsaquo;</button>
+          </div>
         </div>
-        <div class="ts-missed-nav">
-          <button class="btn btn--ghost btn--xs ts-missed-prev">&lsaquo;</button>
-          <span class="ts-missed-month-label">${monthLabel}</span>
-          <button class="btn btn--ghost btn--xs ts-missed-next">&rsaquo;</button>
-        </div>
+        <div class="ts-missed-kpi-label">Missed Timesheet Day${missed.length !== 1 ? 's' : ''}</div>
         <div class="ts-missed-calendar">
           <div class="ts-missed-cal-grid">
             ${dayHeaders}
