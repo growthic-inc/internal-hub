@@ -1864,7 +1864,7 @@ const API = (() => {
       .eq('is_exempted', true)
   }
 
-  async function applyAttendanceExemption(empId, date, reason, exemptedBy) {
+  async function applyAttendanceExemption(empId, date, reason, exemptedBy, punchIn, punchOut, lateMinutes) {
     const { data: existing } = await supabase
       .from('employee_attendance')
       .select('id')
@@ -1872,20 +1872,29 @@ const API = (() => {
       .eq('date', date)
       .maybeSingle()
 
+    const updates = {
+      is_exempted: true,
+      exemption_reason: reason || null,
+      exempted_by: exemptedBy,
+      late_minutes: lateMinutes ?? 0,
+    }
+    if (punchIn  != null) { updates.punch_in  = punchIn;  updates.is_absent = false }
+    if (punchOut != null) { updates.punch_out = punchOut; updates.is_absent = false }
+
     if (existing) {
       return supabase.from('employee_attendance')
-        .update({ is_exempted: true, exemption_reason: reason || null, exempted_by: exemptedBy })
+        .update(updates)
         .eq('employee_id', empId)
         .eq('date', date)
     }
     return supabase.from('employee_attendance').insert({
       employee_id: empId,
       date,
-      punch_in: null,
-      punch_out: null,
-      late_minutes: 0,
+      punch_in: punchIn || null,
+      punch_out: punchOut || null,
+      late_minutes: lateMinutes ?? 0,
       early_leave_minutes: 0,
-      is_absent: true,
+      is_absent: punchIn == null && punchOut == null,
       is_exempted: true,
       exemption_reason: reason || null,
       exempted_by: exemptedBy,

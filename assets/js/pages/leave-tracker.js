@@ -730,12 +730,28 @@ const LeaveTracker = (() => {
           ${att.exemption_reason ? `<div style="font-size:13px;color:var(--text-muted);margin-top:4px;">${Utils.escapeHtml(att.exemption_reason)}</div>` : ''}
         </div>`
     } else if (isExemptEligible && exemptCount < 4) {
+      const preIn  = att?.punch_in  ? att.punch_in.slice(0, 5)  : ''
+      const preOut = att?.punch_out ? att.punch_out.slice(0, 5) : ''
       exemptSectionHtml = `
         <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px;">
           <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:8px;">Log Correction (${4 - exemptCount} of 4 remaining)</div>
           <div id="att-exempt-err" class="alert alert--danger" style="display:none;margin-bottom:8px;"></div>
           <div style="display:flex;flex-direction:column;gap:8px;">
-            <input class="form-input" type="text" id="att-exempt-reason" placeholder="Reason for correction (optional)" style="font-size:13px;">
+            <select id="att-exempt-type" class="form-control" style="font-size:13px;">
+              <option value="">Select what to correct…</option>
+              <option value="punch_in">Punch In</option>
+              <option value="punch_out">Punch Out</option>
+              <option value="both">Punch In &amp; Punch Out</option>
+            </select>
+            <div id="att-exempt-in-wrap" style="display:none;">
+              <label style="font-size:12px;color:var(--text-muted);margin-bottom:4px;display:block;">Corrected Punch In</label>
+              <input type="time" id="att-exempt-in" class="form-input" value="${preIn}" style="font-size:13px;">
+            </div>
+            <div id="att-exempt-out-wrap" style="display:none;">
+              <label style="font-size:12px;color:var(--text-muted);margin-bottom:4px;display:block;">Corrected Punch Out</label>
+              <input type="time" id="att-exempt-out" class="form-input" value="${preOut}" style="font-size:13px;">
+            </div>
+            <input class="form-input" type="text" id="att-exempt-reason" placeholder="Reason" style="font-size:13px;">
             <button class="btn btn--primary btn--sm" id="att-exempt-submit" style="align-self:flex-start;">Apply Correction</button>
           </div>
           <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">No approval needed · marks this day as corrected.</div>
@@ -799,12 +815,37 @@ const LeaveTracker = (() => {
 
     // Wire up exemption handler
     if (isExemptEligible && !att?.is_exempted && exemptCount < 4) {
+      // Show/hide time fields based on type selection
+      document.getElementById('att-exempt-type')?.addEventListener('change', e => {
+        const v = e.target.value
+        document.getElementById('att-exempt-in-wrap').style.display  = (v === 'punch_in'  || v === 'both') ? 'block' : 'none'
+        document.getElementById('att-exempt-out-wrap').style.display = (v === 'punch_out' || v === 'both') ? 'block' : 'none'
+      })
+
       document.getElementById('att-exempt-submit')?.addEventListener('click', async () => {
+        const type   = document.getElementById('att-exempt-type')?.value
         const reason = document.getElementById('att-exempt-reason')?.value?.trim() || ''
         const errEl  = document.getElementById('att-exempt-err')
         const btn    = document.getElementById('att-exempt-submit')
+
+        if (!type) { errEl.style.display = ''; errEl.textContent = 'Please select what you are correcting.'; return }
+
+        const punchIn  = (type === 'punch_in'  || type === 'both') ? document.getElementById('att-exempt-in')?.value  : null
+        const punchOut = (type === 'punch_out' || type === 'both') ? document.getElementById('att-exempt-out')?.value : null
+        if ((type === 'punch_in'  || type === 'both') && !punchIn)  { errEl.style.display = ''; errEl.textContent = 'Please enter the corrected punch in time.'; return }
+        if ((type === 'punch_out' || type === 'both') && !punchOut) { errEl.style.display = ''; errEl.textContent = 'Please enter the corrected punch out time.'; return }
+
+        // Recalculate late_minutes if punch_in is being set
+        let lateMins = att?.late_minutes ?? 0
+        if (punchIn) {
+          const [th, tm] = (_lateThreshold || '10:30').split(':').map(Number)
+          const [ph, pm] = punchIn.split(':').map(Number)
+          lateMins = Math.max(0, (ph * 60 + pm) - (th * 60 + tm))
+        }
+
+        errEl.style.display = 'none'
         btn.disabled = true; btn.textContent = 'Saving…'
-        const { error } = await API.applyAttendanceExemption(_user.id, dateISO, reason, _user.id)
+        const { error } = await API.applyAttendanceExemption(_user.id, dateISO, reason, _user.id, punchIn || null, punchOut || null, lateMins)
         if (error) {
           errEl.style.display = ''; errEl.textContent = error.message
           btn.disabled = false; btn.textContent = 'Apply Correction'
@@ -3372,12 +3413,28 @@ const LeaveTracker = (() => {
       // Grant Exemption section
       if (canExempt) {
         if (empExemptCount < 4) {
+          const preIn  = att?.punch_in  ? att.punch_in.slice(0, 5)  : ''
+          const preOut = att?.punch_out ? att.punch_out.slice(0, 5) : ''
           markSection += `
             <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
               <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:8px;">Grant Correction (${empExemptCount} of 4 used)</div>
               <div id="lt-exempt-err" class="alert alert--danger" style="display:none;margin-bottom:8px;font-size:13px;"></div>
               <div style="display:flex;flex-direction:column;gap:8px;">
-                <input id="lt-exempt-reason" class="form-input" type="text" placeholder="Reason (optional)" style="font-size:13px;">
+                <select id="lt-exempt-type" class="form-control" style="font-size:13px;">
+                  <option value="">Select what to correct…</option>
+                  <option value="punch_in">Punch In</option>
+                  <option value="punch_out">Punch Out</option>
+                  <option value="both">Punch In &amp; Punch Out</option>
+                </select>
+                <div id="lt-exempt-in-wrap" style="display:none;">
+                  <label style="font-size:12px;color:var(--text-muted);margin-bottom:4px;display:block;">Corrected Punch In</label>
+                  <input type="time" id="lt-exempt-in" class="form-input" value="${preIn}" style="font-size:13px;">
+                </div>
+                <div id="lt-exempt-out-wrap" style="display:none;">
+                  <label style="font-size:12px;color:var(--text-muted);margin-bottom:4px;display:block;">Corrected Punch Out</label>
+                  <input type="time" id="lt-exempt-out" class="form-input" value="${preOut}" style="font-size:13px;">
+                </div>
+                <input id="lt-exempt-reason" class="form-input" type="text" placeholder="Reason" style="font-size:13px;">
                 <button class="btn btn--ghost btn--sm" id="lt-exempt-confirm" style="align-self:flex-start;">Grant Correction</button>
               </div>
               <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">No leave deduction · marks day as corrected.</div>
@@ -3447,13 +3504,39 @@ const LeaveTracker = (() => {
     overlay.querySelector('#lt-team-day-close').addEventListener('click', () => overlay.remove())
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
 
+    const exemptTypeEl = overlay.querySelector('#lt-exempt-type')
+    if (exemptTypeEl) {
+      exemptTypeEl.addEventListener('change', e => {
+        const v = e.target.value
+        overlay.querySelector('#lt-exempt-in-wrap').style.display  = (v === 'punch_in'  || v === 'both') ? 'block' : 'none'
+        overlay.querySelector('#lt-exempt-out-wrap').style.display = (v === 'punch_out' || v === 'both') ? 'block' : 'none'
+      })
+    }
+
     const exemptBtn = overlay.querySelector('#lt-exempt-confirm')
     if (exemptBtn) {
       exemptBtn.addEventListener('click', async () => {
+        const type   = overlay.querySelector('#lt-exempt-type')?.value
         const reason = overlay.querySelector('#lt-exempt-reason')?.value?.trim() || ''
         const errEl  = overlay.querySelector('#lt-exempt-err')
+
+        if (!type) { if (errEl) { errEl.style.display = ''; errEl.textContent = 'Please select what you are correcting.' } return }
+
+        const punchIn  = (type === 'punch_in'  || type === 'both') ? overlay.querySelector('#lt-exempt-in')?.value  : null
+        const punchOut = (type === 'punch_out' || type === 'both') ? overlay.querySelector('#lt-exempt-out')?.value : null
+        if ((type === 'punch_in'  || type === 'both') && !punchIn)  { if (errEl) { errEl.style.display = ''; errEl.textContent = 'Please enter the corrected punch in time.' } return }
+        if ((type === 'punch_out' || type === 'both') && !punchOut) { if (errEl) { errEl.style.display = ''; errEl.textContent = 'Please enter the corrected punch out time.' } return }
+
+        let lateMins = att?.late_minutes ?? 0
+        if (punchIn) {
+          const [th, tm] = (_lateThreshold || '10:30').split(':').map(Number)
+          const [ph, pm] = punchIn.split(':').map(Number)
+          lateMins = Math.max(0, (ph * 60 + pm) - (th * 60 + tm))
+        }
+
+        if (errEl) errEl.style.display = 'none'
         exemptBtn.disabled = true; exemptBtn.textContent = 'Saving…'
-        const { error } = await API.applyAttendanceExemption(empId, iso, reason, _user.id)
+        const { error } = await API.applyAttendanceExemption(empId, iso, reason, _user.id, punchIn || null, punchOut || null, lateMins)
         if (error) {
           if (errEl) { errEl.style.display = ''; errEl.textContent = error.message || 'Failed to save.' }
           exemptBtn.disabled = false; exemptBtn.textContent = 'Grant Correction'
