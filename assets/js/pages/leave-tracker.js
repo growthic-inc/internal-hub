@@ -697,6 +697,10 @@ const LeaveTracker = (() => {
     const att       = maps.attMap[dateISO]
     const dayEvents = maps.eventMap[dateISO] || []
 
+    // Always fetch a fresh count so stale closures or external DB changes can't bypass the limit
+    const freshRes = await API.getMonthlyExemptionCount(_user.id, dateISO.slice(0, 7))
+    exemptCount = freshRes.count || 0
+
     // Build the "what's on this day" summary
     const items = []
     if (holiday) items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--holiday">Holiday</span><span>${Utils.escapeHtml(holiday)}</span></div>`)
