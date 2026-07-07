@@ -6937,7 +6937,7 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   font-weight: 500;
 }
 .ts-missed-cal-day--missed  { background: #FEE2E2; color: #B91C1C; font-weight: 700; }
-.ts-missed-cal-day--off     { color: var(--text-muted); }
+.ts-missed-cal-day--off     { background: var(--surface); color: var(--text-muted); }
 .ts-missed-cal-day--ok      { color: var(--text); }
 .ts-missed-legend {
   font-size: 11px;

@@ -1010,8 +1010,8 @@ const Timesheet = (() => {
     for (let d = 1; d <= daysInMonth; d++) {
       const date = new Date(year, month - 1, d)
       if (date > cutoff) continue               // still within editable window
-      const iso = date.toISOString().slice(0, 10)
       if (date.getDay() === 0) continue          // Sunday
+      const iso = _toISO(date)                  // use local time (not UTC) to match stored entry dates
       if (_isHoliday(iso)) continue              // company holiday
       if (_isFullLeaveDay(iso, leaves)) continue // approved full-day leave
       if (!entryDates.has(iso)) missed.push(iso)
