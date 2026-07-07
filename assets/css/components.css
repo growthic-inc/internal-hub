@@ -6889,11 +6889,7 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 }
 .ts-missed-section--compact { padding: 12px; }
 .ts-missed-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-  gap: 8px;
+  margin-bottom: 4px;
 }
 .ts-missed-kpi-value {
   font-size: 28px;
@@ -6911,13 +6907,15 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 .ts-missed-nav {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  flex-shrink: 0;
+  width: 100%;
+  margin: 8px 0 10px;
 }
 .ts-missed-month-label {
   font-size: 12px;
   font-weight: 600;
-  min-width: 76px;
+  min-width: 90px;
   text-align: center;
 }
 .ts-missed-cal-grid {
