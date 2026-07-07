@@ -403,7 +403,7 @@ const LeaveTracker = (() => {
       API.getMonthlyExemptionCount(_user.id, yearMonth),
     ])
     _attendanceRecords = attRes.data || []
-    const exemptCount = exemptRes.count || 0
+    const exemptCount = exemptRes.data?.length ?? 0
 
     const monthLabel = _attendanceMonth.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
     const today = _toISO(new Date())
@@ -699,7 +699,7 @@ const LeaveTracker = (() => {
 
     // Always fetch a fresh count so stale closures or external DB changes can't bypass the limit
     const freshRes = await API.getMonthlyExemptionCount(_user.id, dateISO.slice(0, 7))
-    exemptCount = freshRes.count || 0
+    exemptCount = freshRes.data?.length ?? 0
 
     // Build the "what's on this day" summary
     const items = []
@@ -3447,7 +3447,7 @@ const LeaveTracker = (() => {
         fetchItems.push(API.getAllLeaveRequests({ status: 'approved', employeeId: empId }))
       }
       const [exemptRes, creditsRes, takenRes] = await Promise.all(fetchItems)
-      const empExemptCount = exemptRes.count || 0
+      const empExemptCount = exemptRes.data?.length ?? 0
 
       // Grant Exemption section
       if (canExempt) {
