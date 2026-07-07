@@ -1579,11 +1579,11 @@
   align-items: start;
 }
 
-/* 7 day columns (Mon–Sun) */
+/* 6 day columns (Mon–Sat) */
 .ts-day-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
   align-items: start;
 }
 
@@ -1603,7 +1603,7 @@
 }
 
 .ts-col-header {
-  padding: 12px 12px 10px;
+  padding: 10px 10px 8px;
   border-bottom: 1px solid var(--border-light);
   background: var(--surface);
 }
@@ -1659,13 +1659,16 @@
 .ts-day-action {
   width: 100%;
   text-align: center;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  padding: 7px 0;
+  padding: 6px 4px;
   border-radius: 8px;
   border: none;
   cursor: default;
   display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ts-day-action--submit {
   background: var(--primary);
