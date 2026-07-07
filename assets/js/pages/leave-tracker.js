@@ -34,6 +34,7 @@ const LeaveTracker = (() => {
   let _canViewTeamAtt       = false     // view_team_attendance access
   let _teamAttMonth         = null      // Date: first of month for team attendance view
   let _teamAttEmpId         = null      // employee id selected in team attendance view
+  let _visFilterMonth       = 0         // 0 = full year, 1-12 = specific month for Visibility tab
   let _lateThreshold        = '10:30'   // HH:MM from app_settings
   let _lateEffectiveFrom    = ''        // YYYY-MM from app_settings
 
@@ -3184,39 +3185,118 @@ const LeaveTracker = (() => {
       return
     }
 
-    // Filter requests to current year only
+    // All approved requests for the current year
     const yearRequests = allRequests.filter(r =>
-      new Date(r.start_date).getFullYear() === currentYear
+      new Date(r.start_date).getFullYear() === currentYear ||
+      new Date(r.end_date).getFullYear() === currentYear
     )
 
-    // Build balance map: empId → typeId → { credited, taken }
-    const balanceMap = {}
-    allCredits.forEach(c => {
-      if (!balanceMap[c.employee_id]) balanceMap[c.employee_id] = {}
-      if (!balanceMap[c.employee_id][c.leave_type_id])
-        balanceMap[c.employee_id][c.leave_type_id] = { credited: 0, taken: 0 }
-      balanceMap[c.employee_id][c.leave_type_id].credited += Number(c.credited_days)
-    })
-    yearRequests.forEach(r => {
-      if (!balanceMap[r.employee_id]) balanceMap[r.employee_id] = {}
-      if (!balanceMap[r.employee_id][r.leave_type_id])
-        balanceMap[r.employee_id][r.leave_type_id] = { credited: 0, taken: 0 }
-      balanceMap[r.employee_id][r.leave_type_id].taken += Number(r.days)
-    })
+    // Filter by selected month (for "Taken" column only; Remaining is always annual)
+    const getFilteredRequests = () => {
+      if (!_visFilterMonth) return yearRequests
+      const mStr   = String(_visFilterMonth).padStart(2, '0')
+      const mStart = `${currentYear}-${mStr}-01`
+      const mEnd   = _toISO(new Date(currentYear, _visFilterMonth, 0))
+      return yearRequests.filter(r => r.start_date <= mEnd && r.end_date >= mStart)
+    }
 
-    const activeEmps = _employees
-      .filter(e => e.status === 'active')
-      .sort((a, b) => a.name.localeCompare(b.name))
+    const _rebuildTable = () => {
+      const filtered = getFilteredRequests()
+
+      // Annual balance map: empId → typeId → { credited, annualTaken }
+      const balanceMap = {}
+      allCredits.forEach(c => {
+        if (!balanceMap[c.employee_id]) balanceMap[c.employee_id] = {}
+        if (!balanceMap[c.employee_id][c.leave_type_id])
+          balanceMap[c.employee_id][c.leave_type_id] = { credited: 0, annualTaken: 0 }
+        balanceMap[c.employee_id][c.leave_type_id].credited += Number(c.credited_days)
+      })
+      yearRequests.forEach(r => {
+        if (!balanceMap[r.employee_id]) balanceMap[r.employee_id] = {}
+        if (!balanceMap[r.employee_id][r.leave_type_id])
+          balanceMap[r.employee_id][r.leave_type_id] = { credited: 0, annualTaken: 0 }
+        balanceMap[r.employee_id][r.leave_type_id].annualTaken += Number(r.days)
+      })
+
+      // Filtered taken map: empId → typeId → days taken in selected period
+      const filteredTakenMap = {}
+      filtered.forEach(r => {
+        if (!filteredTakenMap[r.employee_id]) filteredTakenMap[r.employee_id] = {}
+        filteredTakenMap[r.employee_id][r.leave_type_id] =
+          (filteredTakenMap[r.employee_id][r.leave_type_id] || 0) + Number(r.days)
+      })
+
+      const activeEmps = _employees
+        .filter(e => e.status === 'active')
+        .sort((a, b) => a.name.localeCompare(b.name))
+
+      const tbody = document.getElementById('lt-vis-tbody')
+      if (!tbody) return
+
+      tbody.innerHTML = activeEmps.map(emp => {
+        const empBal     = balanceMap[emp.id] || {}
+        const empFiltered = filteredTakenMap[emp.id] || {}
+        return `
+          <tr>
+            <td class="lt-vis-td-sticky">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div class="lt-vis-avatar">
+                  ${emp.profile_image_url
+                    ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
+                    : Utils.getInitials(emp.name || '?')}
+                </div>
+                <span style="font-size:13px;font-weight:500;">${Utils.escapeHtml(emp.name)}</span>
+              </div>
+            </td>
+            <td style="font-size:12px;color:var(--text-muted);">${Utils.escapeHtml(Utils.getDeptLabel(emp.department) || emp.department || '—')}</td>
+            ${allTypes.map(t => {
+              const b        = empBal[t.id]
+              const taken    = empFiltered[t.id] || 0
+              if (!b || b.credited === 0) return `<td class="lt-vis-cell lt-vis-cell--na">—</td><td class="lt-vis-cell lt-vis-cell--na">—</td>`
+              const remaining = b.credited - b.annualTaken
+              const remCls    = remaining < 0 ? 'lt-vis-neg' : remaining === 0 ? 'lt-vis-zero' : 'lt-vis-pos'
+              const takenHtml = taken > 0
+                ? `<span class="lt-vis-taken-link" data-emp-id="${emp.id}" data-emp-name="${Utils.escapeHtml(emp.name)}" data-type-id="${t.id}" data-type-name="${Utils.escapeHtml(t.name)}" title="Click to see dates">${taken}</span>`
+                : `<span style="color:var(--text-muted);">0</span>`
+              return `
+                <td class="lt-vis-cell">${takenHtml}</td>
+                <td class="lt-vis-cell ${remCls}">${remaining}</td>
+              `
+            }).join('')}
+          </tr>
+        `
+      }).join('')
+
+      // Wire click on taken links
+      tbody.querySelectorAll('.lt-vis-taken-link').forEach(el => {
+        el.addEventListener('click', () => {
+          const empId   = el.dataset.empId
+          const typeId  = el.dataset.typeId
+          const empName = el.dataset.empName
+          const typeName = el.dataset.typeName
+          const reqs = filtered.filter(r => r.employee_id === empId && r.leave_type_id === typeId)
+          _openLeaveDetailModal(empName, typeName, reqs)
+        })
+      })
+    }
+
+    const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+    const activeEmps = _employees.filter(e => e.status === 'active')
 
     content.innerHTML = `
       <div class="section-card">
-        <div class="section-card-header">
+        <div class="section-card-header" style="justify-content:space-between;align-items:center;gap:12px;">
           <div>
             <h3 style="margin:0;">Leave Balance Visibility — ${currentYear}</h3>
             <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">
               ${activeEmps.length} active employee${activeEmps.length !== 1 ? 's' : ''} · ${allTypes.length} leave type${allTypes.length !== 1 ? 's' : ''}
             </div>
           </div>
+          <select id="lt-vis-month-filter" class="form-control" style="width:160px;font-size:13px;flex-shrink:0;">
+            <option value="0"${_visFilterMonth === 0 ? ' selected' : ''}>Full Year ${currentYear}</option>
+            ${MONTHS.map((m, i) => `<option value="${i+1}"${_visFilterMonth === i+1 ? ' selected' : ''}>${m}</option>`).join('')}
+          </select>
         </div>
         <div class="section-card-body" style="padding:0;overflow-x:auto;">
           <table class="data-table lt-vis-table">
@@ -3224,58 +3304,70 @@ const LeaveTracker = (() => {
               <tr>
                 <th class="lt-vis-th-sticky lt-vis-th-emp">Employee</th>
                 <th class="lt-vis-th-dept">Department</th>
-                ${allTypes.map(t => `
-                  <th class="lt-vis-th-type" colspan="2">${Utils.escapeHtml(t.name)}</th>
-                `).join('')}
+                ${allTypes.map(t => `<th class="lt-vis-th-type" colspan="2">${Utils.escapeHtml(t.name)}</th>`).join('')}
               </tr>
               <tr class="lt-vis-subrow">
                 <th class="lt-vis-th-sticky"></th>
                 <th></th>
-                ${allTypes.map(() => `
-                  <th class="lt-vis-sub">Taken</th>
-                  <th class="lt-vis-sub">Remaining</th>
-                `).join('')}
+                ${allTypes.map(() => `<th class="lt-vis-sub">Taken</th><th class="lt-vis-sub">Remaining</th>`).join('')}
               </tr>
             </thead>
-            <tbody>
-              ${activeEmps.map(emp => {
-                const empBal = balanceMap[emp.id] || {}
-                return `
-                  <tr>
-                    <td class="lt-vis-td-sticky">
-                      <div style="display:flex;align-items:center;gap:8px;">
-                        <div class="lt-vis-avatar">
-                          ${emp.profile_image_url
-                            ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
-                            : Utils.getInitials(emp.name || '?')}
-                        </div>
-                        <span style="font-size:13px;font-weight:500;">${Utils.escapeHtml(emp.name)}</span>
-                      </div>
-                    </td>
-                    <td style="font-size:12px;color:var(--text-muted);">${Utils.escapeHtml(Utils.getDeptLabel(emp.department) || emp.department || '—')}</td>
-                    ${allTypes.map(t => {
-                      const b = empBal[t.id]
-                      if (!b || b.credited === 0) {
-                        return `
-                          <td class="lt-vis-cell lt-vis-cell--na">—</td>
-                          <td class="lt-vis-cell lt-vis-cell--na">—</td>
-                        `
-                      }
-                      const remaining = b.credited - b.taken
-                      const remCls    = remaining < 0 ? 'lt-vis-neg' : remaining === 0 ? 'lt-vis-zero' : 'lt-vis-pos'
-                      return `
-                        <td class="lt-vis-cell">${b.taken || 0}</td>
-                        <td class="lt-vis-cell ${remCls}">${remaining}</td>
-                      `
-                    }).join('')}
-                  </tr>
-                `
-              }).join('')}
-            </tbody>
+            <tbody id="lt-vis-tbody"></tbody>
+          </table>
+        </div>
+        <div style="padding:8px 16px;font-size:11px;color:var(--text-muted);border-top:1px solid var(--border);">
+          Taken reflects the selected period. Remaining is always the annual balance.
+          Click any taken number to see exact dates.
+        </div>
+      </div>
+    `
+
+    _rebuildTable()
+
+    document.getElementById('lt-vis-month-filter')?.addEventListener('change', e => {
+      _visFilterMonth = Number(e.target.value)
+      _rebuildTable()
+    })
+  }
+
+  function _openLeaveDetailModal(empName, typeName, requests) {
+    const existing = document.getElementById('lt-leave-detail-overlay')
+    if (existing) existing.remove()
+
+    const overlay = document.createElement('div')
+    overlay.id        = 'lt-leave-detail-overlay'
+    overlay.className = 'modal-overlay'
+
+    const rows = requests.length
+      ? requests.sort((a, b) => a.start_date.localeCompare(b.start_date)).map(r => `
+          <tr>
+            <td style="font-size:13px;">${Utils.formatDate(r.start_date)}${r.start_date !== r.end_date ? ' – ' + Utils.formatDate(r.end_date) : ''}</td>
+            <td style="font-size:13px;">${r.days} day${r.days !== 1 ? 's' : ''}${r.is_half_day ? ' (½)' : ''}</td>
+            <td style="font-size:12px;color:var(--text-muted);max-width:200px;word-break:break-word;">${Utils.escapeHtml(r.reason || '—')}</td>
+          </tr>`).join('')
+      : `<tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:16px;">No leaves found for this period.</td></tr>`
+
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:520px;">
+        <div class="modal-header" style="border-bottom:1px solid var(--border);padding-bottom:14px;margin-bottom:0;">
+          <div>
+            <h3 class="modal-title" style="font-size:15px;font-weight:700;margin:0;">${Utils.escapeHtml(empName)}</h3>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${Utils.escapeHtml(typeName)}</div>
+          </div>
+          <button class="btn btn--ghost btn--sm" id="lt-leave-detail-close" style="margin-left:auto;">${CLOSE_SVG}</button>
+        </div>
+        <div class="modal-body" style="padding:16px 0 4px;max-height:400px;overflow-y:auto;">
+          <table class="data-table">
+            <thead><tr><th>Dates</th><th>Days</th><th>Reason</th></tr></thead>
+            <tbody>${rows}</tbody>
           </table>
         </div>
       </div>
     `
+
+    document.body.appendChild(overlay)
+    overlay.querySelector('#lt-leave-detail-close').addEventListener('click', () => overlay.remove())
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
   }
 
   /* ══════════════════════════════════════════════════════════

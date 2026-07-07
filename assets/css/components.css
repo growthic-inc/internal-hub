@@ -3306,6 +3306,14 @@
 .lt-vis-pos  { color: #16a34a; font-weight: 600; }
 .lt-vis-zero { color: var(--text-muted); }
 .lt-vis-neg  { color: var(--danger); font-weight: 600; }
+.lt-vis-taken-link {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.lt-vis-taken-link:hover { color: var(--primary-dark, var(--primary)); text-decoration: underline; }
 
 .lt-vis-avatar {
   width: 28px;
