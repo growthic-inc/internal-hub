@@ -218,7 +218,7 @@ const Timesheet = (() => {
     const content = document.getElementById('ts-content')
     if (!content) return
 
-    const days = Array.from({ length: 7 }, (_, i) => {
+    const days = Array.from({ length: 6 }, (_, i) => {
       const d = new Date(_weekStart)
       d.setDate(d.getDate() + i)
       return d
@@ -1433,7 +1433,7 @@ const Timesheet = (() => {
 
   /* ── Person: Week View sub-tab ───────────────────────────── */
   function _renderPersonWeekView(container) {
-    const days = Array.from({ length: 7 }, (_, i) => {
+    const days = Array.from({ length: 6 }, (_, i) => {
       const d = new Date(_teamPersonWeek)
       d.setDate(d.getDate() + i)
       return d
