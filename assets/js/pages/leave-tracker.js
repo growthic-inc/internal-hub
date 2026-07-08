@@ -900,14 +900,22 @@ const LeaveTracker = (() => {
             return `<option value="${t.id}">${Utils.escapeHtml(t.name)}${bal !== null ? ' (' + bal + ' days remaining)' : ' (Unpaid)'}</option>`
           }).join('')
           wrap.innerHTML = `
-            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:6px;">Apply Leave (Corrections Exhausted)</div>
-            <div style="font-size:12px;color:#DC2626;margin-bottom:4px;">All 4 corrections used this month. This request will go to your manager for approval.</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Priority: CL → EL → Unpaid &nbsp;·&nbsp; Deduction: <strong>${deductLabel}</strong>${isHalfDay ? ' — late or missing punch' : ' — full day absent'}</div>
-            <div id="att-exempt-err" class="alert alert--danger" style="display:none;margin-bottom:8px;"></div>
-            <div style="display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+              <span style="font-size:13px;font-weight:700;color:var(--text);">Apply Leave</span>
+              <span style="font-size:11px;font-weight:600;background:#FEE2E2;color:#B91C1C;padding:2px 8px;border-radius:20px;">4/4 corrections used</span>
+            </div>
+            <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+              <span style="font-size:12px;color:var(--text-muted);">Priority: <strong style="color:var(--text);">CL → EL → Unpaid</strong></span>
+              <span style="font-size:12px;color:var(--text-muted);">Deduction: <strong style="color:${isHalfDay ? '#D97706' : '#DC2626'};">${deductLabel}</strong></span>
+            </div>
+            <div id="att-exempt-err" class="alert alert--danger" style="display:none;margin-bottom:10px;"></div>
+            <div style="display:flex;flex-direction:column;gap:10px;">
               <select id="att-exempt-lt" class="form-control" style="font-size:13px;">${opts}</select>
               <input class="form-input" type="text" id="att-exempt-reason" placeholder="Reason (optional)" style="font-size:13px;">
-              <button class="btn btn--primary btn--sm" id="att-exempt-submit" style="align-self:flex-start;">Submit for Approval</button>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <button class="btn btn--primary btn--sm" id="att-exempt-submit">Submit for Approval</button>
+                <span style="font-size:11px;color:var(--text-muted);">Goes to your manager</span>
+              </div>
             </div>`
           document.getElementById('att-exempt-submit')?.addEventListener('click', async () => {
             const typeId = document.getElementById('att-exempt-lt')?.value
