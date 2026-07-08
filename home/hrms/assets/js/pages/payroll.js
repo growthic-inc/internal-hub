@@ -569,9 +569,9 @@ const Payroll = (() => {
 
     // Deduction breakdown / override
     content.querySelectorAll('[data-open-ded]').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const rec = _procRecords.find(r => r.id === btn.dataset.openDed)
-        if (rec) _openDeductionModal(rec)
+        if (rec) await _openDeductionModal(rec)
       })
     })
   }
@@ -682,22 +682,61 @@ const Payroll = (() => {
     })
   }
 
-  /* ── Deduction breakdown + override modal ────────────────── */
-  function _openDeductionModal(rec) {
-    const emp       = rec.employee || {}
-    const monthly   = Number(rec.monthly_salary)
-    const perDay    = Math.round(monthly / 30)
-    const unpaidDays = rec.unpaid_leave_days || 0
-    const autoCalc  = Math.round(perDay * unpaidDays)
+  /* ── Deduction breakdown + history + override modal ─────── */
+  async function _openDeductionModal(rec) {
+    const emp        = rec.employee || {}
+    const monthly    = Number(rec.monthly_salary)
+    const perDay     = monthly / 30
+    const unpaidDays = Number(rec.unpaid_leave_days   || 0)
+    const missedDays = Number(rec.missed_timesheet_days || 0)
+    const totalDays  = unpaidDays + missedDays
+    const autoCalc   = Math.round(perDay * totalDays)
+    const isOverridden = Math.abs(Number(rec.deductions) - autoCalc) > 1
+
+    // Fetch audit history with changer name
+    const { data: logs } = await Config.supabase
+      .from('payroll_audit_log')
+      .select('*, changer:employees!changed_by(name)')
+      .eq('payroll_record_id', rec.id)
+      .eq('field_name', 'deductions')
+      .order('changed_at', { ascending: true })
+
+    const historyRows = (logs || []).map(l => {
+      const who  = l.changer?.name || 'HR'
+      const when = new Date(l.changed_at).toLocaleString('en-IN', {
+        day: 'numeric', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      })
+      return `
+        <div style="display:grid;grid-template-columns:1.2fr 0.8fr 0.8fr 1.5fr;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);font-size:12px;align-items:start;">
+          <div>
+            <div style="font-weight:600;color:var(--text);">${Utils.escapeHtml(who)}</div>
+            <div style="color:var(--text-muted);font-size:11px;margin-top:2px;">${when}</div>
+          </div>
+          <div>
+            <div style="color:var(--text-muted);font-size:11px;margin-bottom:2px;">From</div>
+            <div style="font-weight:600;">−${_fmt(Number(l.original_value))}</div>
+          </div>
+          <div>
+            <div style="color:var(--text-muted);font-size:11px;margin-bottom:2px;">To</div>
+            <div style="font-weight:600;color:#1D9E75;">−${_fmt(Number(l.updated_value))}</div>
+          </div>
+          <div>
+            <div style="color:var(--text-muted);font-size:11px;margin-bottom:2px;">Reason</div>
+            <div style="color:var(--text);">${Utils.escapeHtml(l.remark || '—')}</div>
+          </div>
+        </div>`
+    }).join('')
 
     Utils.openModal(`
       <div class="modal-header">
-        <h3 class="modal-title">Deduction Breakdown — ${Utils.escapeHtml(emp.name || '')}</h3>
+        <h3 class="modal-title">Deduction — ${Utils.escapeHtml(emp.name || '')}</h3>
         <button class="modal-close" onclick="Utils.closeModal()">${CLOSE_SVG}</button>
       </div>
       <div class="modal-body" style="padding:20px 24px;">
         <div id="ded-err" class="alert alert--danger" style="display:none;margin-bottom:14px;"></div>
 
+        <div class="hrms-section-label" style="margin-bottom:10px;">Breakdown</div>
         <div class="hrms-salary-summary" style="margin-bottom:20px;">
           <div class="hrms-summary-row">
             <span>Monthly Salary</span>
@@ -705,26 +744,41 @@ const Payroll = (() => {
           </div>
           <div class="hrms-summary-row">
             <span>Per Day Rate</span>
-            <strong>${_fmt(monthly)} ÷ 30 = ${_fmt(perDay)}/day</strong>
+            <strong>${_fmt(Math.round(perDay))}/day</strong>
+          </div>
+          <div class="hrms-summary-row" style="padding-top:8px;border-top:1px solid var(--border);margin-top:4px;">
+            <span>Unpaid Leave</span>
+            <strong style="color:#DC2626;">${unpaidDays} day${unpaidDays !== 1 ? 's' : ''} &nbsp;·&nbsp; −${_fmt(Math.round(perDay * unpaidDays))}</strong>
           </div>
           <div class="hrms-summary-row">
-            <span>Unpaid Leave Days</span>
-            <strong>${unpaidDays} day${unpaidDays !== 1 ? 's' : ''}</strong>
+            <span>Missed Timesheet</span>
+            <strong style="color:#DC2626;">${missedDays} day${missedDays !== 1 ? 's' : ''} &nbsp;·&nbsp; −${_fmt(Math.round(perDay * missedDays))}</strong>
           </div>
           <div class="hrms-summary-row hrms-summary-row--deduction" style="padding-top:8px;border-top:1px solid var(--border);margin-top:4px;">
-            <span>Auto-calculated Deduction</span>
-            <strong>− ${_fmt(autoCalc)}</strong>
+            <span>Auto-calculated Total</span>
+            <strong>−${_fmt(autoCalc)}</strong>
           </div>
-          ${Math.abs(Number(rec.deductions) - autoCalc) > 1 ? `
-            <div class="hrms-summary-row" style="font-size:11px;color:var(--warning-text,#92400E);">
-              <span>⚠ Current value manually overridden to ${_fmt(rec.deductions)}</span>
+          ${isOverridden ? `
+            <div class="hrms-summary-row" style="background:#FEF3C7;border-radius:6px;padding:6px 10px;margin-top:6px;">
+              <span style="font-size:12px;color:#92400E;">⚠ Overridden to</span>
+              <strong style="color:#92400E;">−${_fmt(rec.deductions)}</strong>
             </div>
           ` : ''}
         </div>
 
+        ${logs?.length ? `
+          <div class="hrms-section-label" style="margin-bottom:10px;">Change History</div>
+          <div style="margin-bottom:20px;">
+            <div style="display:grid;grid-template-columns:1.2fr 0.8fr 0.8fr 1.5fr;gap:8px;padding:0 0 8px;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border);">
+              <div>Changed By</div><div>From</div><div>To</div><div>Reason</div>
+            </div>
+            ${historyRows}
+          </div>
+        ` : ''}
+
         <div class="hrms-section-label" style="margin-bottom:12px;">Override Deduction</div>
         <div class="form-group" style="margin-bottom:14px;">
-          <label class="form-label">Amount (₹)</label>
+          <label class="form-label">New Amount (₹)</label>
           <div class="input-wrapper">
             <span class="input-prefix">₹</span>
             <input class="form-input form-input--prefixed" type="number" id="ded-amount"
@@ -734,7 +788,7 @@ const Payroll = (() => {
         <div class="form-group">
           <label class="form-label">Reason <span class="required">*</span></label>
           <input class="form-input" type="text" id="ded-remark"
-            placeholder="e.g. Leave record corrected, approved exception…">
+            placeholder="e.g. Worked on Sunday 28 Jun, leave record corrected…">
         </div>
       </div>
       <div class="modal-footer">
