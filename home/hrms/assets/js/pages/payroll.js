@@ -355,14 +355,19 @@ const Payroll = (() => {
     if (_procFilter === 'active')   records = _procRecords.filter(r => r.employment_status === 'active')
     if (_procFilter === 'inactive') records = _procRecords.filter(r => r.employment_status === 'inactive')
 
+    const pillStyle = {
+      pending: 'background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;',
+      paid:    'background:#ECFDF5;color:#065F46;border:1px solid #6EE7B7;',
+      hold:    'background:#FEE2E2;color:#B91C1C;border:1px solid #FCA5A5;',
+    }
+    const pillLabel  = { pending: 'Pending', paid: 'Paid', hold: 'Hold' }
+    const nextStatus = { pending: 'paid', paid: 'hold', hold: 'pending' }
+
     const rows = records.map(r => {
       const emp      = r.employee || {}
       const adjItems = r.adj_items || []
       const adjTotal = adjItems.reduce((s, a) => s + Number(a.amount), 0)
-      const statusBadge = r.employment_status === 'active'
-        ? `<span class="badge badge--success" style="font-size:10px;">Active</span>`
-        : `<span class="badge badge--muted"   style="font-size:10px;">Inactive</span>`
-      const payColor = { pending: 'var(--warning-text,#92400E)', paid: '#1D9E75', hold: 'var(--danger)' }[r.payment_status] || ''
+      const st       = r.payment_status || 'pending'
 
       return `
         <tr>
@@ -370,38 +375,46 @@ const Payroll = (() => {
             <div style="font-weight:500;font-size:13px;">${Utils.escapeHtml(emp.name || '—')}</div>
             <div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(emp.designation || '')}</div>
           </td>
-          <td>${statusBadge}</td>
           <td style="text-align:right;font-size:12px;">${_fmt(r.monthly_salary)}</td>
-          <td style="text-align:center;font-size:12px;">${r.days_payable - (r.unpaid_leave_days || 0)}&nbsp;/&nbsp;30</td>
-          <td style="text-align:right;font-size:12px;">${_fmt(r.prorated_salary)}</td>
           <td style="text-align:right;font-size:12px;">
             ${r.deductions > 0
-              ? `<button class="btn--link-danger" data-open-ded="${r.id}" title="View breakdown / edit">− ${_fmt(r.deductions)}</button>`
+              ? `<button class="btn--link-danger" data-open-ded="${r.id}">− ${_fmt(r.deductions)}</button>`
               : `<span style="color:var(--text-muted);">—</span>`}
           </td>
           <td style="text-align:right;font-size:12px;">
             <span style="color:#1D9E75;">${adjTotal > 0 ? '+ ' + _fmt(adjTotal) : '—'}</span>
-            <button class="btn btn--xs btn--ghost" data-open-adj="${r.id}" style="margin-left:4px;" title="Manage adjustments">+</button>
+            <button class="btn btn--xs btn--ghost" data-open-adj="${r.id}" style="margin-left:4px;">+</button>
           </td>
           <td style="text-align:right;font-size:13px;font-weight:700;">${_fmt(r.net_pay)}</td>
           <td>
-            <select class="form-input form-input--sm proc-status-sel" data-rec="${r.id}"
-              style="font-size:11px;padding:3px 6px;min-width:90px;color:${payColor};">
-              <option value="pending" ${r.payment_status==='pending'?'selected':''}>Pending</option>
-              <option value="paid"    ${r.payment_status==='paid'   ?'selected':''}>Paid</option>
-              <option value="hold"    ${r.payment_status==='hold'   ?'selected':''}>Hold</option>
-            </select>
+            <button class="proc-status-pill" data-rec="${r.id}" data-status="${st}"
+              style="cursor:pointer;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:600;${pillStyle[st]}">
+              ${pillLabel[st]}
+            </button>
           </td>
           <td>
             <input type="date" class="form-input form-input--sm proc-date-inp" data-rec="${r.id}"
-              value="${r.payment_date || ''}" style="font-size:11px;padding:3px 6px;min-width:120px;">
-          </td>
-          <td>
-            <button class="btn btn--xs btn--ghost" data-proc-edit="${r.id}">Edit</button>
+              value="${r.payment_date || ''}" style="font-size:11px;padding:3px 6px;min-width:110px;">
           </td>
         </tr>
       `
     }).join('')
+
+    const runBanner = _procRun
+      ? _procRun.status === 'finalized'
+        ? `<div style="display:flex;align-items:center;gap:10px;padding:11px 16px;background:#ECFDF5;border:1px solid #6EE7B7;border-radius:8px;margin-bottom:14px;">
+             <span style="font-size:13px;font-weight:700;color:#065F46;">✓ Finalized</span>
+             <span style="font-size:12px;color:#065F46;">${MONTHS[_procMonth - 1]} ${_procYear} payroll is locked.</span>
+           </div>`
+        : `<div style="display:flex;align-items:center;gap:10px;padding:11px 16px;background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;margin-bottom:14px;">
+             <span style="font-size:13px;font-weight:700;color:#92400E;">Draft</span>
+             <span style="font-size:12px;color:#92400E;">${MONTHS[_procMonth - 1]} ${_procYear} · Review and finalize when ready.</span>
+             <div style="margin-left:auto;display:flex;gap:8px;">
+               <button class="btn btn--xs btn--danger-ghost" id="proc-delete-btn">Delete Run</button>
+               <button class="btn btn--ghost btn--sm" id="proc-finalize-btn">Finalize</button>
+             </div>
+           </div>`
+      : ''
 
     content.innerHTML = `
       <div class="section-card mb-4" style="padding:14px 18px;">
@@ -413,18 +426,13 @@ const Payroll = (() => {
             <option value="active"   ${_procFilter==='active'  ?'selected':''}>Active Only</option>
             <option value="inactive" ${_procFilter==='inactive'?'selected':''}>Inactive Only</option>
           </select>
-          <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+          <div style="margin-left:auto;">
             ${!_procRun ? `<button class="btn btn--primary btn--sm" id="proc-gen-btn">Generate Payroll</button>` : ''}
-            ${_procRun?.status === 'draft'
-              ? `<span class="badge badge--muted">Draft</span>
-                 <button class="btn btn--xs btn--danger-ghost" id="proc-delete-btn">Delete Run</button>
-                 <button class="btn btn--ghost btn--sm" id="proc-finalize-btn">Finalize</button>`
-              : _procRun?.status === 'finalized'
-              ? `<span class="badge badge--success">Finalized</span>`
-              : ''}
           </div>
         </div>
       </div>
+
+      ${runBanner}
 
       <div class="section-card">
         <div class="section-card-body" style="padding:0;overflow-x:auto;">
@@ -434,16 +442,12 @@ const Payroll = (() => {
                   <thead>
                     <tr>
                       <th>Employee</th>
-                      <th>Status</th>
                       <th style="text-align:right;">Monthly Salary</th>
-                      <th style="text-align:center;">Working Days</th>
-                      <th style="text-align:right;">Prorated</th>
                       <th style="text-align:right;">Deductions</th>
                       <th style="text-align:right;">Adjustments</th>
                       <th style="text-align:right;">Net Pay</th>
                       <th>Payment Status</th>
                       <th>Payment Date</th>
-                      <th></th>
                     </tr>
                   </thead>
                   <tbody>${rows}</tbody>
@@ -458,7 +462,7 @@ const Payroll = (() => {
       </div>
     `
 
-    // Month / Year / Filter changes
+    // Month / Year / Filter
     document.getElementById('proc-month-sel')?.addEventListener('change', async e => {
       _procMonth = parseInt(e.target.value)
       await _loadProcessingTab()
@@ -472,19 +476,14 @@ const Payroll = (() => {
       _renderProcessingTab()
     })
 
-    // Generate payroll
+    // Generate
     document.getElementById('proc-gen-btn')?.addEventListener('click', async () => {
       const btn = document.getElementById('proc-gen-btn')
-      btn.disabled    = true
-      btn.textContent = 'Generating…'
-      const { error } = await Config.supabase.rpc('generate_monthly_payroll', {
-        p_month: _procMonth,
-        p_year:  _procYear,
-      })
+      btn.disabled = true; btn.textContent = 'Generating…'
+      const { error } = await Config.supabase.rpc('generate_monthly_payroll', { p_month: _procMonth, p_year: _procYear })
       if (error) {
         Utils.showToast('Failed: ' + error.message, 'error')
-        btn.disabled    = false
-        btn.textContent = 'Generate Payroll'
+        btn.disabled = false; btn.textContent = 'Generate Payroll'
       } else {
         Utils.showToast('Payroll generated.', 'success')
         await _loadProcessingTab()
@@ -494,58 +493,54 @@ const Payroll = (() => {
     // Finalize
     document.getElementById('proc-finalize-btn')?.addEventListener('click', async () => {
       if (!confirm(`Finalize payroll for ${MONTHS[_procMonth - 1]} ${_procYear}?\n\nThis will lock the run from further changes.`)) return
-      const { error } = await Config.supabase
-        .from('payroll_runs')
-        .update({ status: 'finalized' })
-        .eq('id', _procRun.id)
+      const { error } = await Config.supabase.from('payroll_runs').update({ status: 'finalized' }).eq('id', _procRun.id)
       if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
       Utils.showToast('Payroll finalized.', 'success')
       await _loadProcessingTab()
     })
 
-    // Delete Run (draft only)
+    // Delete run
     document.getElementById('proc-delete-btn')?.addEventListener('click', async () => {
-      if (!confirm(`Delete payroll run for ${MONTHS[_procMonth - 1]} ${_procYear}?\n\nAll generated records will be removed. You can regenerate fresh payroll after this.`)) return
+      if (!confirm(`Delete payroll run for ${MONTHS[_procMonth - 1]} ${_procYear}?\n\nAll generated records will be removed.`)) return
       const btn = document.getElementById('proc-delete-btn')
-      btn.disabled    = true
-      btn.textContent = 'Deleting…'
-      const { error } = await Config.supabase
-        .from('payroll_runs')
-        .delete()
-        .eq('id', _procRun.id)
+      btn.disabled = true; btn.textContent = 'Deleting…'
+      const { error } = await Config.supabase.from('payroll_runs').delete().eq('id', _procRun.id)
       if (error) {
         Utils.showToast('Delete failed: ' + error.message, 'error')
-        btn.disabled    = false
-        btn.textContent = 'Delete Run'
+        btn.disabled = false; btn.textContent = 'Delete Run'
         return
       }
-      Utils.showToast('Payroll run deleted. You can now generate a fresh one.', 'success')
-      _procRun     = null
-      _procRecords = []
+      Utils.showToast('Payroll run deleted.', 'success')
+      _procRun = null; _procRecords = []
       await _loadProcessingTab()
     })
 
-    // Payment status inline update
-    content.querySelectorAll('.proc-status-sel').forEach(sel => {
-      sel.addEventListener('change', async e => {
+    // Payment status pill — click cycles Pending → Paid → Hold
+    content.querySelectorAll('.proc-status-pill').forEach(pill => {
+      pill.addEventListener('click', async () => {
+        const recId  = pill.dataset.rec
+        const newSt  = nextStatus[pill.dataset.status] || 'pending'
+        pill.disabled = true
         const { error } = await Config.supabase
           .from('payroll_records')
-          .update({ payment_status: e.target.value, updated_at: new Date().toISOString() })
-          .eq('id', sel.dataset.rec)
-        if (error) Utils.showToast('Failed to update status.', 'error')
-        else {
-          const rec = _procRecords.find(r => r.id === sel.dataset.rec)
-          if (rec) rec.payment_status = e.target.value
-        }
+          .update({ payment_status: newSt, updated_at: new Date().toISOString() })
+          .eq('id', recId)
+        if (error) { Utils.showToast('Failed to update status.', 'error'); pill.disabled = false; return }
+        const rec = _procRecords.find(r => r.id === recId)
+        if (rec) rec.payment_status = newSt
+        pill.dataset.status   = newSt
+        pill.textContent      = pillLabel[newSt]
+        pill.style.cssText    = `cursor:pointer;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:600;${pillStyle[newSt]}`
+        pill.disabled = false
       })
     })
 
-    // Payment date inline update
+    // Payment date
     content.querySelectorAll('.proc-date-inp').forEach(inp => {
-      inp.addEventListener('change', async e => {
+      inp.addEventListener('change', async () => {
         const { error } = await Config.supabase
           .from('payroll_records')
-          .update({ payment_date: e.target.value || null, updated_at: new Date().toISOString() })
+          .update({ payment_date: inp.value || null, updated_at: new Date().toISOString() })
           .eq('id', inp.dataset.rec)
         if (error) Utils.showToast('Failed to update date.', 'error')
       })
@@ -559,15 +554,7 @@ const Payroll = (() => {
       })
     })
 
-    // Edit record
-    content.querySelectorAll('[data-proc-edit]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const rec = _procRecords.find(r => r.id === btn.dataset.procEdit)
-        if (rec) _openEditRecordModal(rec)
-      })
-    })
-
-    // Deduction breakdown / override
+    // Deductions
     content.querySelectorAll('[data-open-ded]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const rec = _procRecords.find(r => r.id === btn.dataset.openDed)
