@@ -871,13 +871,18 @@ const LeaveTracker = (() => {
       ])
       const wrap = document.getElementById('att-exempt-bal-wrap')
       if (wrap) {
+        // 1 day if fully absent, 0.5 if late or partial punch
+        const suggestedDays = (att?.is_absent || !att) ? 1 : 0.5
+        const isHalfDay     = suggestedDays === 0.5
+        const deductLabel   = isHalfDay ? '0.5 day (half-day)' : '1 day (full day)'
+
         const credits = creditsRes.data || []
         const taken   = (takenRes.data || []).filter(r => r.status === 'approved' && new Date(r.start_date).getFullYear() === year)
         const balMap  = {}
         credits.forEach(c => { balMap[c.leave_type_id] = (balMap[c.leave_type_id] || 0) + Number(c.credited_days) })
         taken.forEach(r => { balMap[r.leave_type_id] = (balMap[r.leave_type_id] || 0) - Number(r.days) })
         const eligibleTypes = _leaveTypes
-          .filter(t => t.is_active && (t.is_unpaid || (balMap[t.id] || 0) > 0))
+          .filter(t => t.is_active && !t.name.toLowerCase().includes('medical') && (t.is_unpaid || (balMap[t.id] || 0) > 0))
           .sort((a, b) => {
             const aC = a.name.toLowerCase().includes('casual')
             const bC = b.name.toLowerCase().includes('casual')
@@ -892,11 +897,12 @@ const LeaveTracker = (() => {
         } else {
           const opts = eligibleTypes.map(t => {
             const bal = t.is_unpaid ? null : (balMap[t.id] || 0)
-            return `<option value="${t.id}">${Utils.escapeHtml(t.name)}${bal !== null ? ' (' + bal + ' days)' : ' (Unpaid)'}</option>`
+            return `<option value="${t.id}">${Utils.escapeHtml(t.name)}${bal !== null ? ' (' + bal + ' days remaining)' : ' (Unpaid)'}</option>`
           }).join('')
           wrap.innerHTML = `
             <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:6px;">Apply Leave (Corrections Exhausted)</div>
-            <div style="font-size:12px;color:#DC2626;margin-bottom:10px;">All 4 corrections used this month. This leave request will go to your manager for approval.</div>
+            <div style="font-size:12px;color:#DC2626;margin-bottom:4px;">All 4 corrections used this month. This request will go to your manager for approval.</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Priority: CL → EL → Unpaid &nbsp;·&nbsp; Deduction: <strong>${deductLabel}</strong>${isHalfDay ? ' — late or missing punch' : ' — full day absent'}</div>
             <div id="att-exempt-err" class="alert alert--danger" style="display:none;margin-bottom:8px;"></div>
             <div style="display:flex;flex-direction:column;gap:8px;">
               <select id="att-exempt-lt" class="form-control" style="font-size:13px;">${opts}</select>
@@ -917,8 +923,8 @@ const LeaveTracker = (() => {
               leave_type_id: typeId,
               start_date:    dateISO,
               end_date:      dateISO,
-              days:          1,
-              is_half_day:   false,
+              days:          suggestedDays,
+              is_half_day:   isHalfDay,
               reason:        reason || 'Attendance correction',
               status:        'pending',
               approver_id:   managerId,
