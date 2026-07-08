@@ -7,7 +7,7 @@
    - Supabase API + external: always network (no caching)
    ============================================================ */
 
-const CACHE = 'growthic-hrms-v7'
+const CACHE = 'growthic-hrms-v8'
 
 self.addEventListener('install', e => {
   e.waitUntil(

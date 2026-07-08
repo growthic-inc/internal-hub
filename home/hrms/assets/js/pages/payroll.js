@@ -360,8 +360,6 @@ const Payroll = (() => {
       paid:    'background:#ECFDF5;color:#065F46;border:1px solid #6EE7B7;',
       hold:    'background:#FEE2E2;color:#B91C1C;border:1px solid #FCA5A5;',
     }
-    const pillLabel  = { pending: 'Pending', paid: 'Paid', hold: 'Hold' }
-    const nextStatus = { pending: 'paid', paid: 'hold', hold: 'pending' }
 
     const rows = records.map(r => {
       const emp      = r.employee || {}
@@ -387,10 +385,12 @@ const Payroll = (() => {
           </td>
           <td style="text-align:right;font-size:13px;font-weight:700;">${_fmt(r.net_pay)}</td>
           <td>
-            <button class="proc-status-pill" data-rec="${r.id}" data-status="${st}"
-              style="cursor:pointer;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:600;${pillStyle[st]}">
-              ${pillLabel[st]}
-            </button>
+            <select class="proc-status-sel" data-rec="${r.id}"
+              style="font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;cursor:pointer;${pillStyle[st]}">
+              <option value="pending" ${st==='pending'?'selected':''}>Pending</option>
+              <option value="paid"    ${st==='paid'   ?'selected':''}>Paid</option>
+              <option value="hold"    ${st==='hold'   ?'selected':''}>Hold</option>
+            </select>
           </td>
           <td>
             <input type="date" class="form-input form-input--sm proc-date-inp" data-rec="${r.id}"
@@ -551,22 +551,19 @@ const Payroll = (() => {
     })
 
     // Payment status pill — click cycles Pending → Paid → Hold
-    content.querySelectorAll('.proc-status-pill').forEach(pill => {
-      pill.addEventListener('click', async () => {
-        const recId  = pill.dataset.rec
-        const newSt  = nextStatus[pill.dataset.status] || 'pending'
-        pill.disabled = true
+    content.querySelectorAll('.proc-status-sel').forEach(sel => {
+      sel.addEventListener('change', async () => {
+        const newSt = sel.value
+        sel.disabled = true
         const { error } = await Config.supabase
           .from('payroll_records')
           .update({ payment_status: newSt, updated_at: new Date().toISOString() })
-          .eq('id', recId)
-        if (error) { Utils.showToast('Failed to update status.', 'error'); pill.disabled = false; return }
-        const rec = _procRecords.find(r => r.id === recId)
+          .eq('id', sel.dataset.rec)
+        sel.disabled = false
+        if (error) { Utils.showToast('Failed to update status.', 'error'); return }
+        const rec = _procRecords.find(r => r.id === sel.dataset.rec)
         if (rec) rec.payment_status = newSt
-        pill.dataset.status   = newSt
-        pill.textContent      = pillLabel[newSt]
-        pill.style.cssText    = `cursor:pointer;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:600;${pillStyle[newSt]}`
-        pill.disabled = false
+        sel.style.cssText = `font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;cursor:pointer;${pillStyle[newSt]}`
       })
     })
 
