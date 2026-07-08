@@ -405,6 +405,9 @@ const Payroll = (() => {
         ? `<div style="display:flex;align-items:center;gap:10px;padding:11px 16px;background:#ECFDF5;border:1px solid #6EE7B7;border-radius:8px;margin-bottom:14px;">
              <span style="font-size:13px;font-weight:700;color:#065F46;">✓ Finalized</span>
              <span style="font-size:12px;color:#065F46;">${MONTHS[_procMonth - 1]} ${_procYear} payroll is locked.</span>
+             <div style="margin-left:auto;">
+               <button class="btn btn--xs btn--ghost" id="proc-reopen-btn">Re-open</button>
+             </div>
            </div>`
         : `<div style="display:flex;align-items:center;gap:10px;padding:11px 16px;background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;margin-bottom:14px;">
              <span style="font-size:13px;font-weight:700;color:#92400E;">Draft</span>
@@ -496,6 +499,38 @@ const Payroll = (() => {
       const { error } = await Config.supabase.from('payroll_runs').update({ status: 'finalized' }).eq('id', _procRun.id)
       if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
       Utils.showToast('Payroll finalized.', 'success')
+      await _loadProcessingTab()
+    })
+
+    // Re-open finalized run
+    document.getElementById('proc-reopen-btn')?.addEventListener('click', async () => {
+      const hasPaid = _procRecords.some(r => r.payment_status === 'paid')
+      if (hasPaid) {
+        Utils.showToast('Cannot re-open — one or more employees are already marked as Paid.', 'error')
+        return
+      }
+      if (!confirm(`Re-open payroll for ${MONTHS[_procMonth - 1]} ${_procYear}?\n\nThis will unlock the run so you can make corrections.`)) return
+      const btn = document.getElementById('proc-reopen-btn')
+      btn.disabled = true; btn.textContent = 'Re-opening…'
+      const { data: { user } } = await Config.supabase.auth.getUser()
+      const [runRes, logRes] = await Promise.all([
+        Config.supabase.from('payroll_runs').update({ status: 'draft' }).eq('id', _procRun.id),
+        Config.supabase.from('payroll_audit_log').insert({
+          payroll_record_id: _procRun.id,
+          field_name:  'run_status',
+          old_value:   'finalized',
+          new_value:   'draft',
+          changed_by:  user?.id,
+          changed_at:  new Date().toISOString(),
+          note:        'Run re-opened for corrections',
+        }),
+      ])
+      if (runRes.error) {
+        Utils.showToast('Failed: ' + runRes.error.message, 'error')
+        btn.disabled = false; btn.textContent = 'Re-open'
+        return
+      }
+      Utils.showToast('Payroll re-opened. Make your corrections and finalize again.', 'success')
       await _loadProcessingTab()
     })
 
