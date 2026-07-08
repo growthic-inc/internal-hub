@@ -331,7 +331,7 @@ const Payroll = (() => {
 
     const { data: records } = await Config.supabase
       .from('payroll_records')
-      .select(`*, employee:employees!employee_id(id, name, designation), adj_items:payroll_adjustments(*)`)
+      .select(`*, employee:employees!employee_id(id, name, designation), adj_items:payroll_adjustments(*, creator:employees!created_by(name))`)
       .eq('payroll_run_id', run.id)
       .order('employment_status')
 
@@ -581,14 +581,25 @@ const Payroll = (() => {
     const emp      = rec.employee || {}
     const adjItems = rec.adj_items || []
 
-    const existingRows = adjItems.map(a => `
-      <div class="hrms-adj-row" id="adjrow-${a.id}">
-        <span class="badge badge--muted" style="font-size:10px;white-space:nowrap;">${_adjLabel(a.type)}</span>
-        <span style="font-size:13px;font-weight:600;white-space:nowrap;">${_fmt(a.amount)}</span>
-        <span style="font-size:12px;color:var(--text-muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${Utils.escapeHtml(a.remark)}">${Utils.escapeHtml(a.remark)}</span>
-        <button class="btn btn--xs btn--danger-ghost" data-del-adj="${a.id}">Remove</button>
-      </div>
-    `).join('')
+    const historyRows = adjItems.map(a => {
+      const who  = a.creator?.name || 'HR'
+      const when = a.created_at
+        ? new Date(a.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : '—'
+      return `
+        <div class="hrms-adj-row" id="adjrow-${a.id}" style="display:grid;grid-template-columns:1fr 0.7fr 1.5fr 1fr auto;gap:10px;align-items:start;padding:10px 0;border-bottom:1px solid var(--border);">
+          <div>
+            <span class="badge badge--muted" style="font-size:10px;">${_adjLabel(a.type)}</span>
+          </div>
+          <div style="font-size:13px;font-weight:600;color:#1D9E75;">+${_fmt(a.amount)}</div>
+          <div style="font-size:12px;color:var(--text-muted);" title="${Utils.escapeHtml(a.remark)}">${Utils.escapeHtml(a.remark)}</div>
+          <div>
+            <div style="font-size:12px;font-weight:500;">${Utils.escapeHtml(who)}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${when}</div>
+          </div>
+          <button class="btn btn--xs btn--danger-ghost" data-del-adj="${a.id}">Remove</button>
+        </div>`
+    }).join('')
 
     Utils.openModal(`
       <div class="modal-header">
@@ -600,8 +611,11 @@ const Payroll = (() => {
 
         ${adjItems.length ? `
           <div style="margin-bottom:20px;">
-            <div class="hrms-section-label" style="margin-bottom:10px;">Existing Adjustments</div>
-            <div style="display:flex;flex-direction:column;gap:8px;">${existingRows}</div>
+            <div class="hrms-section-label" style="margin-bottom:10px;">Adjustment History</div>
+            <div style="display:grid;grid-template-columns:1fr 0.7fr 1.5fr 1fr auto;gap:10px;padding:0 0 8px;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border);">
+              <div>Type</div><div>Amount</div><div>Remark</div><div>Added By</div><div></div>
+            </div>
+            ${historyRows}
           </div>
         ` : ''}
 
