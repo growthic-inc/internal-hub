@@ -1,5 +1,5 @@
 /* ============================================================
-   GROWTHIC ONE — Shared Utilities
+   Growthic Platform — Shared Utilities
    ============================================================ */
 
 const Utils = (() => {

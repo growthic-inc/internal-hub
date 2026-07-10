@@ -47,7 +47,7 @@ const People = (() => {
 
   /* ── render ─────────────────────────────────────────────── */
   function render(user) {
-    const canManage = App.hasAccess('people_hrms', 'manage_employees', 'can_manage')
+    const canManage = App.hasAccess('people', 'manage_employees', 'can_manage')
     return `
       <div class="page-inner">
         <div class="page-toolbar">
@@ -66,7 +66,7 @@ const People = (() => {
   /* ── init ───────────────────────────────────────────────── */
   async function init(user) {
     _user      = user
-    _canManage = App.hasAccess('people_hrms', 'manage_employees', 'can_manage')
+    _canManage = App.hasAccess('people', 'manage_employees', 'can_manage')
 
     const [empRes, deptRes, badgeRes] = await Promise.all([
       API.getEmployeesFull(),
@@ -1478,9 +1478,9 @@ const People = (() => {
 })()
 
 ModuleRegistry.register({
-  key:       'people_hrms',
+  key:       'people',
   routeId:   'people',
-  label:     'People & HRMS',
+  label:     'People',
   order:     8,
   icon:      `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>`,
   getModule: () => People,

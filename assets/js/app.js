@@ -355,7 +355,7 @@ const App = (() => {
         <div class="nav-accordion${hrActive ? ' nav-accordion--open' : ''}">
           <button class="nav-item nav-accordion-toggle${hrActive ? ' nav-item--active' : ''}" data-accordion="hr-group">
             ${PEOPLE_SVG}
-            <span class="nav-label">People & HRMS</span>
+            <span class="nav-label">People</span>
             ${CHEVRON_SVG}
           </button>
           <div class="nav-accordion-children">${children}</div>

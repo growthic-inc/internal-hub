@@ -1,5 +1,5 @@
 /* ============================================================
-   GROWTHIC ONE — API Layer
+   Growthic Platform — API Layer
    All Supabase queries live here. Never query Supabase directly
    from page modules — always go through API.
    ============================================================ */

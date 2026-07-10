@@ -1,5 +1,5 @@
 /* ============================================================
-   GROWTHIC ONE — Authentication
+   Growthic Platform — Authentication
    ============================================================ */
 
 const Auth = (() => {
