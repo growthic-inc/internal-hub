@@ -195,6 +195,7 @@ const App = (() => {
     _initNotificationPanel()
     Shell.initMobileNav()
     Shell.initTheme()
+    Shell.initAppSwitcher('growthic-one', currentUser)
     _initAccessMatrixLiveSync()
 
     // Initialise push notifications (asks for permission after 4s if not yet granted)

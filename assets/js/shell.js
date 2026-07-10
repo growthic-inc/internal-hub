@@ -103,5 +103,65 @@ const Shell = (() => {
     }
   }
 
-  return { initTheme, initUserMenu, initMobileNav, initLogout, renderHeaderUser }
+  /* ── App Switcher ───────────────────────────────────────── */
+  function initAppSwitcher(currentAppId, user) {
+    const headerActions = document.querySelector('.header-actions')
+    if (!headerActions || typeof PlatformConfig === 'undefined') return
+
+    const WAFFLE = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`
+
+    const btn = document.createElement('button')
+    btn.className  = 'btn-icon'
+    btn.id         = 'app-switcher-btn'
+    btn.title      = 'Switch app'
+    btn.setAttribute('aria-label', 'Switch app')
+    btn.innerHTML  = WAFFLE
+    headerActions.insertBefore(btn, headerActions.firstChild)
+
+    const popover = document.createElement('div')
+    popover.id        = 'app-switcher-popover'
+    popover.className = 'app-switcher-popover'
+    popover.style.display = 'none'
+    document.body.appendChild(popover)
+
+    function _open() {
+      const apps = PlatformConfig.getAccessible(user)
+      const rect  = btn.getBoundingClientRect()
+      popover.style.top  = `${rect.bottom + 8}px`
+      popover.style.left = `${rect.left}px`
+      popover.innerHTML = `
+        <div class="app-switcher-label">Apps</div>
+        <div class="app-switcher-grid">
+          ${apps.map(app => {
+            const isCurrent = app.id === currentAppId
+            return `
+              <a class="app-switcher-item${isCurrent ? ' app-switcher-item--current' : ''}"
+                 href="${app.path}" ${isCurrent ? 'aria-current="page" tabindex="-1"' : ''}>
+                <div class="app-switcher-icon">${app.shortName[0]}</div>
+                <div class="app-switcher-name">${app.name}</div>
+                ${isCurrent ? '<div class="app-switcher-badge">Current</div>' : ''}
+              </a>`
+          }).join('')}
+        </div>`
+
+      popover.querySelectorAll('.app-switcher-item--current').forEach(el => {
+        el.addEventListener('click', e => e.preventDefault())
+      })
+
+      popover.style.display = 'block'
+    }
+
+    btn.addEventListener('click', e => {
+      e.stopPropagation()
+      popover.style.display !== 'none' ? (popover.style.display = 'none') : _open()
+    })
+
+    document.addEventListener('click', e => {
+      if (!popover.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
+        popover.style.display = 'none'
+      }
+    })
+  }
+
+  return { initTheme, initUserMenu, initMobileNav, initLogout, renderHeaderUser, initAppSwitcher }
 })()

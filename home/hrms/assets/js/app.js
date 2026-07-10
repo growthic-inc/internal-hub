@@ -7,21 +7,16 @@
 const HRMSApp = (() => {
 
   let _currentUser  = null
-  let _activeRoute  = 'payroll'
 
-  /* ── Sidebar nav items ──────────────────────────────────── */
-  const NAV = [
-    {
-      id: 'payroll',
-      label: 'Payroll',
-      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>`,
-      module: () => Payroll,
-    },
-    // Future modules added here:
-    // { id: 'people',       label: 'People Directory', ... }
-    // { id: 'leave',        label: 'Leave Management', ... }
-    // { id: 'compensation', label: 'Compensation',     ... }
-  ]
+  /* ── NAV driven by ModuleRegistry — add a page file to add a route ── */
+  const NAV = ModuleRegistry.getAll().map(m => ({
+    id:     m.routeId,
+    label:  m.label,
+    icon:   m.icon,
+    module: m.getModule,
+  }))
+
+  let _activeRoute = NAV[0]?.id || 'payroll'
 
   /* ── Boot ───────────────────────────────────────────────── */
   async function init() {
@@ -60,6 +55,7 @@ const HRMSApp = (() => {
       Shell.initLogout()
       Shell.initTheme()
       Shell.initMobileNav()
+      Shell.initAppSwitcher('growthic-hrms', _currentUser)
 
       // 6. Route
       _router()
@@ -78,7 +74,7 @@ const HRMSApp = (() => {
 
   /* ── Router ─────────────────────────────────────────────── */
   function _router() {
-    const hash  = window.location.hash.slice(1) || 'payroll'
+    const hash  = window.location.hash.slice(1) || NAV[0]?.id || 'payroll'
     const item  = NAV.find(n => n.id === hash) || NAV[0]
     _activeRoute = item.id
 
