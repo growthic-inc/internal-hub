@@ -2,47 +2,43 @@
   "cleanUrls": true,
   "trailingSlash": false,
   "rewrites": [
-    { "source": "/home/hrms/(.*)", "destination": "/home/hrms/index.html" },
-    { "source": "/home/hrms",      "destination": "/home/hrms/index.html" }
+    { "source": "/hrms/(.*)", "destination": "/hrms/index.html" },
+    { "source": "/hrms",      "destination": "/hrms/index.html" }
   ],
   "headers": [
     {
       "source": "/sw.js",
       "headers": [
-        { "key": "Cache-Control",        "value": "no-cache, no-store, must-revalidate" },
+        { "key": "Cache-Control",          "value": "no-cache, no-store, must-revalidate" },
         { "key": "Service-Worker-Allowed", "value": "/" }
       ]
     },
     {
-      "source": "/home/hrms/sw.js",
+      "source": "/hrms/sw.js",
       "headers": [
-        { "key": "Cache-Control",        "value": "no-cache, no-store, must-revalidate" },
-        { "key": "Service-Worker-Allowed", "value": "/home/hrms/" }
+        { "key": "Cache-Control",          "value": "no-cache, no-store, must-revalidate" },
+        { "key": "Service-Worker-Allowed", "value": "/hrms/" }
       ]
     },
     {
       "source": "/assets/js/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "no-cache, must-revalidate" }
-      ]
+      "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
     },
     {
       "source": "/assets/css/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "no-cache, must-revalidate" }
-      ]
+      "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
     },
     {
-      "source": "/home/hrms/assets/js/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "no-cache, must-revalidate" }
-      ]
+      "source": "/home/assets/js/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
     },
     {
-      "source": "/home/hrms/assets/css/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "no-cache, must-revalidate" }
-      ]
+      "source": "/hrms/assets/js/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+    },
+    {
+      "source": "/hrms/assets/css/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
     }
   ]
 }

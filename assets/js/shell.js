@@ -1,6 +1,6 @@
 /* ============================================================
    Growthic Platform — Shared Shell Behaviours
-   Used by: Growthic One (app/home/), Growthic HRMS (app/home/hrms/)
+   Used by: Growthic One (app/home/), Growthic HRMS (app/hrms/)
    ============================================================ */
 
 const Shell = (() => {

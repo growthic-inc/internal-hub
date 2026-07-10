@@ -1,18 +1,18 @@
 /* ============================================================
    Growthic HRMS — Service Worker
-   Scope: /home/hrms/
+   Scope: /hrms/
    Strategy:
    - Navigation (HTML): network-first, cache fallback
    - Static assets (JS/CSS): cache-first, populate on miss
    - Supabase API + external: always network (no caching)
    ============================================================ */
 
-const CACHE = 'growthic-hrms-v11'
+const CACHE = 'growthic-hrms-v12'
 
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE)
-      .then(c => c.addAll(['/home/hrms']))
+      .then(c => c.addAll(['/hrms']))
       .then(() => self.skipWaiting())
   )
 })
@@ -44,7 +44,7 @@ self.addEventListener('fetch', e => {
         })
         .catch(() =>
           caches.match(req)
-            .then(r => r || caches.match('/home/hrms'))
+            .then(r => r || caches.match('/hrms'))
         )
     )
     return

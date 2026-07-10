@@ -23,7 +23,7 @@ const PlatformConfig = (() => {
       shortName:   'HRMS',
       description: 'HR & admin portal — payroll, employee records, compliance.',
       category:    'admin',
-      path:        '/home/hrms',
+      path:        '/hrms',
       // Access rule: super_admin or People & Culture department
       access: (user) => user.role === 'super_admin' ||
         Utils.getDeptSystemKey(user.department) === 'people_culture',

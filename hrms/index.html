@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <base href="/home/hrms/">
+  <base href="/hrms/">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Growthic HRMS</title>
-  <link rel="icon" type="image/x-icon" href="../../assets/img/favicon/favicon.ico">
-  <link rel="icon" type="image/png" sizes="32x32" href="../../assets/img/favicon/favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="../../assets/img/favicon/favicon-16x16.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="../../assets/img/favicon/apple-touch-icon.png">
+  <link rel="icon" type="image/x-icon" href="../assets/img/favicon/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="../assets/img/favicon/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="../assets/img/favicon/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="../assets/img/favicon/apple-touch-icon.png">
   <link rel="manifest" href="/manifest.json">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -17,9 +17,9 @@
   <script src="https://js.sentry-cdn.com/8be1d4537c988c206543f5bfb9f2c31d.min.js" crossorigin="anonymous"></script>
   <script>(function(){var t=localStorage.getItem('theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');})()</script>
   <!-- Shared styles from /home/ -->
-  <link rel="stylesheet" href="../../assets/css/style.css">
-  <link rel="stylesheet" href="../../assets/css/components.css">
-  <link rel="stylesheet" href="../../assets/css/mobile.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <link rel="stylesheet" href="../assets/css/components.css">
+  <link rel="stylesheet" href="../assets/css/mobile.css">
   <!-- HRMS-specific styles -->
   <link rel="stylesheet" href="./assets/css/hrms.css">
   <meta name="theme-color" content="#0F4799">
@@ -31,7 +31,7 @@
     <div class="sidebar-overlay" id="sidebar-overlay"></div>
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-logo">
-        <img class="sidebar-logo-mark" src="../../assets/img/logo.jpg" alt="Growthic One">
+        <img class="sidebar-logo-mark" src="../assets/img/logo.jpg" alt="Growthic One">
         <div>
           <span class="sidebar-brand">Growthic HRMS</span>
           <span class="sidebar-brand-sub">HR & Admin Portal</span>
@@ -79,14 +79,14 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- Shared JS from /home/ -->
-  <script src="../../assets/js/config.js"></script>
-  <script src="../../assets/js/utils.js"></script>
-  <script src="../../assets/js/auth.js"></script>
-  <script src="../../assets/js/shell.js"></script>
-  <script src="../../assets/js/platform-config.js"></script>
-  <script src="../../assets/js/api.js"></script>
+  <script src="../assets/js/config.js"></script>
+  <script src="../assets/js/utils.js"></script>
+  <script src="../assets/js/auth.js"></script>
+  <script src="../assets/js/shell.js"></script>
+  <script src="../assets/js/platform-config.js"></script>
+  <script src="../assets/js/api.js"></script>
   <!-- Shared module registry — must load before HRMS page files -->
-  <script src="../../assets/js/module-registry.js"></script>
+  <script src="../assets/js/module-registry.js"></script>
   <!-- HRMS pages -->
   <script src="./assets/js/pages/payroll.js"></script>
   <!-- HRMS shell (must load last) -->
@@ -94,7 +94,7 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/home/hrms/sw.js', { scope: '/home/hrms/' })
+        navigator.serviceWorker.register('/hrms/sw.js', { scope: '/hrms/' })
           .catch(err => console.warn('[HRMS SW] Registration failed:', err))
       })
 
