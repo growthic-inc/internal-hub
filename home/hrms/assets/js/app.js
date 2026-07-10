@@ -55,11 +55,11 @@ const HRMSApp = (() => {
 
       // 5. Render chrome
       _renderSidebar()
-      _renderHeader()
-      _setupUserMenu()
-      _setupLogout()
-      _initTheme()
-      _initMobileNav()
+      Shell.renderHeaderUser(_currentUser)
+      Shell.initUserMenu()
+      Shell.initLogout()
+      Shell.initTheme()
+      Shell.initMobileNav()
 
       // 6. Route
       _router()
@@ -122,84 +122,6 @@ const HRMSApp = (() => {
         nav.querySelectorAll('.hrms-nav-item').forEach(i => i.classList.remove('nav-item--active'))
         el.classList.add('nav-item--active')
       })
-    })
-  }
-
-  /* ── Header ─────────────────────────────────────────────── */
-  function _renderHeader() {
-    const avatar = document.getElementById('user-avatar')
-    if (avatar && _currentUser) {
-      avatar.textContent = Utils.getInitials(_currentUser.name || '?')
-      if (_currentUser.profile_image_url) {
-        avatar.innerHTML = `<img src="${Utils.escapeHtml(_currentUser.profile_image_url)}"
-          alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
-      }
-    }
-    const info = document.getElementById('user-dropdown-info')
-    if (info && _currentUser) {
-      info.innerHTML = `
-        <div style="font-weight:600;font-size:13px;">${Utils.escapeHtml(_currentUser.name || '—')}</div>
-        <div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(_currentUser.role || '')} · HRMS Admin</div>
-      `
-    }
-  }
-
-  /* ── User menu ───────────────────────────────────────────── */
-  function _setupUserMenu() {
-    const btn      = document.getElementById('user-avatar-btn')
-    const dropdown = document.getElementById('user-dropdown')
-    if (!btn || !dropdown) return
-
-    btn.addEventListener('click', e => {
-      e.stopPropagation()
-      dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none'
-    })
-    document.addEventListener('click', () => { dropdown.style.display = 'none' })
-  }
-
-  function _setupLogout() {
-    document.getElementById('logout-btn')?.addEventListener('click', async () => {
-      await Auth.signOut()
-      window.location.href = '/'
-    })
-  }
-
-  /* ── Theme ───────────────────────────────────────────────── */
-  function _initTheme() {
-    const btn  = document.getElementById('theme-toggle-btn')
-    const sun  = document.getElementById('theme-icon-sun')
-    const moon = document.getElementById('theme-icon-moon')
-    if (!btn) return
-
-    function _apply(isDark) {
-      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light')
-      localStorage.setItem('theme', isDark ? 'dark' : 'light')
-      if (sun)  sun.style.display  = isDark ? 'block' : 'none'
-      if (moon) moon.style.display = isDark ? 'none'  : 'block'
-    }
-
-    _apply(document.documentElement.getAttribute('data-theme') === 'dark')
-    btn.addEventListener('click', () => {
-      _apply(document.documentElement.getAttribute('data-theme') !== 'dark')
-    })
-  }
-
-  /* ── Mobile nav ─────────────────────────────────────────── */
-  function _initMobileNav() {
-    const hamburger = document.getElementById('hamburger-btn')
-    const sidebar   = document.getElementById('sidebar')
-    const overlay   = document.getElementById('sidebar-overlay')
-    if (!hamburger || !sidebar) return
-
-    const open  = () => { sidebar.classList.add('sidebar--open'); overlay?.classList.add('sidebar-overlay--visible') }
-    const close = () => { sidebar.classList.remove('sidebar--open'); overlay?.classList.remove('sidebar-overlay--visible') }
-
-    hamburger.addEventListener('click', () => sidebar.classList.contains('sidebar--open') ? close() : open())
-    overlay?.addEventListener('click', close)
-
-    // Close on nav click (mobile)
-    document.querySelectorAll('.hrms-nav-item').forEach(el => {
-      el.addEventListener('click', () => { if (window.innerWidth <= 768) close() })
     })
   }
 

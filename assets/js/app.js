@@ -187,14 +187,14 @@ const App = (() => {
     _policyAcknowledged = currentUser.role === 'super_admin' || !!currentUser.policy_acknowledged_at
 
     _renderSidebar()
-    _renderHeaderUser()
-    _setupUserMenu()
-    _setupLogout()
+    Shell.renderHeaderUser(currentUser)
+    Shell.initUserMenu()
+    Shell.initLogout()
     _loadNotificationCount()
     _checkAnnouncementDot()
     _initNotificationPanel()
-    _initMobileNav()
-    _initThemeToggle()
+    Shell.initMobileNav()
+    Shell.initTheme()
     _initAccessMatrixLiveSync()
 
     // Initialise push notifications (asks for permission after 4s if not yet granted)
@@ -202,30 +202,6 @@ const App = (() => {
 
     router()
     window.addEventListener('hashchange', router)
-  }
-
-  // ── Dark mode toggle ─────────────────────────────────────────
-  function _initThemeToggle() {
-    const btn  = document.getElementById('theme-toggle-btn')
-    const sun  = document.getElementById('theme-icon-sun')
-    const moon = document.getElementById('theme-icon-moon')
-    if (!btn) return
-
-    function _apply(isDark) {
-      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light')
-      localStorage.setItem('theme', isDark ? 'dark' : 'light')
-      if (sun)  sun.style.display  = isDark ? 'block' : 'none'
-      if (moon) moon.style.display = isDark ? 'none'  : 'block'
-    }
-
-    // Sync icon with whatever the flash-prevention script already set
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
-    _apply(isDark)
-
-    btn.addEventListener('click', () => {
-      const nowDark = document.documentElement.getAttribute('data-theme') === 'dark'
-      _apply(!nowDark)
-    })
   }
 
   // ── Access matrix live sync (Supabase Realtime) ──────────────
@@ -419,50 +395,6 @@ const App = (() => {
     `
   }
 
-  function _renderHeaderUser() {
-    const avatar = document.getElementById('user-avatar')
-    const info   = document.getElementById('user-dropdown-info')
-    if (avatar) {
-      if (currentUser.profile_image_url) {
-        avatar.innerHTML = `<img src="${Utils.escapeHtml(currentUser.profile_image_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
-      } else {
-        avatar.textContent = Utils.getInitials(currentUser.name)
-      }
-    }
-    if (info) info.innerHTML = `
-      <div class="dropdown-user-name">${Utils.escapeHtml(currentUser.name)}</div>
-      <div class="dropdown-user-role">${Utils.getRoleLabel(currentUser.role)}</div>
-      ${currentUser.department
-        ? `<div class="dropdown-user-dept">${Utils.getDeptLabel(currentUser.department)}</div>`
-        : ''}
-    `
-  }
-
-  function _setupUserMenu() {
-    const btn      = document.getElementById('user-avatar-btn')
-    const dropdown = document.getElementById('user-dropdown')
-    if (!btn || !dropdown) return
-
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none'
-    })
-    document.addEventListener('click', () => {
-      if (dropdown) dropdown.style.display = 'none'
-    })
-  }
-
-  function _setupLogout() {
-    const btn = document.getElementById('logout-btn')
-    if (!btn) return
-    btn.addEventListener('click', async () => {
-      btn.textContent = 'Signing out…'
-      btn.disabled = true
-      await Auth.signOut()
-      window.location.href = '/'
-    })
-  }
-
   async function _loadNotificationCount() {
     const { data } = await API.getUnreadNotifications(currentUser.id)
     _updateNotifBadge(data ? data.length : 0)
@@ -630,48 +562,6 @@ const App = (() => {
         })[mod] || mod
         if (route) window.location.hash = route
       })
-    })
-  }
-
-  /* ── Mobile nav: hamburger + sidebar overlay ────────────────── */
-  function _initMobileNav() {
-    const hamburger = document.getElementById('hamburger-btn')
-    const sidebar   = document.getElementById('sidebar')
-    const overlay   = document.getElementById('sidebar-overlay')
-    if (!hamburger || !sidebar) return
-
-    function openSidebar() {
-      sidebar.classList.add('sidebar--open')
-      if (overlay) overlay.classList.add('sidebar-overlay--visible')
-      document.body.classList.add('sidebar-is-open')
-    }
-
-    function closeSidebar() {
-      sidebar.classList.remove('sidebar--open')
-      if (overlay) overlay.classList.remove('sidebar-overlay--visible')
-      document.body.classList.remove('sidebar-is-open')
-    }
-
-    hamburger.addEventListener('click', () => {
-      sidebar.classList.contains('sidebar--open') ? closeSidebar() : openSidebar()
-    })
-
-    // Tap overlay to close
-    if (overlay) overlay.addEventListener('click', closeSidebar)
-
-    // Close when a nav link is tapped (route changes on mobile)
-    document.getElementById('sidebar-nav')?.addEventListener('click', e => {
-      if (e.target.closest('.nav-item') && window.innerWidth <= 768) closeSidebar()
-    })
-
-    // Close on browser back/forward (hash changes)
-    window.addEventListener('hashchange', () => {
-      if (window.innerWidth <= 768) closeSidebar()
-    })
-
-    // ESC key closes sidebar
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') closeSidebar()
     })
   }
 
