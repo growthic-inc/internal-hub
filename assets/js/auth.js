@@ -29,10 +29,10 @@ const Auth = (() => {
   }
 
   /* Called from app/index.html — redirects to app shell if already signed in */
-  async function requireGuest() {
+  async function requireGuest(redirectTo = '/home') {
     const session = await getSession()
     if (session) {
-      window.location.href = '/home'
+      window.location.href = redirectTo
     }
   }
 
