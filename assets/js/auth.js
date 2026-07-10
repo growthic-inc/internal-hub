@@ -69,6 +69,8 @@ const Auth = (() => {
       return null
     }
 
+    if (window.Sentry) Sentry.setUser({ id: String(data.id), email: data.email, username: data.name })
+
     return { ...data, authId: session.user.id }
   }
 
