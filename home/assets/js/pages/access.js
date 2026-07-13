@@ -708,10 +708,12 @@ const Access = (() => {
 
     let html
     if (!q) {
-      const granted = _paEmployees.filter(e =>
+      const superAdmins = _paEmployees.filter(e => e.role === 'super_admin')
+      const granted     = _paEmployees.filter(e =>
         e.role !== 'super_admin' && (_paGrants[e.id]?.has(_paPortal) ?? false)
       )
-      if (!granted.length) {
+      const total = superAdmins.length + granted.length
+      if (!total) {
         html = `
           <div class="pa-prompt">
             <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M12 8v4m0 4h.01"/></svg>
@@ -719,8 +721,8 @@ const Access = (() => {
           </div>`
       } else {
         html = `
-          <div class="pa-section-label">Has Access (${granted.length})</div>
-          ${granted.map(e => _paRowHtml(e)).join('')}`
+          <div class="pa-section-label">Has Access (${total})</div>
+          ${[...superAdmins, ...granted].map(e => _paRowHtml(e)).join('')}`
       }
     } else {
       const emps = _paEmployees.filter(e =>
