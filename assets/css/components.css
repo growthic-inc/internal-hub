@@ -2232,11 +2232,41 @@
    ============================================================ */
 
 /* ── Outer layout ────────────────────────────────────────── */
+/* ── Page wrapper: full-bleed, flex column, fills viewport ── */
+.access-page-wrap {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--header-height));
+  margin: -24px;
+  overflow: hidden;
+}
+
+/* Tab bar — spans full width, aligned flush with sidebar */
+.access-tab-bar {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+/* Tab panels fill remaining height */
+.access-tab-panel {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Portal Access panel — normal vertical scroll with padding */
+.access-tab-panel--scroll {
+  overflow-y: auto;
+  padding: 24px;
+}
+
 .access-layout {
   display: grid;
   grid-template-columns: 220px 1fr;
-  height: calc(100vh - var(--header-height));
-  margin: -24px;
+  height: 100%;
   overflow: hidden;
 }
 

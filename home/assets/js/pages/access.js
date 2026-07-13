@@ -61,15 +61,15 @@ const Access = (() => {
     const isSuperAdmin = user.role === 'super_admin'
 
     return `
-      <div class="page-inner">
+      <div class="access-page-wrap">
         ${isSuperAdmin ? `
-          <div class="tabs" id="access-top-tabs" style="margin-bottom:16px;">
+          <div class="access-tab-bar" id="access-top-tabs">
             <button class="tab-btn tab-btn--active" data-tab="departments">Department Access</button>
             <button class="tab-btn" data-tab="portal">Portal Access</button>
           </div>
         ` : ''}
 
-        <div id="tab-panel-departments">
+        <div id="tab-panel-departments" class="access-tab-panel">
           <div class="access-layout">
 
             <!-- Left: department list -->
@@ -114,7 +114,7 @@ const Access = (() => {
           </div>
         </div>
 
-        <div id="tab-panel-portal" style="display:none;">
+        <div id="tab-panel-portal" class="access-tab-panel access-tab-panel--scroll" style="display:none;">
           <p class="page-loading">Loading…</p>
         </div>
       </div>
