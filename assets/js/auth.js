@@ -71,6 +71,14 @@ const Auth = (() => {
 
     if (window.Sentry) Sentry.setUser({ id: String(data.id), email: data.email, username: data.name })
 
+    // Portal Access — which departmental portals (HRMS, and future ones)
+    // this employee has been explicitly granted, independent of department.
+    const { data: grants } = await supabase
+      .from('portal_access')
+      .select('portal_id')
+      .eq('employee_id', data.id)
+    data.portalAccess = (grants || []).map(g => g.portal_id)
+
     return { ...data, authId: session.user.id }
   }
 

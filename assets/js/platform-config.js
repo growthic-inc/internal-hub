@@ -24,9 +24,10 @@ const PlatformConfig = (() => {
       description: 'HR & admin portal — payroll, employee records, compliance.',
       category:    'admin',
       path:        '/hrms',
-      // Access rule: super_admin or People & Culture department
+      // Access rule: super_admin always bypasses; everyone else needs an
+      // explicit Portal Access grant (see Access Control → Portal Access).
       access: (user) => user.role === 'super_admin' ||
-        Utils.getDeptSystemKey(user.department) === 'people_culture',
+        (user.portalAccess || []).includes('growthic-hrms'),
     },
   ]
 

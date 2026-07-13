@@ -1,6 +1,7 @@
 /* ============================================================
    Growthic HRMS — App Shell
-   Auth guard: super_admin or People & Culture only.
+   Auth guard: delegates to PlatformConfig (Portal Access) —
+   see app/assets/js/platform-config.js for the actual rule.
    Hash-based router: #payroll, #people, #leave (future)
    ============================================================ */
 
@@ -33,9 +34,9 @@ const HRMSApp = (() => {
         return
       }
 
-      // 3. Access guard — HR or Super Admin only
-      const isAllowed = _currentUser.role === 'super_admin' ||
-        Utils.getDeptSystemKey(_currentUser.department) === 'people_culture'
+      // 3. Access guard — single source of truth is PlatformConfig
+      //    (super_admin bypass, or an explicit Portal Access grant)
+      const isAllowed = PlatformConfig.getById('growthic-hrms').access(_currentUser)
 
       if (!isAllowed) {
         window.location.href = '/home'
@@ -60,6 +61,9 @@ const HRMSApp = (() => {
       // 6. Route
       _router()
       window.addEventListener('hashchange', _router)
+
+      // 7. Watch for Portal Access revocation while this session is open
+      _watchPortalAccess()
 
     } catch (err) {
       console.error('[HRMS] init() failed:', err)
@@ -119,6 +123,40 @@ const HRMSApp = (() => {
         el.classList.add('nav-item--active')
       })
     })
+  }
+
+  /* ── Portal Access revoke watcher ───────────────────────── */
+  // Super admins bypass the grant system entirely, so there's nothing to
+  // watch for them. Everyone else: if their 'growthic-hrms' grant row is
+  // deleted while they're active in this session, warn them and redirect
+  // to /home after a short grace period.
+  function _watchPortalAccess() {
+    if (_currentUser.role === 'super_admin') return
+
+    Config.supabase
+      .channel('portal-access-watch')
+      .on('postgres_changes', {
+        event:  'DELETE',
+        schema: 'public',
+        table:  'portal_access',
+        filter: `employee_id=eq.${_currentUser.id}`,
+      }, (payload) => {
+        if (payload.old?.portal_id !== 'growthic-hrms') return
+        _showAccessRevokedBanner()
+        setTimeout(() => { window.location.href = '/home' }, 4000)
+      })
+      .subscribe()
+  }
+
+  function _showAccessRevokedBanner() {
+    const banner = document.createElement('div')
+    banner.style.cssText = `
+      position:fixed;top:0;left:0;right:0;z-index:9999;
+      background:#FEE2E2;color:#B91C1C;border-bottom:1px solid #FCA5A5;
+      padding:12px 20px;text-align:center;font-size:13px;font-weight:600;
+    `
+    banner.textContent = 'Your HRMS access has been removed — redirecting to Growthic One…'
+    document.body.prepend(banner)
   }
 
   // Boot when DOM is ready

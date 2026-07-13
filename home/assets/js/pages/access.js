@@ -46,53 +46,76 @@ const Access = (() => {
   let _saving        = false
   let _currentUser   = null
 
+  // Portal Access tab (super_admin only) — independent of the matrix above.
+  let _activeTab      = 'departments'   // 'departments' | 'portal'
+  let _portalLoaded   = false
+  let _paEmployees    = []              // active employees: {id, name, email, role}
+  let _paGrants       = {}              // { employee_id: Set(portal_id) }
+  let _paSearch       = ''
+  let _paBusy         = new Set()       // "employeeId:portalId" keys mid-save
+
   /* ── render ──────────────────────────────────────────────── */
   function render(user) {
     _currentUser = user
     const isSuperAdmin = user.role === 'super_admin'
 
     return `
-      <div class="access-layout">
-
-        <!-- Left: department list -->
-        <aside class="access-sidebar">
-          <div class="access-sidebar-header">
-            <div class="access-sidebar-title">Access Control</div>
-            <p class="access-sidebar-sub">Set feature-level access per department</p>
+      <div class="page-inner">
+        ${isSuperAdmin ? `
+          <div class="tabs" id="access-top-tabs" style="margin-bottom:16px;">
+            <button class="tab-btn tab-btn--active" data-tab="departments">Department Access</button>
+            <button class="tab-btn" data-tab="portal">Portal Access</button>
           </div>
+        ` : ''}
 
-          ${isSuperAdmin ? `
-            <div class="access-super-badge">
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              Super Admin — full access, not affected by this matrix
+        <div id="tab-panel-departments">
+          <div class="access-layout">
+
+            <!-- Left: department list -->
+            <aside class="access-sidebar">
+              <div class="access-sidebar-header">
+                <div class="access-sidebar-title">Access Control</div>
+                <p class="access-sidebar-sub">Set feature-level access per department</p>
+              </div>
+
+              ${isSuperAdmin ? `
+                <div class="access-super-badge">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  Super Admin — full access, not affected by this matrix
+                </div>
+              ` : ''}
+
+              <div class="access-dept-section">
+                <div class="access-dept-label">DEPARTMENTS</div>
+                <nav class="access-dept-list" id="access-dept-list">
+                  <p class="loading-text" style="padding:12px;">Loading…</p>
+                </nav>
+              </div>
+            </aside>
+
+            <!-- Right: feature access matrix -->
+            <div class="access-right">
+              <div class="access-right-body" id="access-right-body">
+                <p class="loading-text">Loading…</p>
+              </div>
+              <div class="access-right-footer" id="access-right-footer" style="display:none;">
+                <p class="access-footer-hint">
+                  Higher levels include all lower levels.
+                  Changes apply to all employees in the department.
+                </p>
+                <div style="display:flex;gap:10px;flex-shrink:0;">
+                  <button class="btn btn--secondary" id="access-reset-btn">Reset to Default</button>
+                  <button class="btn btn--primary"   id="access-save-btn">Save Changes</button>
+                </div>
+              </div>
             </div>
-          ` : ''}
 
-          <div class="access-dept-section">
-            <div class="access-dept-label">DEPARTMENTS</div>
-            <nav class="access-dept-list" id="access-dept-list">
-              <p class="loading-text" style="padding:12px;">Loading…</p>
-            </nav>
-          </div>
-        </aside>
-
-        <!-- Right: feature access matrix -->
-        <div class="access-right">
-          <div class="access-right-body" id="access-right-body">
-            <p class="loading-text">Loading…</p>
-          </div>
-          <div class="access-right-footer" id="access-right-footer" style="display:none;">
-            <p class="access-footer-hint">
-              Higher levels include all lower levels.
-              Changes apply to all employees in the department.
-            </p>
-            <div style="display:flex;gap:10px;flex-shrink:0;">
-              <button class="btn btn--secondary" id="access-reset-btn">Reset to Default</button>
-              <button class="btn btn--primary"   id="access-save-btn">Save Changes</button>
-            </div>
           </div>
         </div>
 
+        <div id="tab-panel-portal" style="display:none;">
+          <p class="page-loading">Loading…</p>
+        </div>
       </div>
     `
   }
@@ -104,8 +127,28 @@ const Access = (() => {
     _state         = {}
     _expandedMods  = new Set(MODULE_ORDER)
     _saving        = false
+    _activeTab     = 'departments'
+    _portalLoaded  = false
+
+    document.querySelectorAll('#access-top-tabs .tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => _switchTab(btn.dataset.tab))
+    })
 
     await _loadDepartments()
+  }
+
+  /* ── Top-level tab switch ───────────────────────────────── */
+  function _switchTab(tab) {
+    if (tab === _activeTab) return
+    _activeTab = tab
+
+    document.querySelectorAll('#access-top-tabs .tab-btn').forEach(btn => {
+      btn.classList.toggle('tab-btn--active', btn.dataset.tab === tab)
+    })
+    document.getElementById('tab-panel-departments').style.display = tab === 'departments' ? '' : 'none'
+    document.getElementById('tab-panel-portal').style.display      = tab === 'portal'      ? '' : 'none'
+
+    if (tab === 'portal' && !_portalLoaded) _loadPortalAccessTab()
   }
 
   /* ── Load departments from the table & render the sidebar ──── */
@@ -560,6 +603,165 @@ const Access = (() => {
     }
 
     Utils.showToast('Defaults restored — click Save Changes to apply.', 'success')
+  }
+
+  /* ════════════════════════════════════════════════════════════
+     PORTAL ACCESS (Super Admin only)
+     Per-employee grants controlling which departmental portals
+     (Growthic HRMS, and future ones) a user can open. Independent
+     of the department/module matrix above — reads from / writes
+     to the portal_access table.
+  ════════════════════════════════════════════════════════════ */
+  function _portals() {
+    // Every authenticated user already gets growthic-one — nothing to grant there.
+    return PlatformConfig.getAll().filter(p => p.id !== 'growthic-one')
+  }
+
+  async function _loadPortalAccessTab() {
+    const panel = document.getElementById('tab-panel-portal')
+    if (panel) panel.innerHTML = '<p class="page-loading">Loading…</p>'
+
+    const [{ data: emps }, { data: grants }] = await Promise.all([
+      Config.supabase.from('employees').select('id, name, email, role').eq('status', 'active').order('name'),
+      Config.supabase.from('portal_access').select('employee_id, portal_id'),
+    ])
+
+    _paEmployees = emps || []
+    _paGrants    = {}
+    ;(grants || []).forEach(g => {
+      if (!_paGrants[g.employee_id]) _paGrants[g.employee_id] = new Set()
+      _paGrants[g.employee_id].add(g.portal_id)
+    })
+
+    _portalLoaded = true
+    _renderPortalAccessTab()
+  }
+
+  function _renderPortalAccessTab() {
+    const panel = document.getElementById('tab-panel-portal')
+    if (!panel) return
+
+    const portals = _portals()
+    const q       = _paSearch.trim().toLowerCase()
+    const emps    = _paEmployees.filter(e =>
+      !q || e.name.toLowerCase().includes(q) || e.email.toLowerCase().includes(q)
+    )
+
+    const colHeaders = portals.map(p =>
+      `<th style="text-align:center;">${Utils.escapeHtml(p.name)}</th>`
+    ).join('')
+
+    const rows = emps.map(e => {
+      const isSuperAdmin = e.role === 'super_admin'
+      const grantSet     = _paGrants[e.id] || new Set()
+
+      const cells = portals.map(p => {
+        if (isSuperAdmin) {
+          return `<td style="text-align:center;">
+            <span class="badge badge--muted" style="font-size:10px;" title="Super Admin always has access">Always</span>
+          </td>`
+        }
+        const checked = grantSet.has(p.id)
+        const busy    = _paBusy.has(`${e.id}:${p.id}`)
+        return `
+          <td style="text-align:center;">
+            <label class="toggle">
+              <input type="checkbox" class="pa-toggle" data-emp="${e.id}" data-portal="${p.id}"
+                ${checked ? 'checked' : ''} ${busy ? 'disabled' : ''} />
+              <span class="toggle-slider"></span>
+            </label>
+          </td>
+        `
+      }).join('')
+
+      return `
+        <tr>
+          <td>
+            <div style="font-weight:500;font-size:13px;">${Utils.escapeHtml(e.name)}</div>
+            <div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(e.email)}</div>
+          </td>
+          ${cells}
+        </tr>
+      `
+    }).join('')
+
+    panel.innerHTML = `
+      <div class="section-card">
+        <div class="section-card-header" style="flex-wrap:wrap;gap:10px;">
+          <div>
+            <h3 style="margin:0;">Portal Access</h3>
+            <p style="margin:4px 0 0;font-size:12px;color:var(--text-muted);">
+              Controls which departmental portals each person can open — independent of the department-based module access above.
+            </p>
+          </div>
+          <div class="search-wrap" style="margin-left:auto;max-width:260px;">
+            <input class="form-input" id="pa-search" type="search"
+              placeholder="Search by name or email…" value="${Utils.escapeHtml(_paSearch)}">
+          </div>
+        </div>
+        <div class="section-card-body" style="padding:0;overflow-x:auto;">
+          ${emps.length ? `
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  ${colHeaders}
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          ` : `<p class="empty-state" style="padding:24px;">No employees match your search.</p>`}
+        </div>
+      </div>
+    `
+
+    document.getElementById('pa-search')?.addEventListener('input', e => {
+      _paSearch = e.target.value
+      _renderPortalAccessTab()
+    })
+
+    panel.querySelectorAll('.pa-toggle').forEach(input => {
+      input.addEventListener('change', () =>
+        _togglePortalAccess(input.dataset.emp, input.dataset.portal, input.checked)
+      )
+    })
+  }
+
+  async function _togglePortalAccess(employeeId, portalId, grant) {
+    const key = `${employeeId}:${portalId}`
+    if (_paBusy.has(key)) return
+    _paBusy.add(key)
+
+    const emp    = _paEmployees.find(e => e.id === employeeId)
+    const portal = _portals().find(p => p.id === portalId)
+
+    const { error } = grant
+      ? await Config.supabase.from('portal_access')
+          .upsert(
+            { employee_id: employeeId, portal_id: portalId, granted_by: _currentUser.id },
+            { onConflict: 'employee_id,portal_id' }
+          )
+      : await Config.supabase.from('portal_access')
+          .delete().eq('employee_id', employeeId).eq('portal_id', portalId)
+
+    _paBusy.delete(key)
+
+    if (error) {
+      Utils.showToast('Failed to update access: ' + error.message, 'error')
+      _renderPortalAccessTab() // revert the toggle back to its last known-good state
+      return
+    }
+
+    if (!_paGrants[employeeId]) _paGrants[employeeId] = new Set()
+    if (grant) _paGrants[employeeId].add(portalId)
+    else       _paGrants[employeeId].delete(portalId)
+
+    Utils.showToast(
+      grant
+        ? `${emp?.name || 'Employee'} granted access to ${portal?.name || portalId}.`
+        : `${emp?.name || 'Employee'}'s access to ${portal?.name || portalId} revoked.`,
+      'success'
+    )
   }
 
   /* ── Default access matrix ───────────────────────────────── */
