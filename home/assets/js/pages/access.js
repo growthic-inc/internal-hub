@@ -704,44 +704,33 @@ const Access = (() => {
     const container = document.getElementById('pa-results')
     if (!container) return
 
-    const q    = _paSearch.trim().toLowerCase()
-    const emps = q
-      ? _paEmployees.filter(e =>
-          e.name.toLowerCase().includes(q) || e.email.toLowerCase().includes(q)
-        )
-      : []
+    const q = _paSearch.trim().toLowerCase()
 
     let html
     if (!q) {
-      html = `
-        <div class="pa-prompt">
-          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <p>Search for an employee to manage their <strong>${Utils.escapeHtml(portal.name)}</strong> access</p>
-        </div>`
-    } else if (!emps.length) {
-      html = `<p class="empty-state" style="padding:24px 0;">No employees found for "<strong>${Utils.escapeHtml(q)}</strong>"</p>`
-    } else {
-      html = emps.map(e => {
-        const isSuperAdmin = e.role === 'super_admin'
-        const hasAccess    = isSuperAdmin || (_paGrants[e.id]?.has(_paPortal) ?? false)
-        const busy         = _paBusy.has(`${e.id}:${_paPortal}`)
-        return `
-          <div class="pa-row">
-            <div class="pa-row-info">
-              <div class="pa-row-name">${Utils.escapeHtml(e.name)}</div>
-              <div class="pa-row-email">${Utils.escapeHtml(e.email)}</div>
-            </div>
-            ${isSuperAdmin
-              ? `<span class="badge badge--muted" style="font-size:11px;" title="Super Admin always has access">Always</span>`
-              : `<label class="toggle">
-                  <input type="checkbox" class="pa-toggle"
-                    data-emp="${e.id}" data-portal="${_paPortal}"
-                    ${hasAccess ? 'checked' : ''} ${busy ? 'disabled' : ''}>
-                  <span class="toggle-slider"></span>
-                </label>`
-            }
+      const granted = _paEmployees.filter(e =>
+        e.role !== 'super_admin' && (_paGrants[e.id]?.has(_paPortal) ?? false)
+      )
+      if (!granted.length) {
+        html = `
+          <div class="pa-prompt">
+            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M12 8v4m0 4h.01"/></svg>
+            <p>No one has been granted <strong>${Utils.escapeHtml(portal.name)}</strong> access yet.<br>Search above to add someone.</p>
           </div>`
-      }).join('')
+      } else {
+        html = `
+          <div class="pa-section-label">Has Access (${granted.length})</div>
+          ${granted.map(e => _paRowHtml(e)).join('')}`
+      }
+    } else {
+      const emps = _paEmployees.filter(e =>
+        e.name.toLowerCase().includes(q) || e.email.toLowerCase().includes(q)
+      )
+      if (!emps.length) {
+        html = `<p class="empty-state" style="padding:24px 0;">No employees found for "<strong>${Utils.escapeHtml(q)}</strong>"</p>`
+      } else {
+        html = emps.map(e => _paRowHtml(e)).join('')
+      }
     }
 
     container.innerHTML = html
@@ -751,6 +740,28 @@ const Access = (() => {
         _togglePortalAccess(input.dataset.emp, input.dataset.portal, input.checked)
       )
     })
+  }
+
+  function _paRowHtml(e) {
+    const isSuperAdmin = e.role === 'super_admin'
+    const hasAccess    = isSuperAdmin || (_paGrants[e.id]?.has(_paPortal) ?? false)
+    const busy         = _paBusy.has(`${e.id}:${_paPortal}`)
+    return `
+      <div class="pa-row">
+        <div class="pa-row-info">
+          <div class="pa-row-name">${Utils.escapeHtml(e.name)}</div>
+          <div class="pa-row-email">${Utils.escapeHtml(e.email)}</div>
+        </div>
+        ${isSuperAdmin
+          ? `<span class="badge badge--muted" style="font-size:11px;" title="Super Admin always has access">Always</span>`
+          : `<label class="toggle">
+              <input type="checkbox" class="pa-toggle"
+                data-emp="${e.id}" data-portal="${_paPortal}"
+                ${hasAccess ? 'checked' : ''} ${busy ? 'disabled' : ''}>
+              <span class="toggle-slider"></span>
+            </label>`
+        }
+      </div>`
   }
 
   async function _togglePortalAccess(employeeId, portalId, grant) {
@@ -781,6 +792,11 @@ const Access = (() => {
     if (!_paGrants[employeeId]) _paGrants[employeeId] = new Set()
     if (grant) _paGrants[employeeId].add(portalId)
     else       _paGrants[employeeId].delete(portalId)
+
+    // Re-render results so granted list stays in sync (e.g. revoked person disappears)
+    const portals = _portals()
+    const activePortal = portals.find(p => p.id === _paPortal) || portals[0]
+    _renderPortalResults(activePortal)
 
     Utils.showToast(
       grant
