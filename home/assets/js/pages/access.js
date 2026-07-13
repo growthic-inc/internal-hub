@@ -52,6 +52,7 @@ const Access = (() => {
   let _paEmployees    = []              // active employees: {id, name, email, role}
   let _paGrants       = {}              // { employee_id: Set(portal_id) }
   let _paSearch       = ''
+  let _paPortal       = null            // selected portal chip id
   let _paBusy         = new Set()       // "employeeId:portalId" keys mid-save
 
   /* ── render ──────────────────────────────────────────────── */
@@ -129,6 +130,8 @@ const Access = (() => {
     _saving        = false
     _activeTab     = 'departments'
     _portalLoaded  = false
+    _paPortal      = null
+    _paSearch      = ''
 
     document.querySelectorAll('#access-top-tabs .tab-btn').forEach(btn => {
       btn.addEventListener('click', () => _switchTab(btn.dataset.tab))
@@ -634,6 +637,7 @@ const Access = (() => {
     })
 
     _portalLoaded = true
+    if (!_paPortal) _paPortal = _portals()[0]?.id || null
     _renderPortalAccessTab()
   }
 
@@ -642,85 +646,107 @@ const Access = (() => {
     if (!panel) return
 
     const portals = _portals()
-    const q       = _paSearch.trim().toLowerCase()
-    const emps    = _paEmployees.filter(e =>
-      !q || e.name.toLowerCase().includes(q) || e.email.toLowerCase().includes(q)
-    )
+    if (!portals.length) {
+      panel.innerHTML = `<div class="section-card"><div class="section-card-body"><p class="empty-state" style="padding:24px;">No portals configured.</p></div></div>`
+      return
+    }
 
-    const colHeaders = portals.map(p =>
-      `<th style="text-align:center;">${Utils.escapeHtml(p.name)}</th>`
+    const activePortal = portals.find(p => p.id === _paPortal) || portals[0]
+
+    const chipsHtml = portals.map(p => `
+      <button class="pa-chip${p.id === _paPortal ? ' pa-chip--active' : ''}" data-portal="${p.id}">
+        ${Utils.escapeHtml(p.name)}
+      </button>`
     ).join('')
-
-    const rows = emps.map(e => {
-      const isSuperAdmin = e.role === 'super_admin'
-      const grantSet     = _paGrants[e.id] || new Set()
-
-      const cells = portals.map(p => {
-        if (isSuperAdmin) {
-          return `<td style="text-align:center;">
-            <span class="badge badge--muted" style="font-size:10px;" title="Super Admin always has access">Always</span>
-          </td>`
-        }
-        const checked = grantSet.has(p.id)
-        const busy    = _paBusy.has(`${e.id}:${p.id}`)
-        return `
-          <td style="text-align:center;">
-            <label class="toggle">
-              <input type="checkbox" class="pa-toggle" data-emp="${e.id}" data-portal="${p.id}"
-                ${checked ? 'checked' : ''} ${busy ? 'disabled' : ''} />
-              <span class="toggle-slider"></span>
-            </label>
-          </td>
-        `
-      }).join('')
-
-      return `
-        <tr>
-          <td>
-            <div style="font-weight:500;font-size:13px;">${Utils.escapeHtml(e.name)}</div>
-            <div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(e.email)}</div>
-          </td>
-          ${cells}
-        </tr>
-      `
-    }).join('')
 
     panel.innerHTML = `
       <div class="section-card">
-        <div class="section-card-header" style="flex-wrap:wrap;gap:10px;">
+        <div class="section-card-header">
           <div>
             <h3 style="margin:0;">Portal Access</h3>
             <p style="margin:4px 0 0;font-size:12px;color:var(--text-muted);">
-              Controls which departmental portals each person can open — independent of the department-based module access above.
+              Control who can open each portal — independent of department-based module access.
             </p>
           </div>
-          <div class="search-wrap" style="margin-left:auto;max-width:260px;">
-            <input class="form-input" id="pa-search" type="search"
-              placeholder="Search by name or email…" value="${Utils.escapeHtml(_paSearch)}">
-          </div>
         </div>
-        <div class="section-card-body" style="padding:0;overflow-x:auto;">
-          ${emps.length ? `
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Employee</th>
-                  ${colHeaders}
-                </tr>
-              </thead>
-              <tbody>${rows}</tbody>
-            </table>
-          ` : `<p class="empty-state" style="padding:24px;">No employees match your search.</p>`}
+        <div class="section-card-body">
+          <div class="pa-chips">${chipsHtml}</div>
+          <div class="pa-search-wrap">
+            <input class="form-input" id="pa-search" type="search"
+              placeholder="Search by name or email…"
+              value="${Utils.escapeHtml(_paSearch)}" autocomplete="off">
+          </div>
+          <div id="pa-results"></div>
         </div>
       </div>
     `
 
-    document.getElementById('pa-search')?.addEventListener('input', e => {
-      _paSearch = e.target.value
-      _renderPortalAccessTab()
+    _renderPortalResults(activePortal)
+
+    panel.querySelectorAll('.pa-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.portal === _paPortal) return
+        _paPortal = btn.dataset.portal
+        _paSearch = ''
+        _renderPortalAccessTab()
+      })
     })
 
-    panel.querySelectorAll('.pa-toggle').forEach(input => {
+    document.getElementById('pa-search')?.addEventListener('input', e => {
+      _paSearch = e.target.value
+      _renderPortalResults(activePortal)
+    })
+
+    document.getElementById('pa-search')?.focus()
+  }
+
+  function _renderPortalResults(portal) {
+    const container = document.getElementById('pa-results')
+    if (!container) return
+
+    const q    = _paSearch.trim().toLowerCase()
+    const emps = q
+      ? _paEmployees.filter(e =>
+          e.name.toLowerCase().includes(q) || e.email.toLowerCase().includes(q)
+        )
+      : []
+
+    let html
+    if (!q) {
+      html = `
+        <div class="pa-prompt">
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <p>Search for an employee to manage their <strong>${Utils.escapeHtml(portal.name)}</strong> access</p>
+        </div>`
+    } else if (!emps.length) {
+      html = `<p class="empty-state" style="padding:24px 0;">No employees found for "<strong>${Utils.escapeHtml(q)}</strong>"</p>`
+    } else {
+      html = emps.map(e => {
+        const isSuperAdmin = e.role === 'super_admin'
+        const hasAccess    = isSuperAdmin || (_paGrants[e.id]?.has(_paPortal) ?? false)
+        const busy         = _paBusy.has(`${e.id}:${_paPortal}`)
+        return `
+          <div class="pa-row">
+            <div class="pa-row-info">
+              <div class="pa-row-name">${Utils.escapeHtml(e.name)}</div>
+              <div class="pa-row-email">${Utils.escapeHtml(e.email)}</div>
+            </div>
+            ${isSuperAdmin
+              ? `<span class="badge badge--muted" style="font-size:11px;" title="Super Admin always has access">Always</span>`
+              : `<label class="toggle">
+                  <input type="checkbox" class="pa-toggle"
+                    data-emp="${e.id}" data-portal="${_paPortal}"
+                    ${hasAccess ? 'checked' : ''} ${busy ? 'disabled' : ''}>
+                  <span class="toggle-slider"></span>
+                </label>`
+            }
+          </div>`
+      }).join('')
+    }
+
+    container.innerHTML = html
+
+    container.querySelectorAll('.pa-toggle').forEach(input => {
       input.addEventListener('change', () =>
         _togglePortalAccess(input.dataset.emp, input.dataset.portal, input.checked)
       )
