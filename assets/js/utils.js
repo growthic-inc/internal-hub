@@ -55,6 +55,7 @@ const Utils = (() => {
   /* ── Role display labels ──────────────────────────────────── */
   const ROLE_LABELS = {
     super_admin: 'Super Admin',
+    admin:       'Admin',
     employee:    'Employee',
     // Legacy values — kept so old data still renders correctly
     founders_office: "Founder's Office",

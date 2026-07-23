@@ -16,6 +16,7 @@ const People = (() => {
   /* ── Constants ─────────────────────────────────────────── */
   const ROLES = [
     { value: 'employee',   label: 'Employee' },
+    { value: 'admin',      label: 'Admin' },
     { value: 'super_admin', label: 'Super Admin' },
   ]
 
@@ -830,8 +831,8 @@ const People = (() => {
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label">Role</label>
-            <select class="form-select" id="ppl-edit-role">
+            <label class="form-label">Role${_user.role === 'super_admin' ? '' : ' <span style="font-size:11px;color:var(--text-muted);">(read-only)</span>'}</label>
+            <select class="form-select" id="ppl-edit-role" ${_user.role === 'super_admin' ? '' : 'disabled style="background:var(--surface-alt);cursor:not-allowed;"'}>
               ${roleOptions}
             </select>
           </div>

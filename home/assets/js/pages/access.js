@@ -182,6 +182,7 @@ const Access = (() => {
   function _canManageDepts() {
     return _currentUser && (
       _currentUser.role === 'super_admin' ||
+      _currentUser.role === 'admin' ||
       Utils.getDeptSystemKey(_currentUser.department) === 'people_culture'
     )
   }
