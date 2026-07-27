@@ -461,7 +461,8 @@ const ClientDashboard = (() => {
       // reposts_shares as 0. Back-calculate via rate × impressions when the breakdown is all zeros.
       const _engTotal = arr => arr.reduce((a, m) => {
         const parts = (m.reactions || 0) + (m.comments || 0) + (m.reposts_shares || 0)
-        return a + (parts > 0 ? parts : Math.round((m.engagement_rate || 0) * (m.impressions || 0)))
+        const val   = parts > 0 ? parts : Math.round((m.engagement_rate || 0) * (m.impressions || 0))
+        return a + Math.max(0, val)
       }, 0)
       const totalImpressions = sum(metrics, 'impressions')
       const totalEngagements = _engTotal(metrics)
