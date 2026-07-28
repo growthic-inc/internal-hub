@@ -84,7 +84,7 @@ const Timesheet = (() => {
     _p         = {
       can_create:  App.hasAccess('timesheet', 'log_entry',          'can_upload'),
       can_edit:    App.hasAccess('timesheet', 'submit_timesheet',   'can_upload'),
-      can_approve: App.hasAccess('timesheet', 'approve_timesheets', 'can_approve'),
+      can_approve: user.role === 'admin' || App.hasAccess('timesheet', 'approve_timesheets', 'can_approve'),
     }
     _weekStart = _getMondayOf(new Date())
     _teamWeek  = _getMondayOf(new Date())
