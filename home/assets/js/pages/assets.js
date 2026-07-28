@@ -1415,7 +1415,7 @@ const Assets = (() => {
       const unallocate = newEmpId === '__none__'
       btn.disabled = true; btn.textContent = 'Saving…'
 
-      const today = new Date().toISOString().split('T')[0]
+      const today = Utils.todayIST()
       const { error } = await API.updateAsset(asset.id, unallocate ? {
         assigned_to:   null,
         assigned_date: null,
@@ -1680,7 +1680,7 @@ const Assets = (() => {
 
       const { error } = await API.updateAsset(asset.id, {
         assigned_to:   empId,
-        assigned_date: new Date().toISOString().split('T')[0],
+        assigned_date: Utils.todayIST(),
         status:        'in_use',
         condition:     cond,
         updated_at:    new Date().toISOString(),

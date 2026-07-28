@@ -1084,7 +1084,7 @@ const API = (() => {
     return supabase
       .from('company_holidays')
       .select('date, name')
-      .gte('date', new Date().toISOString().split('T')[0])
+      .gte('date', Utils.todayIST())
       .order('date')
       .limit(limit)
   }
@@ -1122,7 +1122,7 @@ const API = (() => {
   }
 
   async function getWhoIsOutToday() {
-    const today = new Date().toISOString().split('T')[0]
+    const today = Utils.todayIST()
     return supabase
       .from('leave_requests')
       .select('employees!employee_id(id, name, profile_image_url, designation, department)')
@@ -1132,7 +1132,7 @@ const API = (() => {
   }
 
   async function getWhoIsWfhToday() {
-    const today = new Date().toISOString().split('T')[0]
+    const today = Utils.todayIST()
     return supabase
       .from('wfh_requests')
       .select('employees!employee_id(id, name, profile_image_url, designation, department)')
@@ -1159,9 +1159,8 @@ const API = (() => {
   }
 
   async function getUpcomingEventsData(days = 30) {
-    const today   = new Date()
-    const fromISO = today.toISOString().split('T')[0]
-    const toISO   = new Date(today.getTime() + days * 86400000).toISOString().split('T')[0]
+    const fromISO = Utils.todayIST()
+    const toISO   = new Date(new Date().getTime() + days * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
     const [holRes, evtRes] = await Promise.all([
       supabase.from('company_holidays').select('id, name, date')
         .gte('date', fromISO).lte('date', toISO).order('date'),

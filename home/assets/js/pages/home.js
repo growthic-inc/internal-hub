@@ -46,7 +46,7 @@ const HomeModule = (() => {
   }
 
   function _todayISO() {
-    return new Date().toISOString().split('T')[0]
+    return Utils.todayIST()
   }
 
   function _avatarHtml(person) {

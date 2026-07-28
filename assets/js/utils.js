@@ -242,6 +242,10 @@ const Utils = (() => {
     return allowedRoles.includes(userRole)
   }
 
+  function todayIST() {
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+  }
+
   return {
     formatDate,
     formatDateShort,
@@ -266,6 +270,7 @@ const Utils = (() => {
     on,
     debounce,
     canAccess,
+    todayIST,
     EMPLOYMENT_TYPE_LABELS,
     WORK_LOCATION_LABELS,
   }

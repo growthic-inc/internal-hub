@@ -206,7 +206,10 @@ const ClientDashboard = (() => {
     }
     const dateTo = new Date(), dateFrom = new Date()
     dateFrom.setDate(dateTo.getDate() - (parseInt(_currentRange, 10) || 30))
-    return { dateFrom: dateFrom.toISOString().split('T')[0], dateTo: dateTo.toISOString().split('T')[0] }
+    return {
+      dateFrom: dateFrom.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+      dateTo:   dateTo.toLocaleDateString('en-CA',   { timeZone: 'Asia/Kolkata' }),
+    }
   }
 
   function _getPrevDateRange() {
@@ -215,7 +218,10 @@ const ClientDashboard = (() => {
     const days = Math.round((to - from) / 86400000)
     const prevTo   = new Date(from); prevTo.setDate(prevTo.getDate() - 1)
     const prevFrom = new Date(prevTo); prevFrom.setDate(prevFrom.getDate() - days)
-    return { dateFrom: prevFrom.toISOString().split('T')[0], dateTo: prevTo.toISOString().split('T')[0] }
+    return {
+      dateFrom: prevFrom.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+      dateTo:   prevTo.toLocaleDateString('en-CA',   { timeZone: 'Asia/Kolkata' }),
+    }
   }
 
   /* ── Load dashboard ─────────────────────────────────────── */
