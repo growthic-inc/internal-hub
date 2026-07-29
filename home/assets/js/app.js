@@ -66,7 +66,7 @@ const App = (() => {
 
   /* ── Load access matrix at login ───────────────────────── */
   async function _loadAccessMatrix() {
-    if (currentUser.role === 'super_admin') {
+    if (currentUser.role === 'super_admin' || currentUser.role === 'admin') {
       _matrix = null  // null = full access everywhere
       return
     }
