@@ -39,6 +39,12 @@ const Payroll = (() => {
       .sort((a, b) => (a.display_order - b.display_order) || a.name.localeCompare(b.name))
   }
 
+  function _variableComponents() {
+    return _components
+      .filter(c => c.category === 'variable' && c.is_active)
+      .sort((a, b) => (a.display_order - b.display_order) || a.name.localeCompare(b.name))
+  }
+
   function _monthlyForEmp(empId) {
     const salMap = _empSalaries[empId] || {}
     return _fixedComponents().reduce((sum, c) => sum + (salMap[c.id] || 0), 0)
@@ -132,26 +138,45 @@ const Payroll = (() => {
     const content = document.getElementById('payroll-content')
     if (!content) return
 
-    const cols    = _fixedComponents()
-    const emps    = _employees.filter(e => e.status === _dashFilter).sort((a, b) => a.name.localeCompare(b.name))
+    const fixedCols = _fixedComponents()
+    const varCols   = _variableComponents()
+    const emps      = _employees.filter(e => e.status === _dashFilter).sort((a, b) => a.name.localeCompare(b.name))
 
-    const colHeaders = cols.map(c =>
+    const fixedHeaders = fixedCols.map(c =>
       `<th style="text-align:right;white-space:nowrap;font-size:12px;">${Utils.escapeHtml(c.name)}</th>`
     ).join('')
 
+    const varHeaders = varCols.length ? [
+      `<th style="text-align:right;white-space:nowrap;font-size:10px;color:var(--text-muted);border-left:2px solid var(--border);padding-left:12px;">VARIABLE</th>`,
+      ...varCols.slice(1).map(c =>
+        `<th style="text-align:right;white-space:nowrap;font-size:12px;">${Utils.escapeHtml(c.name)}</th>`
+      ),
+    ].join('') : ''
+
+    const firstVarHeader = varCols.length
+      ? `<th style="text-align:right;white-space:nowrap;font-size:12px;border-left:2px solid var(--border);padding-left:12px;">${Utils.escapeHtml(varCols[0].name)}</th>`
+      : ''
+
+    const colHeaders = fixedHeaders + (varCols.length ? firstVarHeader + varCols.slice(1).map(c =>
+      `<th style="text-align:right;white-space:nowrap;font-size:12px;">${Utils.escapeHtml(c.name)}</th>`
+    ).join('') : '')
+
     const rows = emps.map(e => {
       const salMap  = _empSalaries[e.id] || {}
-      const monthly = cols.reduce((s, c) => s + (salMap[c.id] || 0), 0)
+      const monthly = fixedCols.reduce((s, c) => s + (salMap[c.id] || 0), 0)
       const ctc     = monthly * 12
-      const cells   = cols.map(c =>
+      const fixedCells = fixedCols.map(c =>
         `<td style="text-align:right;font-size:12px;">${_fmt(salMap[c.id] || 0)}</td>`
+      ).join('')
+      const varCells = varCols.map((c, i) =>
+        `<td style="text-align:right;font-size:12px;${i === 0 ? 'border-left:2px solid var(--border);padding-left:12px;' : ''}">${_fmt(salMap[c.id] || 0)}</td>`
       ).join('')
       return `
         <tr>
           <td>
             <div style="font-weight:500;font-size:13px;">${Utils.escapeHtml(e.name)}</div>
           </td>
-          ${cells}
+          ${fixedCells}${varCells}
           <td style="text-align:right;font-size:12px;font-weight:600;">${_fmt(monthly)}</td>
           <td style="text-align:right;font-size:12px;font-weight:600;color:var(--primary);">${_fmt(ctc)}</td>
           <td>
@@ -189,7 +214,7 @@ const Payroll = (() => {
           ` : `<p class="empty-state" style="padding:24px 20px;">No ${_dashFilter} employees found.</p>`}
         </div>
       </div>
-      ${cols.length === 0 ? `
+      ${fixedCols.length === 0 ? `
         <div class="alert alert--info" style="margin-top:12px;">
           No salary components defined yet. Go to <strong>Settings</strong> to add components.
         </div>
@@ -210,20 +235,31 @@ const Payroll = (() => {
   }
 
   function _openDashEditModal(emp) {
-    const cols   = _fixedComponents()
-    const salMap = _empSalaries[emp.id] || {}
+    const fixedCols = _fixedComponents()
+    const varCols   = _variableComponents()
+    const salMap    = _empSalaries[emp.id] || {}
 
-    const fields = cols.length ? cols.map(c => `
+    const _inputField = c => `
       <div class="form-group">
         <label class="form-label">${Utils.escapeHtml(c.name)}</label>
         <div class="input-wrapper">
           <span class="input-prefix">₹</span>
           <input class="form-input form-input--prefixed dash-comp-inp" type="number"
-            min="0" step="1" data-comp-id="${c.id}" id="dci-${c.id}"
+            min="0" step="1" data-comp-id="${c.id}" data-comp-cat="${c.category}" id="dci-${c.id}"
             value="${salMap[c.id] || 0}">
         </div>
       </div>
-    `).join('') : `<p class="empty-state">No fixed components defined. Add them in Settings first.</p>`
+    `
+
+    const fixedFields = fixedCols.length
+      ? fixedCols.map(_inputField).join('')
+      : `<p class="empty-state">No fixed components defined. Add them in Settings first.</p>`
+
+    const varSection = varCols.length ? `
+      <hr style="margin:20px 0;border:none;border-top:1px solid var(--border);">
+      <p style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:0 0 14px;">Variable Components <span style="font-weight:400;text-transform:none;letter-spacing:0;">(not included in Monthly Salary / CTC)</span></p>
+      <div class="hrms-form-grid">${varCols.map(_inputField).join('')}</div>
+    ` : ''
 
     Utils.openModal(`
       <div class="modal-header">
@@ -232,31 +268,32 @@ const Payroll = (() => {
       </div>
       <div class="modal-body" style="padding:20px 24px;">
         <div id="dash-modal-err" class="alert alert--danger" style="display:none;margin-bottom:14px;"></div>
-        ${cols.length ? `
-          <div class="hrms-form-grid">${fields}</div>
+        ${fixedCols.length ? `
+          <div class="hrms-form-grid">${fixedFields}</div>
+          ${varSection}
           <div class="hrms-salary-summary" id="dash-modal-summary" style="margin-top:18px;">
-            ${_dashSummaryHtml(cols, salMap)}
+            ${_dashSummaryHtml(fixedCols, salMap)}
           </div>
-        ` : fields}
+        ` : fixedFields}
       </div>
       <div class="modal-footer">
         <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
-        ${cols.length ? `<button class="btn btn--primary" id="dash-save-btn">Save</button>` : ''}
+        ${fixedCols.length ? `<button class="btn btn--primary" id="dash-save-btn">Save</button>` : ''}
       </div>
     `, 'dash-edit-modal')
 
     document.querySelectorAll('.dash-comp-inp').forEach(inp => {
       inp.addEventListener('input', () => {
         const live = {}
-        document.querySelectorAll('.dash-comp-inp').forEach(i => {
+        document.querySelectorAll('.dash-comp-inp[data-comp-cat="fixed"]').forEach(i => {
           live[i.dataset.compId] = parseFloat(i.value) || 0
         })
         const el = document.getElementById('dash-modal-summary')
-        if (el) el.innerHTML = _dashSummaryHtml(cols, live)
+        if (el) el.innerHTML = _dashSummaryHtml(fixedCols, live)
       })
     })
 
-    document.getElementById('dash-save-btn')?.addEventListener('click', () => _saveDashSalary(emp, cols))
+    document.getElementById('dash-save-btn')?.addEventListener('click', () => _saveDashSalary(emp, [...fixedCols, ...varCols]))
   }
 
   function _dashSummaryHtml(cols, salMap) {
