@@ -14,6 +14,7 @@ const Payroll = (() => {
 
   // Dashboard
   let _dashFilter  = 'active'
+  let _dashView    = 'detailed'   // 'detailed' | 'summary'
 
   // Processing
   let _procMonth   = null
@@ -139,28 +140,19 @@ const Payroll = (() => {
     const content = document.getElementById('payroll-content')
     if (!content) return
 
-    const fixedCols = _fixedComponents()
-    const varCols   = _variableComponents()
-    const emps      = _employees.filter(e => e.status === _dashFilter).sort((a, b) => a.name.localeCompare(b.name))
+    const fixedCols   = _fixedComponents()
+    const varCols     = _variableComponents()
+    const emps        = _employees.filter(e => e.status === _dashFilter).sort((a, b) => a.name.localeCompare(b.name))
+    const isDetailed  = _dashView === 'detailed'
 
-    const fixedHeaders = fixedCols.map(c =>
-      `<th style="text-align:right;white-space:nowrap;font-size:12px;">${Utils.escapeHtml(c.name)}</th>`
-    ).join('')
-
-    const varHeaders = varCols.length ? [
-      `<th style="text-align:right;white-space:nowrap;font-size:10px;color:var(--text-muted);border-left:2px solid var(--border);padding-left:12px;">VARIABLE</th>`,
-      ...varCols.slice(1).map(c =>
+    const colHeaders = isDetailed ? (
+      fixedCols.map(c =>
         `<th style="text-align:right;white-space:nowrap;font-size:12px;">${Utils.escapeHtml(c.name)}</th>`
-      ),
-    ].join('') : ''
-
-    const firstVarHeader = varCols.length
-      ? `<th style="text-align:right;white-space:nowrap;font-size:12px;border-left:2px solid var(--border);padding-left:12px;">${Utils.escapeHtml(varCols[0].name)}</th>`
-      : ''
-
-    const colHeaders = fixedHeaders + (varCols.length ? firstVarHeader + varCols.slice(1).map(c =>
-      `<th style="text-align:right;white-space:nowrap;font-size:12px;">${Utils.escapeHtml(c.name)}</th>`
-    ).join('') : '')
+      ).join('') +
+      varCols.map((c, i) =>
+        `<th style="text-align:right;white-space:nowrap;font-size:12px;${i === 0 ? 'border-left:2px solid var(--border);padding-left:12px;' : ''}">${Utils.escapeHtml(c.name)}</th>`
+      ).join('')
+    ) : ''
 
     const rows = emps.map(e => {
       const salMap      = _empSalaries[e.id] || {}
@@ -168,32 +160,44 @@ const Payroll = (() => {
       const annualVar   = varCols.reduce((s, c) => s + (salMap[c.id] || 0), 0)
       const monthly     = Math.round(annualFixed / 12)
       const ctc         = annualFixed + annualVar
-      const fixedCells = fixedCols.map(c =>
-        `<td style="text-align:right;font-size:12px;">${salMap[c.id] ? _fmt(salMap[c.id]) : '<span style="color:var(--text-muted)">—</span>'}</td>`
-      ).join('')
-      const varCells = varCols.map((c, i) =>
-        `<td style="text-align:right;font-size:12px;${i === 0 ? 'border-left:2px solid var(--border);padding-left:12px;' : ''}">${salMap[c.id] ? _fmt(salMap[c.id]) : '<span style="color:var(--text-muted)">—</span>'}</td>`
-      ).join('')
+
+      const compCells = isDetailed ? (
+        fixedCols.map(c =>
+          `<td style="text-align:right;font-size:12px;">${salMap[c.id] ? _fmt(salMap[c.id]) : '<span style="color:var(--text-muted)">—</span>'}</td>`
+        ).join('') +
+        varCols.map((c, i) =>
+          `<td style="text-align:right;font-size:12px;${i === 0 ? 'border-left:2px solid var(--border);padding-left:12px;' : ''}">${salMap[c.id] ? _fmt(salMap[c.id]) : '<span style="color:var(--text-muted)">—</span>'}</td>`
+        ).join('')
+      ) : ''
+
       return `
         <tr>
-          <td>
-            <div style="font-weight:500;font-size:13px;">${Utils.escapeHtml(e.name)}</div>
-          </td>
-          ${fixedCells}${varCells}
+          <td><div style="font-weight:500;font-size:13px;">${Utils.escapeHtml(e.name)}</div></td>
+          ${compCells}
           <td style="text-align:right;font-size:12px;font-weight:600;">${_fmt(monthly)}</td>
           <td style="text-align:right;font-size:12px;font-weight:600;color:var(--primary);">${_fmt(ctc)}</td>
-          <td>
-            <button class="btn btn--xs btn--ghost" data-dash-edit="${e.id}">Edit</button>
-          </td>
+          <td><button class="btn btn--xs btn--ghost" data-dash-edit="${e.id}">Edit</button></td>
         </tr>
       `
     }).join('')
+
+    const viewToggle = `
+      <div style="display:flex;gap:4px;">
+        <button class="btn btn--sm ${isDetailed ? 'btn--primary' : 'btn--ghost'}" id="dash-view-detailed" title="Show all components">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px;margin-right:4px;"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Detailed
+        </button>
+        <button class="btn btn--sm ${!isDetailed ? 'btn--primary' : 'btn--ghost'}" id="dash-view-summary" title="Show totals only">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px;margin-right:4px;"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>Summary
+        </button>
+      </div>
+    `
 
     content.innerHTML = `
       <div class="section-card">
         <div class="section-card-header" style="flex-wrap:wrap;gap:10px;">
           <h3 style="margin:0;">Compensation</h3>
-          <div style="margin-left:auto;">
+          <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+            ${viewToggle}
             <select class="form-input form-input--sm" id="dash-status-filter" style="width:130px;">
               <option value="active"   ${_dashFilter === 'active'   ? 'selected' : ''}>Active</option>
               <option value="inactive" ${_dashFilter === 'inactive' ? 'selected' : ''}>Inactive</option>
@@ -226,6 +230,16 @@ const Payroll = (() => {
 
     document.getElementById('dash-status-filter')?.addEventListener('change', e => {
       _dashFilter = e.target.value
+      _renderDashboardTab()
+    })
+
+    document.getElementById('dash-view-detailed')?.addEventListener('click', () => {
+      _dashView = 'detailed'
+      _renderDashboardTab()
+    })
+
+    document.getElementById('dash-view-summary')?.addEventListener('click', () => {
+      _dashView = 'summary'
       _renderDashboardTab()
     })
 
