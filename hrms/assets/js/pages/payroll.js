@@ -46,8 +46,9 @@ const Payroll = (() => {
   }
 
   function _monthlyForEmp(empId) {
-    const salMap = _empSalaries[empId] || {}
-    return _fixedComponents().reduce((sum, c) => sum + (salMap[c.id] || 0), 0)
+    const salMap     = _empSalaries[empId] || {}
+    const annualFixed = _fixedComponents().reduce((sum, c) => sum + (salMap[c.id] || 0), 0)
+    return Math.round(annualFixed / 12)
   }
 
   function _adjLabel(type) {
@@ -162,14 +163,16 @@ const Payroll = (() => {
     ).join('') : '')
 
     const rows = emps.map(e => {
-      const salMap  = _empSalaries[e.id] || {}
-      const monthly = fixedCols.reduce((s, c) => s + (salMap[c.id] || 0), 0)
-      const ctc     = (monthly + varCols.reduce((s, c) => s + (salMap[c.id] || 0), 0)) * 12
+      const salMap      = _empSalaries[e.id] || {}
+      const annualFixed = fixedCols.reduce((s, c) => s + (salMap[c.id] || 0), 0)
+      const annualVar   = varCols.reduce((s, c) => s + (salMap[c.id] || 0), 0)
+      const monthly     = Math.round(annualFixed / 12)
+      const ctc         = annualFixed + annualVar
       const fixedCells = fixedCols.map(c =>
-        `<td style="text-align:right;font-size:12px;">${_fmt(salMap[c.id] || 0)}</td>`
+        `<td style="text-align:right;font-size:12px;">${salMap[c.id] ? _fmt(salMap[c.id]) : '<span style="color:var(--text-muted)">—</span>'}</td>`
       ).join('')
       const varCells = varCols.map((c, i) =>
-        `<td style="text-align:right;font-size:12px;${i === 0 ? 'border-left:2px solid var(--border);padding-left:12px;' : ''}">${_fmt(salMap[c.id] || 0)}</td>`
+        `<td style="text-align:right;font-size:12px;${i === 0 ? 'border-left:2px solid var(--border);padding-left:12px;' : ''}">${salMap[c.id] ? _fmt(salMap[c.id]) : '<span style="color:var(--text-muted)">—</span>'}</td>`
       ).join('')
       return `
         <tr>
@@ -246,7 +249,7 @@ const Payroll = (() => {
           <span class="input-prefix">₹</span>
           <input class="form-input form-input--prefixed dash-comp-inp" type="number"
             min="0" step="1" data-comp-id="${c.id}" data-comp-cat="${c.category}" id="dci-${c.id}"
-            value="${salMap[c.id] || 0}">
+            placeholder="0" value="${salMap[c.id] || ''}">
         </div>
       </div>
     `
@@ -297,8 +300,10 @@ const Payroll = (() => {
   }
 
   function _dashSummaryHtml(fixedCols, salMap, varCols = []) {
-    const monthly  = fixedCols.reduce((s, c) => s + (Number(salMap[c.id]) || 0), 0)
-    const variable = varCols.reduce((s, c) => s + (Number(salMap[c.id]) || 0), 0)
+    const annualFixed = fixedCols.reduce((s, c) => s + (Number(salMap[c.id]) || 0), 0)
+    const annualVar   = varCols.reduce((s, c) => s + (Number(salMap[c.id]) || 0), 0)
+    const monthly     = Math.round(annualFixed / 12)
+    const ctc         = annualFixed + annualVar
     return `
       <div class="hrms-summary-row">
         <span>Monthly Salary</span>
@@ -306,7 +311,7 @@ const Payroll = (() => {
       </div>
       <div class="hrms-summary-row hrms-summary-row--net">
         <span>Annual CTC</span>
-        <strong>${_fmt((monthly + variable) * 12)}</strong>
+        <strong>${_fmt(ctc)}</strong>
       </div>
     `
   }
@@ -321,7 +326,7 @@ const Payroll = (() => {
     const upserts = cols.map(c => ({
       employee_id:  emp.id,
       component_id: c.id,
-      amount:       parseFloat(document.getElementById(`dci-${c.id}`)?.value) || 0,
+      amount:       Math.round(parseFloat(document.getElementById(`dci-${c.id}`)?.value) || 0),
       updated_by:   _user.id,
       updated_at:   new Date().toISOString(),
     }))
