@@ -164,7 +164,7 @@ const Payroll = (() => {
     const rows = emps.map(e => {
       const salMap  = _empSalaries[e.id] || {}
       const monthly = fixedCols.reduce((s, c) => s + (salMap[c.id] || 0), 0)
-      const ctc     = monthly * 12
+      const ctc     = (monthly + varCols.reduce((s, c) => s + (salMap[c.id] || 0), 0)) * 12
       const fixedCells = fixedCols.map(c =>
         `<td style="text-align:right;font-size:12px;">${_fmt(salMap[c.id] || 0)}</td>`
       ).join('')
@@ -272,7 +272,7 @@ const Payroll = (() => {
           <div class="hrms-form-grid">${fixedFields}</div>
           ${varSection}
           <div class="hrms-salary-summary" id="dash-modal-summary" style="margin-top:18px;">
-            ${_dashSummaryHtml(fixedCols, salMap)}
+            ${_dashSummaryHtml(fixedCols, salMap, varCols)}
           </div>
         ` : fixedFields}
       </div>
@@ -285,19 +285,20 @@ const Payroll = (() => {
     document.querySelectorAll('.dash-comp-inp').forEach(inp => {
       inp.addEventListener('input', () => {
         const live = {}
-        document.querySelectorAll('.dash-comp-inp[data-comp-cat="fixed"]').forEach(i => {
+        document.querySelectorAll('.dash-comp-inp').forEach(i => {
           live[i.dataset.compId] = parseFloat(i.value) || 0
         })
         const el = document.getElementById('dash-modal-summary')
-        if (el) el.innerHTML = _dashSummaryHtml(fixedCols, live)
+        if (el) el.innerHTML = _dashSummaryHtml(fixedCols, live, varCols)
       })
     })
 
     document.getElementById('dash-save-btn')?.addEventListener('click', () => _saveDashSalary(emp, [...fixedCols, ...varCols]))
   }
 
-  function _dashSummaryHtml(cols, salMap) {
-    const monthly = cols.reduce((s, c) => s + (Number(salMap[c.id]) || 0), 0)
+  function _dashSummaryHtml(fixedCols, salMap, varCols = []) {
+    const monthly  = fixedCols.reduce((s, c) => s + (Number(salMap[c.id]) || 0), 0)
+    const variable = varCols.reduce((s, c) => s + (Number(salMap[c.id]) || 0), 0)
     return `
       <div class="hrms-summary-row">
         <span>Monthly Salary</span>
@@ -305,7 +306,7 @@ const Payroll = (() => {
       </div>
       <div class="hrms-summary-row hrms-summary-row--net">
         <span>Annual CTC</span>
-        <strong>${_fmt(monthly * 12)}</strong>
+        <strong>${_fmt((monthly + variable) * 12)}</strong>
       </div>
     `
   }
