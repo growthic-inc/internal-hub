@@ -126,7 +126,7 @@ BEGIN
         SELECT 1 FROM timesheets t
         WHERE t.employee_id = v_emp.id
           AND t.date        = d.day::date
-          AND t.status      IN ('submitted', 'approved')
+          AND t.status      IN ('draft', 'submitted', 'approved')
       );
 
     v_deductions := ROUND((v_monthly_salary / 30.0) * (v_unpaid_days + v_missed_ts_days), 2);
