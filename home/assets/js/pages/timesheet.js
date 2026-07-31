@@ -1017,7 +1017,7 @@ const Timesheet = (() => {
     cutoff.setHours(23, 59, 59, 999)
 
     const daysInMonth = new Date(year, month, 0).getDate()
-    const entryDates  = new Set((entries || []).filter(e => e.status === 'draft' || e.status === 'submitted' || e.status === 'approved').map(e => e.date))
+    const entryDates  = new Set((entries || []).filter(e => e.status === 'submitted' || e.status === 'approved').map(e => e.date))
     const missed      = []
 
     for (let d = 1; d <= daysInMonth; d++) {
