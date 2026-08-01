@@ -373,10 +373,6 @@ const ClientDashboard = (() => {
   async function _exportReport() {
     if (_reportBusy) return
     if (!_currentClient) { Utils.showToast('Select a client first.', 'error'); return }
-    if (_isPersonalProfile) {
-      Utils.showToast('Personal Profile report template isn\'t built yet — Company Page only for now.', 'error')
-      return
-    }
 
     const btn = document.getElementById('db-fetch-report-btn')
     _reportBusy = true
@@ -388,11 +384,14 @@ const ClientDashboard = (() => {
       const rawKpi = label => kpiByLabel[label]?.rawValue ?? 0
       const fmtKpi = label => kpiByLabel[label]?.value ?? '0'
 
-      // Interim mapping, flagged as such — Company Page KPIs have no single
+      // Personal Profile's own KPI computation already returns a literal
+      // "Engagements" figure — use it directly. Company Page has no single
       // "Engagements" number (Clicks and Reactions are tracked separately),
-      // so this combines them until the template's KPI slide is redesigned
-      // to show all 6 real metrics individually.
-      const engagementsTotal = rawKpi('Clicks') + rawKpi('Reactions')
+      // so that one's still a combined interim value, flagged as such,
+      // until the Company KPI slide is redesigned to show all 6 individually.
+      const engagementsTotal = _isPersonalProfile
+        ? rawKpi('Engagements')
+        : rawKpi('Clicks') + rawKpi('Reactions')
 
       const [yearStr, monthStr] = (_currentMonth || _thisMonth()).split('-')
       const year  = parseInt(yearStr, 10)
@@ -404,9 +403,9 @@ const ClientDashboard = (() => {
       const pct = v => (_num(v) * 100).toFixed(2) + '%'
       const postCard = (p) => p ? {
         TITLE:       p.post_title || '',
-        // No separate caption/body field exists in the post data today —
-        // reusing the title here until that's resolved.
-        DESCRIPTION: p.post_title || '',
+        // No separate caption/body field exists in the post data today.
+        // Left blank rather than duplicating the title into a second box.
+        DESCRIPTION: '',
         IMPRESSIONS: _num(p.impressions).toLocaleString('en-IN'),
         LIKES:       _num(p.likes).toLocaleString('en-IN'),
         COMMENTS:    _num(p.comments).toLocaleString('en-IN'),
@@ -475,6 +474,7 @@ const ClientDashboard = (() => {
         body: JSON.stringify({
           client_id: _currentClient.id,
           month, year, tokens,
+          report_type: _isPersonalProfile ? 'personal' : 'company',
           chart_image_base64: chartImageBase64,
         }),
       })
