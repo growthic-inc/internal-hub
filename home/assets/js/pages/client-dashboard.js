@@ -493,7 +493,23 @@ const ClientDashboard = (() => {
         for (const [dimKey, token] of Object.entries(demoDimTokens)) {
           const el = document.getElementById(`demo-${activeTab}-${dimKey}`)
           if (!el) continue
-          const canvas = await html2canvas(el, { backgroundColor: '#ffffff', scale: 2 })
+          // Capture from a wide off-screen clone, not the live element —
+          // the dashboard's compact grid squeezes each block down to
+          // ~200px, so the label column truncates long category names
+          // with an ellipsis before capture ever happens. A report image
+          // needs the full label text, so give the clone real room first.
+          const clone = el.cloneNode(true)
+          clone.removeAttribute('id')
+          clone.querySelectorAll('span[style*="text-overflow"]').forEach(span => {
+            span.style.overflow = 'visible'
+            span.style.textOverflow = 'clip'
+          })
+          const wrapper = document.createElement('div')
+          wrapper.style.cssText = 'position:fixed;left:-9999px;top:0;width:760px;background:#fff;'
+          wrapper.appendChild(clone)
+          document.body.appendChild(wrapper)
+          const canvas = await html2canvas(clone, { backgroundColor: '#ffffff', scale: 2 })
+          document.body.removeChild(wrapper)
           chartImages[token] = canvas.toDataURL('image/png').split(',')[1]
         }
       }
