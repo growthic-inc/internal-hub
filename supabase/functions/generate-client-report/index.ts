@@ -26,7 +26,6 @@ const corsHeaders = {
 
 const TEMPLATE_SETTING_KEY          = 'reports.company_page_template_id'
 const PERSONAL_TEMPLATE_SETTING_KEY = 'reports.personal_profile_template_id'
-const CHART_PLACEHOLDER    = '{{PERFORMANCE_CHART}}'
 const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December']
 
@@ -59,9 +58,9 @@ Deno.serve(async (req: Request) => {
       year:               number
       report_type?:       'company' | 'personal'   // defaults to 'company'
       tokens:             Record<string, string>   // e.g. { CLIENT_NAME: 'Acme Co', FOLLOWER_COUNT: '1,234', ... }
-      chart_image_base64?: string  // raw base64, no data: prefix
+      chart_images?:      Record<string, string>   // token name (no braces) -> raw base64, e.g. { PERFORMANCE_CHART: '...', PUBLISHING_CHART: '...' }
     }
-    const { client_id, month, year, tokens, chart_image_base64 } = body
+    const { client_id, month, year, tokens, chart_images } = body
     const reportType = body.report_type === 'personal' ? 'personal' : 'company'
     if (!client_id || !month || !year || !tokens) {
       return json({ error: 'client_id, month, year, and tokens are required.' }, 400)
@@ -98,6 +97,11 @@ Deno.serve(async (req: Request) => {
     const monthLabel = `${MONTH_NAMES[month - 1]} ${year}`
     const monthDir   = await ensureFolder(accessToken, monthLabel, clientDir)
 
+    // ── Replace, don't accumulate: clear anything already in this
+    //    month's folder before generating the fresh report + charts.
+    //    This folder only ever holds one report at a time.
+    await clearFolder(accessToken, monthDir)
+
     // ── Copy the template into that folder ─────────────────────
     const reportName = `${client.client_name.trim()} — ${monthLabel} Report`
     const newFileId   = await copyFile(accessToken, templateId, reportName, monthDir)
@@ -113,9 +117,9 @@ Deno.serve(async (req: Request) => {
       await batchUpdate(accessToken, newFileId, textRequests)
     }
 
-    // ── Drop in the performance chart image, if provided ────────
-    if (chart_image_base64) {
-      await insertChartImage(accessToken, newFileId, monthDir, chart_image_base64)
+    // ── Drop in every chart image provided, one per named placeholder ──
+    for (const [chartToken, base64] of Object.entries(chart_images || {})) {
+      await insertChartImage(accessToken, newFileId, monthDir, `{{${chartToken}}}`, base64)
     }
 
     return json({
@@ -131,13 +135,13 @@ Deno.serve(async (req: Request) => {
 
 /* ── Chart image: find the placeholder shape, replace it with a real picture ── */
 async function insertChartImage(
-  token: string, presentationId: string, folderId: string, base64: string,
+  token: string, presentationId: string, folderId: string, placeholderText: string, base64: string,
 ): Promise<void> {
   // 1. Find the shape whose text is exactly the chart placeholder token.
   const pres = await getPresentation(token, presentationId)
-  const found = findShapeByText(pres, CHART_PLACEHOLDER)
+  const found = findShapeByText(pres, placeholderText)
   if (!found) {
-    console.warn(`[generate-client-report] "${CHART_PLACEHOLDER}" shape not found — skipping chart image.`)
+    console.warn(`[generate-client-report] "${placeholderText}" shape not found — skipping that chart image.`)
     return
   }
   const { objectId, size, transform } = found
@@ -277,6 +281,24 @@ async function copyFile(token: string, fileId: string, name: string, parentId: s
   const data = await res.json() as { id?: string; error?: unknown }
   if (!data.id) throw new Error(`Drive copy failed: ${JSON.stringify(data.error || data)}`)
   return data.id
+}
+
+/** Delete every file directly inside a folder (not the folder itself).
+ *  Used so re-running Export for the same client/month replaces the
+ *  previous report and its chart images instead of piling up copies. */
+async function clearFolder(token: string, folderId: string): Promise<void> {
+  const q = `'${folderId}' in parents and trashed=false`
+  const sr = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  const sd = await sr.json() as { files?: { id: string }[] }
+  await Promise.all((sd.files || []).map(f =>
+    fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?supportsAllDrives=true`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => {}),
+  ))
 }
 
 /** Find an existing folder by name under a parent. Returns null if not found. */
