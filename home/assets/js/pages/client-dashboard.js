@@ -454,12 +454,21 @@ const ClientDashboard = (() => {
         tokens[`POST_${n}_ENG_RATE`]    = p ? pct(p.engagement_rate) : '0.00%'
       })
 
-      // Capture the Performance Trend chart exactly as currently rendered.
-      let chartImageBase64 = null
-      const canvas = document.getElementById('trend-chart')
-      if (canvas) {
-        chartImageBase64 = canvas.toDataURL('image/png').split(',')[1]
+      // Capture every real (canvas-based) chart exactly as currently rendered.
+      // Demographics (Industry/Seniority/Location) aren't canvas charts —
+      // they're plain HTML bars — so they're not captured here; those stay
+      // a manual step until/unless a DOM-screenshot approach is added.
+      const chartCanvasMap = {
+        PERFORMANCE_CHART: 'trend-chart',
+        PUBLISHING_CHART:  'pub-chart',
+        FOLLOWERS_CHART:   'followers-chart',
+        VISITORS_CHART:    'visitors-chart',
       }
+      const chartImages = {}
+      Object.entries(chartCanvasMap).forEach(([token, canvasId]) => {
+        const canvas = document.getElementById(canvasId)
+        if (canvas) chartImages[token] = canvas.toDataURL('image/png').split(',')[1]
+      })
 
       const { data: { session } } = await Config.supabase.auth.getSession()
       if (!session) { Utils.showToast('Session expired — please log in again.', 'error'); return }
@@ -475,7 +484,7 @@ const ClientDashboard = (() => {
           client_id: _currentClient.id,
           month, year, tokens,
           report_type: _isPersonalProfile ? 'personal' : 'company',
-          chart_image_base64: chartImageBase64,
+          chart_images: chartImages,
         }),
       })
       const data = await res.json().catch(() => ({}))
