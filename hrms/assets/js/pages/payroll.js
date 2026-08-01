@@ -163,10 +163,10 @@ const Payroll = (() => {
 
       const compCells = isDetailed ? (
         fixedCols.map(c =>
-          `<td style="text-align:right;font-size:12px;">${salMap[c.id] ? _fmt(salMap[c.id]) : '<span style="color:var(--text-muted)">—</span>'}</td>`
+          `<td style="text-align:right;font-size:12px;">${_fmt(salMap[c.id] ?? 0)}</td>`
         ).join('') +
         varCols.map((c, i) =>
-          `<td style="text-align:right;font-size:12px;${i === 0 ? 'border-left:2px solid var(--border);padding-left:12px;' : ''}">${salMap[c.id] ? _fmt(salMap[c.id]) : '<span style="color:var(--text-muted)">—</span>'}</td>`
+          `<td style="text-align:right;font-size:12px;${i === 0 ? 'border-left:2px solid var(--border);padding-left:12px;' : ''}">${_fmt(salMap[c.id] ?? 0)}</td>`
         ).join('')
       ) : ''
 
