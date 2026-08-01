@@ -425,6 +425,11 @@ const ClientDashboard = (() => {
       }
 
       // Featured + 3 supporting cards (Content Performance slide)
+      // `links` mirrors `tokens` for any title whose post has a real
+      // permalink — the backend turns that title text into a clickable
+      // hyperlink back to the original post, so there's no ambiguity
+      // about which piece of content a card refers to.
+      const links = {}
       const top = postCard(sorted[0])
       tokens.TOP_POST_TITLE       = top.TITLE
       tokens.TOP_POST_DESCRIPTION = top.DESCRIPTION
@@ -432,14 +437,17 @@ const ClientDashboard = (() => {
       tokens.TOP_POST_LIKES       = top.LIKES
       tokens.TOP_POST_COMMENTS    = top.COMMENTS
       tokens.TOP_POST_REPOSTS     = top.REPOSTS
+      if (sorted[0]?.post_url) links.TOP_POST_TITLE = sorted[0].post_url
       ;[2, 3, 4].forEach((n, i) => {
-        const c = postCard(sorted[i + 1])
+        const p = sorted[i + 1]
+        const c = postCard(p)
         tokens[`POST_${n}_TITLE`]       = c.TITLE
         tokens[`POST_${n}_DESCRIPTION`] = c.DESCRIPTION
         tokens[`POST_${n}_IMPRESSIONS`] = c.IMPRESSIONS
         tokens[`POST_${n}_LIKES`]       = c.LIKES
         tokens[`POST_${n}_COMMENTS`]    = c.COMMENTS
         tokens[`POST_${n}_REPOSTS`]     = c.REPOSTS
+        if (p?.post_url) links[`POST_${n}_TITLE`] = p.post_url
       })
 
       // Top Post table (rows 1-5) — same sorted list, separate token namespace
@@ -452,12 +460,10 @@ const ClientDashboard = (() => {
         tokens[`POST_${n}_CLICKS`]      = p ? _num(p.clicks).toLocaleString('en-IN') : '0'
         tokens[`POST_${n}_REACTIONS`]   = p ? _num(p.likes).toLocaleString('en-IN') : '0'
         tokens[`POST_${n}_ENG_RATE`]    = p ? pct(p.engagement_rate) : '0.00%'
+        if (p?.post_url) links[`POST_${n}`] = p.post_url
       })
 
       // Capture every real (canvas-based) chart exactly as currently rendered.
-      // Demographics (Industry/Seniority/Location) aren't canvas charts —
-      // they're plain HTML bars — so they're not captured here; those stay
-      // a manual step until/unless a DOM-screenshot approach is added.
       const chartCanvasMap = {
         PERFORMANCE_CHART: 'trend-chart',
         PUBLISHING_CHART:  'pub-chart',
@@ -469,6 +475,28 @@ const ClientDashboard = (() => {
         const canvas = document.getElementById(canvasId)
         if (canvas) chartImages[token] = canvas.toDataURL('image/png').split(',')[1]
       })
+
+      // Demographics bars aren't canvas charts — they're plain HTML/CSS —
+      // so they're captured via a DOM screenshot (html2canvas) instead.
+      // Only the currently active tab (Followers or Visitors) is on-screen;
+      // the other panel is display:none and can't be captured.
+      if (typeof html2canvas !== 'undefined') {
+        const activeTab = document.querySelector('.demo-tab--active')?.dataset.tab
+          || (document.getElementById('demo-panel-followers') ? 'followers' : 'visitors')
+        const demoDimTokens = {
+          industry:      'DEMOGRAPHICS_INDUSTRY_CHART',
+          seniority:     'DEMOGRAPHICS_SENIORITY_CHART',
+          location:      'DEMOGRAPHICS_LOCATION_CHART',
+          job_function:  'DEMOGRAPHICS_JOB_FUNCTION_CHART',
+          company_size:  'DEMOGRAPHICS_COMPANY_SIZE_CHART',
+        }
+        for (const [dimKey, token] of Object.entries(demoDimTokens)) {
+          const el = document.getElementById(`demo-${activeTab}-${dimKey}`)
+          if (!el) continue
+          const canvas = await html2canvas(el, { backgroundColor: '#ffffff', scale: 2 })
+          chartImages[token] = canvas.toDataURL('image/png').split(',')[1]
+        }
+      }
 
       const { data: { session } } = await Config.supabase.auth.getSession()
       if (!session) { Utils.showToast('Session expired — please log in again.', 'error'); return }
@@ -482,7 +510,7 @@ const ClientDashboard = (() => {
         },
         body: JSON.stringify({
           client_id: _currentClient.id,
-          month, year, tokens,
+          month, year, tokens, links,
           report_type: _isPersonalProfile ? 'personal' : 'company',
           chart_images: chartImages,
         }),
@@ -846,12 +874,16 @@ const ClientDashboard = (() => {
         { key: 'industry',     label: 'Industry',     limit: 8 },
         { key: 'company_size', label: 'Company Size', limit: null },
       ]
-      const renderList = data => {
+      // Each dimension block gets a stable id (namespaced by panel, since
+      // followers/visitors both render all dims and only one panel is
+      // visible at a time) so _exportReport() can DOM-capture it as an
+      // image for the report's Demographics slides.
+      const renderList = (data, panelKey) => {
         const blocks = DIMS.map(dim => {
           const rows = data.filter(r => r.dimension === dim.key).sort((a, b) => b.value - a.value)
           if (!rows.length) return ''
           const shown = dim.limit ? rows.slice(0, dim.limit) : rows, maxVal = shown[0]?.value || 1
-          return `<div style="min-width:0;">
+          return `<div id="demo-${panelKey}-${dim.key}" style="min-width:0;background:var(--surface,#fff);padding:8px;">
             <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;padding-bottom:3px;border-bottom:1px solid var(--border);">${dim.label}</div>
             ${shown.map(r => {
               const pct = Math.round((_num(r.value) / maxVal) * 100)
@@ -877,8 +909,8 @@ const ClientDashboard = (() => {
           <h4 style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:0;">Audience Demographics</h4>
           ${showTabs ? `<div style="display:flex;gap:6px;" id="demo-tabs">${tabs}</div>` : ''}
         </div>
-        ${hasDemoF ? `<div id="demo-panel-followers" class="demo-panel">${renderList(demoFollowers)}</div>` : ''}
-        ${hasDemoV ? `<div id="demo-panel-visitors" class="demo-panel" style="display:none;">${renderList(demoVisitors)}</div>` : ''}
+        ${hasDemoF ? `<div id="demo-panel-followers" class="demo-panel">${renderList(demoFollowers, 'followers')}</div>` : ''}
+        ${hasDemoV ? `<div id="demo-panel-visitors" class="demo-panel" style="display:none;">${renderList(demoVisitors, 'visitors')}</div>` : ''}
       </div>`
     }
 
