@@ -59,8 +59,9 @@ Deno.serve(async (req: Request) => {
       report_type?:       'company' | 'personal'   // defaults to 'company'
       tokens:             Record<string, string>   // e.g. { CLIENT_NAME: 'Acme Co', FOLLOWER_COUNT: '1,234', ... }
       chart_images?:      Record<string, string>   // token name (no braces) -> raw base64, e.g. { PERFORMANCE_CHART: '...', PUBLISHING_CHART: '...' }
+      links?:             Record<string, string>   // token name -> URL; hyperlinks that token's replaced text (e.g. TOP_POST_TITLE) to the original post
     }
-    const { client_id, month, year, tokens, chart_images } = body
+    const { client_id, month, year, tokens, chart_images, links } = body
     const reportType = body.report_type === 'personal' ? 'personal' : 'company'
     if (!client_id || !month || !year || !tokens) {
       return json({ error: 'client_id, month, year, and tokens are required.' }, 400)
@@ -122,6 +123,11 @@ Deno.serve(async (req: Request) => {
       await insertChartImage(accessToken, newFileId, monthDir, `{{${chartToken}}}`, base64)
     }
 
+    // ── Turn post titles into real hyperlinks back to the original post ──
+    for (const [linkToken, url] of Object.entries(links || {})) {
+      await applyHyperlink(accessToken, newFileId, tokens[linkToken], url)
+    }
+
     return json({
       fileId: newFileId,
       link:   `https://docs.google.com/presentation/d/${newFileId}/edit`,
@@ -168,6 +174,28 @@ async function insertChartImage(
       },
     },
   ])
+}
+
+/** Find the shape whose text is now exactly `text` (i.e. the token's
+ *  already-replaced value) and make that whole run a clickable link to `url`. */
+async function applyHyperlink(
+  accessToken: string, presentationId: string, text: string, url: string,
+): Promise<void> {
+  if (!text || !url) return
+  const pres = await getPresentation(accessToken, presentationId)
+  const found = findShapeByText(pres, text)
+  if (!found) {
+    console.warn(`[generate-client-report] link target text "${text}" not found — skipping hyperlink.`)
+    return
+  }
+  await batchUpdate(accessToken, presentationId, [{
+    updateTextStyle: {
+      objectId:  found.objectId,
+      style:     { link: { url } },
+      textRange: { type: 'ALL' },
+      fields:    'link',
+    },
+  }])
 }
 
 // Minimum sensible chart dimensions, in points. A {{PERFORMANCE_CHART}} text
