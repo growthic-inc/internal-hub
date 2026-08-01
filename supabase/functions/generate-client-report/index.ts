@@ -150,7 +150,7 @@ async function insertChartImage(
     console.warn(`[generate-client-report] "${placeholderText}" shape not found — skipping that chart image.`)
     return
   }
-  const { objectId, size, transform } = found
+  const { objectId, transform } = found
 
   // 2. Upload the image to Drive and make it fetchable by Slides' rendering service.
   const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
@@ -159,8 +159,10 @@ async function insertChartImage(
   const imageUrl = `https://drive.google.com/uc?export=view&id=${imageFileId}`
 
   // 3. Swap the placeholder shape for a real image in the same spot —
-  //    expanding the size first if the placeholder was too small to be a real chart.
-  const resized = resizeIfTooSmall(size, transform)
+  //    sized to actually use the space available on the slide, in the
+  //    image's own aspect ratio, rather than trusting the placeholder's
+  //    box (which was only ever drawn to fit a short token of text).
+  const resized = fitImageSize(pres.pageSize, transform, pngDimensions(bytes))
   await batchUpdate(token, presentationId, [
     { deleteObject: { objectId } },
     {
@@ -198,40 +200,59 @@ async function applyHyperlink(
   }])
 }
 
-// Minimum sensible chart dimensions, in points. A {{PERFORMANCE_CHART}} text
-// box is typically drawn just large enough to fit that short token — using
-// its raw size verbatim produces a tiny sliver of an image. If the shape's
-// *effective* on-page size (size × transform scale) is smaller than this,
-// keep its top-left position but expand it to a real chart-sized box instead
-// of trusting a placeholder that was never meant to define real dimensions.
-const MIN_CHART_WIDTH_PT  = 400
-const MIN_CHART_HEIGHT_PT = 200
+// A {{CHART_TOKEN}} text box is typically drawn just large enough to fit
+// that short token, or at best some arbitrary modest box — neither is a
+// real chart size. Rather than trust the placeholder's own dimensions,
+// size the image to fill the space actually left on the slide (from the
+// placeholder's top-left position to a margin near the page edge), in
+// the image's own aspect ratio, so it neither gets squished nor sits
+// tiny in a sea of white space regardless of how the template was drawn.
+const MIN_CHART_WIDTH_PT  = 300
+const MIN_CHART_HEIGHT_PT = 150
+const MARGIN_PT           = 36  // ~0.5in breathing room at the page edge
 const PT_TO_EMU = 12700
 
-function resizeIfTooSmall(size: unknown, transform: unknown): { size: unknown; transform: unknown } {
-  const s = size as { width?: { magnitude: number; unit: string }; height?: { magnitude: number; unit: string } } | undefined
-  const t = transform as { scaleX?: number; scaleY?: number; translateX?: number; translateY?: number; unit?: string } | undefined
+type PageSize = { width?: { magnitude: number; unit: string }; height?: { magnitude: number; unit: string } }
 
-  const scaleX = t?.scaleX ?? 1
-  const scaleY = t?.scaleY ?? 1
-  const effectiveWidthPt  = s?.width  ? (s.width.magnitude  / PT_TO_EMU) * scaleX : 0
-  const effectiveHeightPt = s?.height ? (s.height.magnitude / PT_TO_EMU) * scaleY : 0
+/** Read pixel width/height straight out of a PNG's IHDR chunk (bytes 16-23, big-endian). */
+function pngDimensions(bytes: Uint8Array): { width: number; height: number } | null {
+  const sig = [137, 80, 78, 71, 13, 10, 26, 10]
+  if (bytes.length < 24 || !sig.every((b, i) => bytes[i] === b)) return null
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  return { width: dv.getUint32(16, false), height: dv.getUint32(20, false) }
+}
 
-  if (effectiveWidthPt >= MIN_CHART_WIDTH_PT && effectiveHeightPt >= MIN_CHART_HEIGHT_PT) {
-    return { size, transform }
+function fitImageSize(
+  pageSize: PageSize | undefined, transform: unknown, imgDims: { width: number; height: number } | null,
+): { size: unknown; transform: unknown } {
+  const t = transform as { translateX?: number; translateY?: number; unit?: string } | undefined
+  const translateX = t?.translateX ?? 0
+  const translateY = t?.translateY ?? 0
+
+  const pageWidthEmu  = pageSize?.width?.magnitude  ?? 9144000  // fallback: standard 10in-wide slide
+  const pageHeightEmu = pageSize?.height?.magnitude ?? 5143500  // fallback: standard 5.63in-tall slide
+  const marginEmu = MARGIN_PT * PT_TO_EMU
+
+  const maxWidth  = Math.max(pageWidthEmu  - translateX - marginEmu, MIN_CHART_WIDTH_PT  * PT_TO_EMU)
+  const maxHeight = Math.max(pageHeightEmu - translateY - marginEmu, MIN_CHART_HEIGHT_PT * PT_TO_EMU)
+
+  const aspect = imgDims && imgDims.height > 0 ? imgDims.width / imgDims.height : (MIN_CHART_WIDTH_PT / MIN_CHART_HEIGHT_PT)
+
+  // Contain-fit within (maxWidth, maxHeight): start from full available
+  // width, then shrink to the available height if that would overflow.
+  let width  = maxWidth
+  let height = width / aspect
+  if (height > maxHeight) {
+    height = maxHeight
+    width  = height * aspect
   }
 
   return {
     size: {
-      width:  { magnitude: MIN_CHART_WIDTH_PT  * PT_TO_EMU, unit: 'EMU' },
-      height: { magnitude: MIN_CHART_HEIGHT_PT * PT_TO_EMU, unit: 'EMU' },
+      width:  { magnitude: width,  unit: 'EMU' },
+      height: { magnitude: height, unit: 'EMU' },
     },
-    transform: {
-      scaleX: 1, scaleY: 1,
-      translateX: t?.translateX ?? 0,
-      translateY: t?.translateY ?? 0,
-      unit: t?.unit ?? 'EMU',
-    },
+    transform: { scaleX: 1, scaleY: 1, translateX, translateY, unit: t?.unit ?? 'EMU' },
   }
 }
 
@@ -274,7 +295,7 @@ type SlidesPage = { objectId: string; pageElements?: PageElement[] }
 
 /* ── Slides API ──────────────────────────────────────────────── */
 
-async function getPresentation(token: string, presentationId: string): Promise<{ slides?: SlidesPage[] }> {
+async function getPresentation(token: string, presentationId: string): Promise<{ slides?: SlidesPage[]; pageSize?: PageSize }> {
   const res = await fetch(
     `https://slides.googleapis.com/v1/presentations/${presentationId}`,
     { headers: { Authorization: `Bearer ${token}` } },
