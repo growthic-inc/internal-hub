@@ -403,10 +403,11 @@ const ClientDashboard = (() => {
       const pct = v => (_num(v) * 100).toFixed(2) + '%'
       // Personal Profile's native LinkedIn export ("Top posts" sheet) never
       // includes a caption/title — only the post URL, date, engagements and
-      // impressions. Company Page posts do have a real title. When there's
-      // no title, fall back to the link itself so there's still something
-      // visible to show (and to hyperlink) instead of a blank cell.
-      const titleOf = p => p.post_title || (p.post_url ? Utils.truncate(p.post_url, 60) : '')
+      // impressions. Company Page posts do have a "title" field, but LinkedIn
+      // often populates it with the full post caption rather than a short
+      // headline, so it's truncated the same as the URL fallback to avoid
+      // overflowing the fixed-size title boxes in the Slides template.
+      const titleOf = p => Utils.truncate(p.post_title || p.post_url || '', 100)
       const postCard = (p) => p ? {
         TITLE:       titleOf(p),
         // No separate caption/body field exists in the post data today.
