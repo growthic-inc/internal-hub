@@ -46,6 +46,10 @@ const ClientDashboard = (() => {
   let _activeMetrics = ['impressions', 'clicks']
   let _isPersonalProfile = false
   let _tcSort = { col: 'impressions', dir: 'desc' }, _tcPosts = []
+  // Cached from the last successful _loadDashboard() run — read by _exportReport()
+  // so Export never has to re-fetch or recompute anything the dashboard already has.
+  let _lastKpis = [], _lastPostCount = 0, _lastFollowerCount = 0
+  let _reportBusy = false
 
   /* ── render ─────────────────────────────────────────────── */
   function render(user) {
@@ -100,6 +104,10 @@ const ClientDashboard = (() => {
             </div>
           </div>
           <div class="db-filter-actions">
+            <button class="btn btn--ghost btn--sm" id="db-fetch-report-btn">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+              Fetch Report
+            </button>
             <button class="btn btn--primary btn--sm" id="db-upload-btn">
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
               Upload Data
@@ -134,6 +142,7 @@ const ClientDashboard = (() => {
     } else {
       document.getElementById('db-upload-btn')?.remove()
     }
+    document.getElementById('db-fetch-report-btn')?.addEventListener('click', _exportReport)
   }
 
   /* ── Client dropdown ────────────────────────────────────── */
@@ -267,6 +276,9 @@ const ClientDashboard = (() => {
     if (_visitorsChart)   { _visitorsChart.destroy();   _visitorsChart = null }
 
     const kpis = _computeKPIs(metrics, posts, followers, prevMetrics, prevPosts, prevFollowers)
+    _lastKpis          = kpis
+    _lastPostCount     = posts.length
+    _lastFollowerCount = followers.reduce((a, r) => a + (_num(r.total_new_followers) || 0), 0)
     const mCfg = _getMetricConfig(), mKeys = _getMetricKeys()
     const isIG = _currentPlatform === 'Instagram'
 
@@ -349,6 +361,143 @@ const ClientDashboard = (() => {
     _initFollowersChart(followers); _initVisitorsChart(visitors)
     _bindContextBar(); _bindTrendPills(metrics); _bindDemoTabs(); _bindTopContent(); _bindTopContent()
   }
+
+  /* ── Export report ──────────────────────────────────────────
+     Maps everything already computed for the current client/range
+     into the exact {{TOKEN}} names the Slides template expects, and
+     calls the backend to fill a fresh copy of it. No metric here is
+     recalculated — every value is read from what _loadDashboard()
+     already computed, so the report can never show a different
+     number than what's on screen.
+  ── ────────────────────────────────────────────────────────── */
+  async function _exportReport() {
+    if (_reportBusy) return
+    if (!_currentClient) { Utils.showToast('Select a client first.', 'error'); return }
+    if (_isPersonalProfile) {
+      Utils.showToast('Personal Profile report template isn\'t built yet — Company Page only for now.', 'error')
+      return
+    }
+
+    const btn = document.getElementById('db-fetch-report-btn')
+    _reportBusy = true
+    if (btn) { btn.disabled = true; btn.textContent = 'Fetching…' }
+
+    try {
+      const kpiByLabel = {}
+      _lastKpis.forEach(k => { kpiByLabel[k.label] = k })
+      const rawKpi = label => kpiByLabel[label]?.rawValue ?? 0
+      const fmtKpi = label => kpiByLabel[label]?.value ?? '0'
+
+      // Interim mapping, flagged as such — Company Page KPIs have no single
+      // "Engagements" number (Clicks and Reactions are tracked separately),
+      // so this combines them until the template's KPI slide is redesigned
+      // to show all 6 real metrics individually.
+      const engagementsTotal = rawKpi('Clicks') + rawKpi('Reactions')
+
+      const [yearStr, monthStr] = (_currentMonth || _thisMonth()).split('-')
+      const year  = parseInt(yearStr, 10)
+      const month = parseInt(monthStr, 10)
+      const { dateFrom, dateTo } = _getDateRange()
+      const dateRangeLabel = `${Utils.formatDate(dateFrom)} – ${Utils.formatDate(dateTo)}`
+
+      const sorted = [..._tcPosts].sort((a, b) => _num(b.impressions) - _num(a.impressions))
+      const pct = v => (_num(v) * 100).toFixed(2) + '%'
+      const postCard = (p) => p ? {
+        TITLE:       p.post_title || '',
+        // No separate caption/body field exists in the post data today —
+        // reusing the title here until that's resolved.
+        DESCRIPTION: p.post_title || '',
+        IMPRESSIONS: _num(p.impressions).toLocaleString('en-IN'),
+        LIKES:       _num(p.likes).toLocaleString('en-IN'),
+        COMMENTS:    _num(p.comments).toLocaleString('en-IN'),
+        REPOSTS:     _num(p.reposts_shares).toLocaleString('en-IN'),
+      } : { TITLE:'', DESCRIPTION:'', IMPRESSIONS:'0', LIKES:'0', COMMENTS:'0', REPOSTS:'0' }
+
+      const tokens = {
+        CLIENT_NAME:      _currentClient.client_name,
+        DATE_RANGE:       dateRangeLabel,
+        MONTH:            MONTH_LABELS[month - 1] || '',
+        FOLLOWER_COUNT:   _lastFollowerCount.toLocaleString('en-IN'),
+        POST_COUNT:       String(_lastPostCount),
+        IMPRESSIONS:      fmtKpi('Impressions'),
+        ENGAGEMENTS:      engagementsTotal.toLocaleString('en-IN'),
+        ENGAGEMENT_RATE:  fmtKpi('Engagement Rate'),
+        FOLLOWERS_GAINED: fmtKpi('Followers Gained'),
+      }
+
+      // Featured + 3 supporting cards (Content Performance slide)
+      const top = postCard(sorted[0])
+      tokens.TOP_POST_TITLE       = top.TITLE
+      tokens.TOP_POST_DESCRIPTION = top.DESCRIPTION
+      tokens.TOP_POST_IMPRESSIONS = top.IMPRESSIONS
+      tokens.TOP_POST_LIKES       = top.LIKES
+      tokens.TOP_POST_COMMENTS    = top.COMMENTS
+      tokens.TOP_POST_REPOSTS     = top.REPOSTS
+      ;[2, 3, 4].forEach((n, i) => {
+        const c = postCard(sorted[i + 1])
+        tokens[`POST_${n}_TITLE`]       = c.TITLE
+        tokens[`POST_${n}_DESCRIPTION`] = c.DESCRIPTION
+        tokens[`POST_${n}_IMPRESSIONS`] = c.IMPRESSIONS
+        tokens[`POST_${n}_LIKES`]       = c.LIKES
+        tokens[`POST_${n}_COMMENTS`]    = c.COMMENTS
+        tokens[`POST_${n}_REPOSTS`]     = c.REPOSTS
+      })
+
+      // Top Post table (rows 1-5) — same sorted list, separate token namespace
+      ;[1, 2, 3, 4, 5].forEach((n, i) => {
+        const p = sorted[i]
+        tokens[`POST_${n}`]             = p?.post_title || ''
+        tokens[`POST_${n}_TYPE`]        = p?.content_type || p?.post_type || ''
+        tokens[`POST_${n}_POSTED_BY`]   = p?.posted_by || ''
+        tokens[`POST_${n}_IMPRESSIONS`] = p ? _num(p.impressions).toLocaleString('en-IN') : '0'
+        tokens[`POST_${n}_CLICKS`]      = p ? _num(p.clicks).toLocaleString('en-IN') : '0'
+        tokens[`POST_${n}_REACTIONS`]   = p ? _num(p.likes).toLocaleString('en-IN') : '0'
+        tokens[`POST_${n}_ENG_RATE`]    = p ? pct(p.engagement_rate) : '0.00%'
+      })
+
+      // Capture the Performance Trend chart exactly as currently rendered.
+      let chartImageBase64 = null
+      const canvas = document.getElementById('trend-chart')
+      if (canvas) {
+        chartImageBase64 = canvas.toDataURL('image/png').split(',')[1]
+      }
+
+      const { data: { session } } = await Config.supabase.auth.getSession()
+      if (!session) { Utils.showToast('Session expired — please log in again.', 'error'); return }
+
+      const res = await fetch(`${Config.SUPABASE_URL}/functions/v1/generate-client-report`, {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey':        Config.SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({
+          client_id: _currentClient.id,
+          month, year, tokens,
+          chart_image_base64: chartImageBase64,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+
+      if (!res.ok || data.error) {
+        Utils.showToast('Failed to fetch report: ' + (data.error || res.statusText), 'error')
+        return
+      }
+
+      Utils.showToast('Report ready.', 'success')
+      window.open(data.link, '_blank', 'noopener')
+
+    } catch (err) {
+      Utils.showToast('Failed to fetch report: ' + err.message, 'error')
+    } finally {
+      _reportBusy = false
+      if (btn) { btn.disabled = false; btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg> Fetch Report` }
+    }
+  }
+
+  const MONTH_LABELS = ['January','February','March','April','May','June',
+    'July','August','September','October','November','December']
 
   /* ── Empty state ────────────────────────────────────────── */
   function _renderEmptyState(body) {
