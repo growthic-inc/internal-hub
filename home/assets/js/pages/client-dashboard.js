@@ -401,8 +401,14 @@ const ClientDashboard = (() => {
 
       const sorted = [..._tcPosts].sort((a, b) => _num(b.impressions) - _num(a.impressions))
       const pct = v => (_num(v) * 100).toFixed(2) + '%'
+      // Personal Profile's native LinkedIn export ("Top posts" sheet) never
+      // includes a caption/title — only the post URL, date, engagements and
+      // impressions. Company Page posts do have a real title. When there's
+      // no title, fall back to the link itself so there's still something
+      // visible to show (and to hyperlink) instead of a blank cell.
+      const titleOf = p => p.post_title || (p.post_url ? Utils.truncate(p.post_url, 60) : '')
       const postCard = (p) => p ? {
-        TITLE:       p.post_title || '',
+        TITLE:       titleOf(p),
         // No separate caption/body field exists in the post data today.
         // Left blank rather than duplicating the title into a second box.
         DESCRIPTION: '',
@@ -453,7 +459,7 @@ const ClientDashboard = (() => {
       // Top Post table (rows 1-5) — same sorted list, separate token namespace
       ;[1, 2, 3, 4, 5].forEach((n, i) => {
         const p = sorted[i]
-        tokens[`POST_${n}`]             = p?.post_title || ''
+        tokens[`POST_${n}`]             = p ? titleOf(p) : ''
         tokens[`POST_${n}_TYPE`]        = p?.content_type || p?.post_type || ''
         tokens[`POST_${n}_POSTED_BY`]   = p?.posted_by || ''
         tokens[`POST_${n}_IMPRESSIONS`] = p ? _num(p.impressions).toLocaleString('en-IN') : '0'
