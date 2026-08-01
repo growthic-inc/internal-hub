@@ -24,7 +24,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const TEMPLATE_SETTING_KEY = 'reports.company_page_template_id'
+const TEMPLATE_SETTING_KEY          = 'reports.company_page_template_id'
+const PERSONAL_TEMPLATE_SETTING_KEY = 'reports.personal_profile_template_id'
 const CHART_PLACEHOLDER    = '{{PERFORMANCE_CHART}}'
 const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December']
@@ -56,10 +57,12 @@ Deno.serve(async (req: Request) => {
       client_id:          string
       month:              number   // 1-12
       year:               number
+      report_type?:       'company' | 'personal'   // defaults to 'company'
       tokens:             Record<string, string>   // e.g. { CLIENT_NAME: 'Acme Co', FOLLOWER_COUNT: '1,234', ... }
       chart_image_base64?: string  // raw base64, no data: prefix
     }
     const { client_id, month, year, tokens, chart_image_base64 } = body
+    const reportType = body.report_type === 'personal' ? 'personal' : 'company'
     if (!client_id || !month || !year || !tokens) {
       return json({ error: 'client_id, month, year, and tokens are required.' }, 400)
     }
@@ -72,14 +75,15 @@ Deno.serve(async (req: Request) => {
       .single()
     if (clientErr || !client) return json({ error: 'Client not found.' }, 404)
 
-    // ── Look up the template's Slides file ID ─────────────────
+    // ── Look up the right template's Slides file ID ────────────
+    const settingKey = reportType === 'personal' ? PERSONAL_TEMPLATE_SETTING_KEY : TEMPLATE_SETTING_KEY
     const { data: setting, error: settingErr } = await anonClient
       .from('app_settings')
       .select('value')
-      .eq('key', TEMPLATE_SETTING_KEY)
+      .eq('key', settingKey)
       .single()
     if (settingErr || !setting?.value) {
-      return json({ error: `Report template not configured (${TEMPLATE_SETTING_KEY} missing from app_settings).` }, 500)
+      return json({ error: `Report template not configured (${settingKey} missing from app_settings).` }, 500)
     }
     const templateId = setting.value
 
@@ -144,7 +148,9 @@ async function insertChartImage(
   await setPublicReadPermission(token, imageFileId)
   const imageUrl = `https://drive.google.com/uc?export=view&id=${imageFileId}`
 
-  // 3. Swap the placeholder shape for a real image in the same spot.
+  // 3. Swap the placeholder shape for a real image in the same spot —
+  //    expanding the size first if the placeholder was too small to be a real chart.
+  const resized = resizeIfTooSmall(size, transform)
   await batchUpdate(token, presentationId, [
     { deleteObject: { objectId } },
     {
@@ -152,12 +158,49 @@ async function insertChartImage(
         url: imageUrl,
         elementProperties: {
           pageObjectId: found.pageObjectId,
-          size,
-          transform,
+          size:      resized.size,
+          transform: resized.transform,
         },
       },
     },
   ])
+}
+
+// Minimum sensible chart dimensions, in points. A {{PERFORMANCE_CHART}} text
+// box is typically drawn just large enough to fit that short token — using
+// its raw size verbatim produces a tiny sliver of an image. If the shape's
+// *effective* on-page size (size × transform scale) is smaller than this,
+// keep its top-left position but expand it to a real chart-sized box instead
+// of trusting a placeholder that was never meant to define real dimensions.
+const MIN_CHART_WIDTH_PT  = 400
+const MIN_CHART_HEIGHT_PT = 200
+const PT_TO_EMU = 12700
+
+function resizeIfTooSmall(size: unknown, transform: unknown): { size: unknown; transform: unknown } {
+  const s = size as { width?: { magnitude: number; unit: string }; height?: { magnitude: number; unit: string } } | undefined
+  const t = transform as { scaleX?: number; scaleY?: number; translateX?: number; translateY?: number; unit?: string } | undefined
+
+  const scaleX = t?.scaleX ?? 1
+  const scaleY = t?.scaleY ?? 1
+  const effectiveWidthPt  = s?.width  ? (s.width.magnitude  / PT_TO_EMU) * scaleX : 0
+  const effectiveHeightPt = s?.height ? (s.height.magnitude / PT_TO_EMU) * scaleY : 0
+
+  if (effectiveWidthPt >= MIN_CHART_WIDTH_PT && effectiveHeightPt >= MIN_CHART_HEIGHT_PT) {
+    return { size, transform }
+  }
+
+  return {
+    size: {
+      width:  { magnitude: MIN_CHART_WIDTH_PT  * PT_TO_EMU, unit: 'EMU' },
+      height: { magnitude: MIN_CHART_HEIGHT_PT * PT_TO_EMU, unit: 'EMU' },
+    },
+    transform: {
+      scaleX: 1, scaleY: 1,
+      translateX: t?.translateX ?? 0,
+      translateY: t?.translateY ?? 0,
+      unit: t?.unit ?? 'EMU',
+    },
+  }
 }
 
 /** Recursively search all slides/groups for a shape whose full text matches `text` exactly. */
