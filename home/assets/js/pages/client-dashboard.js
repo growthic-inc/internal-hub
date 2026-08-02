@@ -49,6 +49,7 @@ const ClientDashboard = (() => {
   // Cached from the last successful _loadDashboard() run — read by _exportReport()
   // so Export never has to re-fetch or recompute anything the dashboard already has.
   let _lastKpis = [], _lastPostCount = 0, _lastFollowerCount = 0
+  let _lastDemoFollowers = [], _lastDemoVisitors = []
   let _reportBusy = false
 
   /* ── render ─────────────────────────────────────────────── */
@@ -258,6 +259,8 @@ const ClientDashboard = (() => {
     const reports = reportsRes.data || [], uploadLog = uploadLogRes.data || []
     const followers = followersRes.data || [], visitors = visitorsRes.data || []
     const demoFollowers = demographicsFollowersRes.data || [], demoVisitors = demographicsVisitorsRes.data || []
+    _lastDemoFollowers = demoFollowers
+    _lastDemoVisitors  = demoVisitors
     const prevMetrics = prevMetricsRes.data || [], prevPosts = prevPostsRes.data || [], prevFollowers = prevFollowersRes.data || []
 
     // Detect personal profile: either via entity profile_type (when entity exists)
@@ -407,9 +410,10 @@ const ClientDashboard = (() => {
       // often populates it with the full post caption rather than a short
       // headline, so it's truncated the same as the URL fallback to avoid
       // overflowing the fixed-size title boxes in the Slides template.
-      const titleOf = p => Utils.truncate(p.post_title || p.post_url || '', 100)
+      const titleOf      = p => Utils.truncate(p.post_title || p.post_url || '', 100)
+      const titleShortOf = p => { const t = titleOf(p); const m = t.match(/^[^.?!]*[.?!]/); return (m ? m[0] : t).trim() || t }
       const postCard = (p) => p ? {
-        TITLE:       titleOf(p),
+        TITLE:       titleShortOf(p),
         // No separate caption/body field exists in the post data today.
         // Left blank rather than duplicating the title into a second box.
         DESCRIPTION: '',
@@ -419,16 +423,29 @@ const ClientDashboard = (() => {
         REPOSTS:     _num(p.reposts_shares).toLocaleString('en-IN'),
       } : { TITLE:'', DESCRIPTION:'', IMPRESSIONS:'0', LIKES:'0', COMMENTS:'0', REPOSTS:'0' }
 
+      const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
       const tokens = {
         CLIENT_NAME:      _currentClient.client_name,
         DATE_RANGE:       dateRangeLabel,
         MONTH:            MONTH_LABELS[month - 1] || '',
+        MONTH_YEAR:       `${MONTH_SHORT[month - 1] || ''}'${String(year).slice(2)}`,
         FOLLOWER_COUNT:   _lastFollowerCount.toLocaleString('en-IN'),
         POST_COUNT:       String(_lastPostCount),
         IMPRESSIONS:      fmtKpi('Impressions'),
+        CLICKS:           fmtKpi('Clicks'),
+        REACTIONS:        fmtKpi('Reactions'),
         ENGAGEMENTS:      engagementsTotal.toLocaleString('en-IN'),
         ENGAGEMENT_RATE:  fmtKpi('Engagement Rate'),
         FOLLOWERS_GAINED: fmtKpi('Followers Gained'),
+        FOLLOWER_GROWTH_RATE: (() => {
+          const gained = rawKpi('Followers Gained')
+          const prev   = _lastFollowerCount - gained
+          return prev > 0 ? (gained / prev * 100).toFixed(2) : '0.00'
+        })(),
+        AVG_IMPRESSIONS_PER_POST: (() => {
+          const imp = rawKpi('Impressions')
+          return _lastPostCount > 0 ? (imp / _lastPostCount).toLocaleString('en-IN', {maximumFractionDigits: 1}) : '0'
+        })(),
       }
 
       // Featured + 3 supporting cards (Content Performance slide)
@@ -439,13 +456,14 @@ const ClientDashboard = (() => {
       const links = {}
       const top = postCard(sorted[0])
       tokens.TOP_POST_TITLE       = top.TITLE
+      tokens.TOP_POST_TITLE_SHORT = (sorted[0]?.post_title || '').split('.')[0].trim() || top.TITLE
       tokens.TOP_POST_DESCRIPTION = top.DESCRIPTION
       tokens.TOP_POST_IMPRESSIONS = top.IMPRESSIONS
       tokens.TOP_POST_LIKES       = top.LIKES
       tokens.TOP_POST_COMMENTS    = top.COMMENTS
       tokens.TOP_POST_REPOSTS     = top.REPOSTS
       if (sorted[0]?.post_url) links.TOP_POST_TITLE = sorted[0].post_url
-      ;[2, 3, 4].forEach((n, i) => {
+      ;[2, 3, 4, 5].forEach((n, i) => {
         const p = sorted[i + 1]
         const c = postCard(p)
         tokens[`POST_${n}_TITLE`]       = c.TITLE
@@ -483,41 +501,76 @@ const ClientDashboard = (() => {
         if (canvas) chartImages[token] = canvas.toDataURL('image/png').split(',')[1]
       })
 
-      // Demographics bars aren't canvas charts — they're plain HTML/CSS —
-      // so they're captured via a DOM screenshot (html2canvas) instead.
-      // Only the currently active tab (Followers or Visitors) is on-screen;
-      // the other panel is display:none and can't be captured.
+      // Demographics: build a polished report-quality bar chart from stored data
+      // rather than cloning the compact dashboard element, so label text is
+      // never truncated and the visual matches the manual report style.
       if (typeof html2canvas !== 'undefined') {
         const activeTab = document.querySelector('.demo-tab--active')?.dataset.tab
           || (document.getElementById('demo-panel-followers') ? 'followers' : 'visitors')
-        const demoDimTokens = {
-          industry:      'DEMOGRAPHICS_INDUSTRY_CHART',
-          seniority:     'DEMOGRAPHICS_SENIORITY_CHART',
-          location:      'DEMOGRAPHICS_LOCATION_CHART',
-          job_function:  'DEMOGRAPHICS_JOB_FUNCTION_CHART',
-          company_size:  'DEMOGRAPHICS_COMPANY_SIZE_CHART',
+        const demoData = activeTab === 'followers' ? _lastDemoFollowers : _lastDemoVisitors
+
+        const DEMO_DIMS = {
+          industry:     { token: 'DEMOGRAPHICS_INDUSTRY_CHART',     label: 'Industries'    },
+          seniority:    { token: 'DEMOGRAPHICS_SENIORITY_CHART',    label: 'Seniority'     },
+          location:     { token: 'DEMOGRAPHICS_LOCATION_CHART',     label: 'Location'      },
+          job_function: { token: 'DEMOGRAPHICS_JOB_FUNCTION_CHART', label: 'Job Function'  },
+          company_size: { token: 'DEMOGRAPHICS_COMPANY_SIZE_CHART', label: 'Company Size'  },
         }
-        for (const [dimKey, token] of Object.entries(demoDimTokens)) {
-          const el = document.getElementById(`demo-${activeTab}-${dimKey}`)
-          if (!el) continue
-          // Capture from a wide off-screen clone, not the live element —
-          // the dashboard's compact grid squeezes each block down to
-          // ~200px, so the label column truncates long category names
-          // with an ellipsis before capture ever happens. A report image
-          // needs the full label text, so give the clone real room first.
-          const clone = el.cloneNode(true)
-          clone.removeAttribute('id')
-          clone.querySelectorAll('span[style*="text-overflow"]').forEach(span => {
-            span.style.overflow = 'visible'
-            span.style.textOverflow = 'clip'
-          })
+
+        // Bar colour palette — dark-blue → teal → sky gradient (matches manual)
+        const DEMO_PALETTE = [
+          '#2354C5','#3A7EE0','#24ABC0','#2ECACE',
+          '#1E7090','#45CCEE','#5C6DE0','#3AB5D8',
+        ]
+
+        for (const [dimKey, cfg] of Object.entries(DEMO_DIMS)) {
+          const rows = demoData
+            .filter(r => r.dimension === dimKey)
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 8)
+          if (!rows.length) continue
+
+          const maxVal   = rows[0].value
+          const scaleMax = Math.max(Math.ceil(maxVal / 5) * 5, 5)
+          const ticks    = Array.from({ length: scaleMax / 5 + 1 }, (_, i) => i * 5)
+
+          const barsHtml = rows.map((row, i) => {
+            const barPct = Math.max((row.value / scaleMax) * 100, 2).toFixed(1)
+            const valStr = Number.isInteger(row.value) ? `${row.value}%` : `${row.value}%`
+            return `
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:11px;">
+                <div style="width:200px;min-width:200px;text-align:right;font-size:12.5px;color:#444;line-height:1.3;padding-right:6px;">${row.label}</div>
+                <div style="flex:1;height:34px;border-radius:4px;overflow:hidden;">
+                  <div style="width:${barPct}%;height:34px;background:${DEMO_PALETTE[i % DEMO_PALETTE.length]};border-radius:4px;display:flex;align-items:center;padding-left:10px;box-sizing:border-box;min-width:42px;">
+                    <span style="font-size:12px;font-weight:700;color:#fff;white-space:nowrap;">${valStr}</span>
+                  </div>
+                </div>
+              </div>`
+          }).join('')
+
+          const ticksHtml = `
+            <div style="display:flex;margin-left:212px;margin-top:6px;">
+              ${ticks.map((t, idx) => `
+                <div style="flex:${idx === 0 ? '0 0 0px' : '5 1 0'};text-align:${idx === 0 ? 'left' : idx === ticks.length - 1 ? 'right' : 'center'};font-size:11px;color:#aaa;">${t}</div>
+              `).join('')}
+            </div>`
+
+          const chartHtml = `
+            <div style="background:#fff;padding:28px 28px 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;width:760px;box-sizing:border-box;">
+              <div style="text-align:center;margin-bottom:22px;">
+                <span style="font-size:13px;font-weight:700;color:#2E3444;text-transform:uppercase;letter-spacing:.08em;">${cfg.label.toUpperCase()}</span>
+              </div>
+              ${barsHtml}
+              ${ticksHtml}
+            </div>`
+
           const wrapper = document.createElement('div')
-          wrapper.style.cssText = 'position:fixed;left:-9999px;top:0;width:760px;background:#fff;'
-          wrapper.appendChild(clone)
+          wrapper.style.cssText = 'position:fixed;left:-9999px;top:0;'
+          wrapper.innerHTML = chartHtml
           document.body.appendChild(wrapper)
-          const canvas = await html2canvas(clone, { backgroundColor: '#ffffff', scale: 2 })
+          const canvas = await html2canvas(wrapper.firstElementChild, { backgroundColor: '#ffffff', scale: 2 })
           document.body.removeChild(wrapper)
-          chartImages[token] = canvas.toDataURL('image/png').split(',')[1]
+          chartImages[cfg.token] = canvas.toDataURL('image/png').split(',')[1]
         }
       }
 
