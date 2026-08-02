@@ -589,6 +589,7 @@ const ClientDashboard = (() => {
           month, year, tokens, links,
           report_type: _isPersonalProfile ? 'personal' : 'company',
           chart_images: chartImages,
+          ...(!_isPersonalProfile && sorted[0]?.post_url ? { top_post_url: sorted[0].post_url } : {}),
         }),
       })
       const data = await res.json().catch(() => ({}))
