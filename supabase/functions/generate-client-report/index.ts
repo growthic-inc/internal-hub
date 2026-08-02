@@ -60,8 +60,9 @@ Deno.serve(async (req: Request) => {
       tokens:             Record<string, string>   // e.g. { CLIENT_NAME: 'Acme Co', FOLLOWER_COUNT: '1,234', ... }
       chart_images?:      Record<string, string>   // token name (no braces) -> raw base64, e.g. { PERFORMANCE_CHART: '...', PUBLISHING_CHART: '...' }
       links?:             Record<string, string>   // token name -> URL; hyperlinks that token's replaced text (e.g. TOP_POST_TITLE) to the original post
+      top_post_url?:      string                   // LinkedIn post URL; edge fn fetches og:image and inserts it into {{TOP_POST_IMAGE}} placeholder
     }
-    const { client_id, month, year, tokens, chart_images, links } = body
+    const { client_id, month, year, tokens, chart_images, links, top_post_url } = body
     const reportType = body.report_type === 'personal' ? 'personal' : 'company'
     if (!client_id || !month || !year || !tokens) {
       return json({ error: 'client_id, month, year, and tokens are required.' }, 400)
@@ -123,6 +124,11 @@ Deno.serve(async (req: Request) => {
       await insertChartImage(accessToken, newFileId, monthDir, `{{${chartToken}}}`, base64)
     }
 
+    // ── Drop in the top post's OG image (company reports only) ─────────
+    if (top_post_url && reportType === 'company') {
+      await insertPostImage(accessToken, newFileId, monthDir, top_post_url)
+    }
+
     // ── Turn post titles into real hyperlinks back to the original post ──
     for (const [linkToken, url] of Object.entries(links || {})) {
       await applyHyperlink(accessToken, newFileId, tokens[linkToken], url)
@@ -138,6 +144,102 @@ Deno.serve(async (req: Request) => {
     return json({ error: String(err) }, 500)
   }
 })
+
+/* ── Top post OG image: fetch from LinkedIn URL and insert into slide 2 ── */
+
+async function fetchOgImageBytes(postUrl: string): Promise<{ bytes: Uint8Array; mimeType: string } | null> {
+  try {
+    const pageRes = await fetch(postUrl, {
+      headers: {
+        'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+      redirect: 'follow',
+    })
+    const html = await pageRes.text()
+    const m = html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/) ||
+              html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:image"/)
+    if (!m) return null
+    const imageUrl = m[1].replace(/&amp;/g, '&')
+    const imgRes = await fetch(imageUrl)
+    if (!imgRes.ok) return null
+    const mimeType = imgRes.headers.get('content-type')?.split(';')[0] ?? 'image/jpeg'
+    const bytes = new Uint8Array(await imgRes.arrayBuffer())
+    return { bytes, mimeType }
+  } catch {
+    return null
+  }
+}
+
+function jpegDimensions(bytes: Uint8Array): { width: number; height: number } | null {
+  // Scan for SOF0-SOF3 markers (FF C0–C3); each has height then width after a 1-byte precision field.
+  for (let i = 2; i < bytes.length - 8; i++) {
+    if (bytes[i] === 0xFF && bytes[i + 1] >= 0xC0 && bytes[i + 1] <= 0xC3 && bytes[i + 1] !== 0xC4) {
+      const h = (bytes[i + 5] << 8) | bytes[i + 6]
+      const w = (bytes[i + 7] << 8) | bytes[i + 8]
+      if (w > 0 && h > 0) return { width: w, height: h }
+    }
+  }
+  return null
+}
+
+async function insertPostImage(
+  token: string, presentationId: string, folderId: string, postUrl: string,
+): Promise<void> {
+  const result = await fetchOgImageBytes(postUrl)
+  if (!result) {
+    console.warn('[generate-client-report] Could not fetch top post OG image — skipping')
+    return
+  }
+  const { bytes, mimeType } = result
+
+  const pres  = await getPresentation(token, presentationId)
+  const found = findShapeByText(pres, '{{TOP_POST_IMAGE}}')
+  if (!found) {
+    console.warn('[generate-client-report] {{TOP_POST_IMAGE}} placeholder not found — skipping')
+    return
+  }
+
+  const { fileId: imageFileId } = await uploadFileToDrive(token, folderId, 'top-post-image.jpg', bytes, mimeType)
+  await setPublicReadPermission(token, imageFileId)
+  const imageUrl = `https://drive.google.com/uc?export=view&id=${imageFileId}`
+
+  // Contain-fit within the placeholder's bounding box
+  const sz   = found.size as { width?: { magnitude: number }; height?: { magnitude: number } } | undefined
+  const boxW = sz?.width?.magnitude  ?? 2631600   // ~7.31 cm
+  const boxH = sz?.height?.magnitude ?? 2808000   // ~7.80 cm
+  const dims = mimeType === 'image/png' ? pngDimensions(bytes) : jpegDimensions(bytes)
+  let width = boxW, height = boxH
+  if (dims && dims.height > 0) {
+    const aspect = dims.width / dims.height
+    width  = boxW
+    height = width / aspect
+    if (height > boxH) { height = boxH; width = height * aspect }
+  }
+
+  const t = found.transform as { translateX?: number; translateY?: number; unit?: string } | undefined
+  await batchUpdate(token, presentationId, [
+    { deleteObject: { objectId: found.objectId } },
+    {
+      createImage: {
+        url: imageUrl,
+        elementProperties: {
+          pageObjectId: found.pageObjectId,
+          size: {
+            width:  { magnitude: width,  unit: 'EMU' },
+            height: { magnitude: height, unit: 'EMU' },
+          },
+          transform: {
+            scaleX: 1, scaleY: 1,
+            translateX: t?.translateX ?? 0,
+            translateY: t?.translateY ?? 0,
+            unit: t?.unit ?? 'EMU',
+          },
+        },
+      },
+    },
+  ])
+}
 
 /* ── Chart image: find the placeholder shape, replace it with a real picture ── */
 async function insertChartImage(
