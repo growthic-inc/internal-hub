@@ -61,8 +61,9 @@ Deno.serve(async (req: Request) => {
       chart_images?:      Record<string, string>   // token name (no braces) -> raw base64, e.g. { PERFORMANCE_CHART: '...', PUBLISHING_CHART: '...' }
       links?:             Record<string, string>   // token name -> URL; hyperlinks that token's replaced text (e.g. TOP_POST_TITLE) to the original post
       top_post_url?:      string                   // LinkedIn post URL; edge fn fetches og:image and inserts it into {{TOP_POST_IMAGE}} placeholder
+      post_image_urls?:   string[]                 // Up to 3 post URLs; images inserted into {{POST_1_IMAGE}}, {{POST_2_IMAGE}}, {{POST_3_IMAGE}}
     }
-    const { client_id, month, year, tokens, chart_images, links, top_post_url } = body
+    const { client_id, month, year, tokens, chart_images, links, top_post_url, post_image_urls } = body
     const reportType = body.report_type === 'personal' ? 'personal' : 'company'
     if (!client_id || !month || !year || !tokens) {
       return json({ error: 'client_id, month, year, and tokens are required.' }, 400)
@@ -119,6 +120,24 @@ Deno.serve(async (req: Request) => {
       await batchUpdate(accessToken, newFileId, textRequests)
     }
 
+    // ── Enforce white text on the exec summary top-post title (company only) ──
+    // replaceAllText can reset text style to theme default (black). Force white
+    // so the title stays readable on the dark-blue card background.
+    if (reportType === 'company') {
+      await batchUpdate(accessToken, newFileId, [{
+        updateTextStyle: {
+          objectId:  's2_post_title',
+          style: {
+            foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 1, blue: 1 } } },
+            bold:     true,
+            fontSize: { magnitude: 14, unit: 'PT' },
+          },
+          textRange: { type: 'ALL' },
+          fields:    'foregroundColor,bold,fontSize',
+        },
+      }]).catch(() => {})
+    }
+
     // ── Drop in every chart image provided, one per named placeholder ──
     for (const [chartToken, base64] of Object.entries(chart_images || {})) {
       await insertChartImage(accessToken, newFileId, monthDir, `{{${chartToken}}}`, base64)
@@ -126,7 +145,30 @@ Deno.serve(async (req: Request) => {
 
     // ── Drop in the top post's OG image (company reports only) ─────────
     if (top_post_url && reportType === 'company') {
-      await insertPostImage(accessToken, newFileId, monthDir, top_post_url)
+      await insertPostImage('{{TOP_POST_IMAGE}}', accessToken, newFileId, monthDir, top_post_url)
+    }
+
+    // ── Drop in post images for the Top Performing Posts slide ────────
+    if (reportType === 'company' && Array.isArray(post_image_urls)) {
+      const postTokens = ['{{POST_1_IMAGE}}', '{{POST_2_IMAGE}}', '{{POST_3_IMAGE}}']
+      for (let i = 0; i < Math.min(post_image_urls.length, 3); i++) {
+        const url = post_image_urls[i]
+        if (url) await insertPostImage(postTokens[i], accessToken, newFileId, monthDir, url)
+      }
+    }
+
+    // ── Directly hyperlink the Top Performing Posts left card title ──────
+    // Uses the known shape objectId to bypass text-matching (which can fail
+    // on multi-line text) and reliably links lc_title to the top post URL.
+    if (top_post_url && reportType === 'company') {
+      await batchUpdate(accessToken, newFileId, [{
+        updateTextStyle: {
+          objectId:  'lc_title',
+          style:     { link: { url: top_post_url } },
+          textRange: { type: 'ALL' },
+          fields:    'link',
+        },
+      }]).catch(() => {})
     }
 
     // ── Turn post titles into real hyperlinks back to the original post ──
@@ -148,17 +190,45 @@ Deno.serve(async (req: Request) => {
 /* ── Top post OG image: fetch from LinkedIn URL and insert into slide 2 ── */
 
 async function fetchOgImageBytes(postUrl: string): Promise<{ bytes: Uint8Array; mimeType: string } | null> {
+  // Strategy 1: LinkedIn oembed API — returns thumbnail_url without needing auth
+  try {
+    const oembedUrl = `https://www.linkedin.com/oembed?url=${encodeURIComponent(postUrl)}&format=json`
+    const oembedRes = await fetch(oembedUrl, {
+      headers: { 'User-Agent': 'LinkedInBot/1.0 (compatible; Jakarta Commons-HttpClient/3.1 +http://www.linkedin.com)' },
+    })
+    console.log('[fetchOgImageBytes] oembed status:', oembedRes.status, 'for', postUrl)
+    if (oembedRes.ok) {
+      const data = await oembedRes.json() as { thumbnail_url?: string }
+      console.log('[fetchOgImageBytes] oembed thumbnail_url:', data.thumbnail_url)
+      if (data.thumbnail_url) {
+        const imgRes = await fetch(data.thumbnail_url)
+        if (imgRes.ok) {
+          const mimeType = imgRes.headers.get('content-type')?.split(';')[0] ?? 'image/jpeg'
+          const bytes = new Uint8Array(await imgRes.arrayBuffer())
+          console.log('[fetchOgImageBytes] oembed image downloaded, size:', bytes.length, 'mime:', mimeType)
+          return { bytes, mimeType }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[fetchOgImageBytes] oembed attempt failed:', e)
+  }
+
+  // Strategy 2: og:image scraping with Googlebot UA (fallback)
   try {
     const pageRes = await fetch(postUrl, {
       headers: {
-        'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+        'User-Agent': 'Googlebot/2.1 (+http://www.google.com/bot.html)',
         'Accept': 'text/html,application/xhtml+xml',
       },
       redirect: 'follow',
     })
+    console.log('[fetchOgImageBytes] page fetch status:', pageRes.status)
     const html = await pageRes.text()
+    console.log('[fetchOgImageBytes] page HTML length:', html.length)
     const m = html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/) ||
               html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:image"/)
+    console.log('[fetchOgImageBytes] og:image found:', !!m)
     if (!m) return null
     const imageUrl = m[1].replace(/&amp;/g, '&')
     const imgRes = await fetch(imageUrl)
@@ -166,7 +236,8 @@ async function fetchOgImageBytes(postUrl: string): Promise<{ bytes: Uint8Array; 
     const mimeType = imgRes.headers.get('content-type')?.split(';')[0] ?? 'image/jpeg'
     const bytes = new Uint8Array(await imgRes.arrayBuffer())
     return { bytes, mimeType }
-  } catch {
+  } catch (e) {
+    console.warn('[fetchOgImageBytes] og:image scrape failed:', e)
     return null
   }
 }
@@ -184,19 +255,21 @@ function jpegDimensions(bytes: Uint8Array): { width: number; height: number } | 
 }
 
 async function insertPostImage(
-  token: string, presentationId: string, folderId: string, postUrl: string,
+  placeholderToken: string, token: string, presentationId: string, folderId: string, postUrl: string,
 ): Promise<void> {
+  console.log('[insertPostImage] starting, token:', placeholderToken, 'postUrl:', postUrl)
   const result = await fetchOgImageBytes(postUrl)
   if (!result) {
-    console.warn('[generate-client-report] Could not fetch top post OG image — skipping')
+    console.warn('[insertPostImage] Could not fetch OG image — skipping', placeholderToken)
     return
   }
+  console.log('[insertPostImage] image fetched, proceeding to insert')
   const { bytes, mimeType } = result
 
   const pres  = await getPresentation(token, presentationId)
-  const found = findShapeByText(pres, '{{TOP_POST_IMAGE}}')
+  const found = findShapeByText(pres, placeholderToken)
   if (!found) {
-    console.warn('[generate-client-report] {{TOP_POST_IMAGE}} placeholder not found — skipping')
+    console.warn('[generate-client-report]', placeholderToken, 'placeholder not found — skipping')
     return
   }
 
@@ -204,10 +277,20 @@ async function insertPostImage(
   await setPublicReadPermission(token, imageFileId)
   const imageUrl = `https://drive.google.com/uc?export=view&id=${imageFileId}`
 
-  // Contain-fit within the placeholder's bounding box
+  // Contain-fit within the placeholder's bounding box.
+  // Google Slides API ignores the size field in createShape for TEXT_BOX elements,
+  // defaulting them all to 8.33×8.33cm (3,000,000 EMU). Cap each token to its
+  // intended design height so images don't overflow into the title area below.
+  const TOKEN_MAX_H: Record<string, number> = {
+    '{{TOP_POST_IMAGE}}': 2_322_047,  // 6.45 cm — exec summary card
+    '{{POST_1_IMAGE}}':   1_598_739,  // 4.44 cm — left card
+    '{{POST_2_IMAGE}}':   1_548_000,  // 4.30 cm — right-top card
+    '{{POST_3_IMAGE}}':   1_710_866,  // 4.75 cm — right-bottom card
+  }
   const sz   = found.size as { width?: { magnitude: number }; height?: { magnitude: number } } | undefined
-  const boxW = sz?.width?.magnitude  ?? 2631600   // ~7.31 cm
-  const boxH = sz?.height?.magnitude ?? 2808000   // ~7.80 cm
+  const boxW = sz?.width?.magnitude  ?? 2631600
+  const rawH = sz?.height?.magnitude ?? 2808000
+  const boxH = Math.min(rawH, TOKEN_MAX_H[placeholderToken] ?? rawH)
   const dims = mimeType === 'image/png' ? pngDimensions(bytes) : jpegDimensions(bytes)
   let width = boxW, height = boxH
   if (dims && dims.height > 0) {
@@ -239,6 +322,19 @@ async function insertPostImage(
       },
     },
   ])
+
+  // Ensure text elements that sit over the image area stay in front of the
+  // newly created image (createImage places the image at the top of the z-stack).
+  const FRONT_IDS: Record<string, string[]> = {
+    '{{TOP_POST_IMAGE}}': ['s2_post_title', 's2_post_divider', 's2_post_label'],
+    '{{POST_1_IMAGE}}':   ['lc_title', 'lc_badge', 'lc_impressions_v', 'lc_impressions_l', 'lc_likes_v', 'lc_likes_l', 'lc_comments_v', 'lc_comments_l'],
+  }
+  const frontIds = FRONT_IDS[placeholderToken]
+  if (frontIds) {
+    await batchUpdate(token, presentationId, [{
+      updatePageElementsZOrder: { pageObjectIds: frontIds, operation: 'BRING_TO_FRONT' },
+    }]).catch(() => {})
+  }
 }
 
 /* ── Chart image: find the placeholder shape, replace it with a real picture ── */
@@ -292,14 +388,14 @@ async function applyHyperlink(
     console.warn(`[generate-client-report] link target text "${text}" not found — skipping hyperlink.`)
     return
   }
-  await batchUpdate(accessToken, presentationId, [{
-    updateTextStyle: {
-      objectId:  found.objectId,
-      style:     { link: { url } },
-      textRange: { type: 'ALL' },
-      fields:    'link',
-    },
-  }])
+  const req: Record<string, unknown> = {
+    objectId:  found.objectId,
+    style:     { link: { url } },
+    textRange: { type: 'ALL' },
+    fields:    'link',
+  }
+  if (found.cellLocation) req.cellLocation = found.cellLocation
+  await batchUpdate(accessToken, presentationId, [{ updateTextStyle: req }])
 }
 
 // A {{CHART_TOKEN}} text box is typically drawn just large enough to fit
@@ -358,10 +454,13 @@ function fitImageSize(
   }
 }
 
-/** Recursively search all slides/groups for a shape whose full text matches `text` exactly. */
-function findShapeByText(
-  pres: { slides?: SlidesPage[] }, text: string,
-): { objectId: string; pageObjectId: string; size: unknown; transform: unknown } | null {
+type FoundElement = {
+  objectId: string; pageObjectId: string; size: unknown; transform: unknown
+  cellLocation?: { rowIndex: number; columnIndex: number }
+}
+
+/** Recursively search all slides/groups/tables for an element whose full text matches `text` exactly. */
+function findShapeByText(pres: { slides?: SlidesPage[] }, text: string): FoundElement | null {
   for (const slide of pres.slides || []) {
     const hit = searchElements(slide.pageElements || [], slide.objectId, text)
     if (hit) return hit
@@ -369,29 +468,46 @@ function findShapeByText(
   return null
 }
 
-function searchElements(
-  elements: PageElement[], pageObjectId: string, text: string,
-): { objectId: string; pageObjectId: string; size: unknown; transform: unknown } | null {
+function searchElements(elements: PageElement[], pageObjectId: string, text: string): FoundElement | null {
   for (const el of elements) {
+    // Regular shape
     const runs = el.shape?.text?.textElements || []
     const shapeText = runs.map(r => r.textRun?.content || '').join('').trim()
     if (shapeText === text) {
       return { objectId: el.objectId, pageObjectId, size: el.size, transform: el.transform }
     }
+    // Nested group
     if (el.elementGroup?.children) {
       const nested = searchElements(el.elementGroup.children, pageObjectId, text)
       if (nested) return nested
+    }
+    // Table cells
+    const rows = el.table?.tableRows || []
+    for (let r = 0; r < rows.length; r++) {
+      const cells = rows[r].tableCells || []
+      for (let c = 0; c < cells.length; c++) {
+        const cellRuns = cells[c].text?.textElements || []
+        const cellText = cellRuns.map(tr => tr.textRun?.content || '').join('').trim()
+        if (cellText === text) {
+          return {
+            objectId: el.objectId, pageObjectId, size: el.size, transform: el.transform,
+            cellLocation: { rowIndex: r, columnIndex: c },
+          }
+        }
+      }
     }
   }
   return null
 }
 
+type TableCell = { text?: { textElements?: { textRun?: { content?: string } }[] } }
 type PageElement = {
   objectId: string
   size?: unknown
   transform?: unknown
   shape?: { text?: { textElements?: { textRun?: { content?: string } }[] } }
   elementGroup?: { children?: PageElement[] }
+  table?: { tableRows?: { tableCells?: TableCell[] }[] }
 }
 type SlidesPage = { objectId: string; pageElements?: PageElement[] }
 
