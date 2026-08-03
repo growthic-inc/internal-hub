@@ -482,12 +482,24 @@ function findShapeByText(pres: { slides?: SlidesPage[] }, text: string): FoundEl
   return null
 }
 
+// Normalize Unicode punctuation that may differ between what the client sends
+// and what the Slides API returns after storing (e.g. curly apostrophes, ellipsis).
+function normText(s: string): string {
+  return s
+    .replace(/[‘’ʼ′]/g, "'")  // curly/modifier apostrophes → straight
+    .replace(/[“”ʺ]/g, '"')          // curly double quotes → straight
+    .replace(/…/g, '...')                      // Unicode ellipsis → three dots
+    .replace(/\s+/g, ' ')                           // collapse whitespace
+    .trim()
+}
+
 function searchElements(elements: PageElement[], pageObjectId: string, text: string): FoundElement | null {
+  const normTarget = normText(text)
   for (const el of elements) {
     // Regular shape
     const runs = el.shape?.text?.textElements || []
-    const shapeText = runs.map(r => r.textRun?.content || '').join('').trim()
-    if (shapeText === text) {
+    const shapeText = runs.map(r => r.textRun?.content || '').join('')
+    if (normText(shapeText) === normTarget) {
       return { objectId: el.objectId, pageObjectId, size: el.size, transform: el.transform }
     }
     // Nested group
@@ -501,8 +513,8 @@ function searchElements(elements: PageElement[], pageObjectId: string, text: str
       const cells = rows[r].tableCells || []
       for (let c = 0; c < cells.length; c++) {
         const cellRuns = cells[c].text?.textElements || []
-        const cellText = cellRuns.map(tr => tr.textRun?.content || '').join('').trim()
-        if (cellText === text) {
+        const cellText = cellRuns.map(tr => tr.textRun?.content || '').join('')
+        if (normText(cellText) === normTarget) {
           return {
             objectId: el.objectId, pageObjectId, size: el.size, transform: el.transform,
             cellLocation: { rowIndex: r, columnIndex: c },
