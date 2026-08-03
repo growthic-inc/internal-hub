@@ -382,6 +382,7 @@ const ClientDashboard = (() => {
     if (btn) { btn.disabled = true; btn.textContent = 'Fetching…' }
 
     try {
+      const _reportEntityData = (_currentClient?.client_entities || []).find(e => e.id === _currentEntity)
       const kpiByLabel = {}
       _lastKpis.forEach(k => { kpiByLabel[k.label] = k })
       const rawKpi = label => kpiByLabel[label]?.rawValue ?? 0
@@ -425,7 +426,7 @@ const ClientDashboard = (() => {
 
       const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
       const tokens = {
-        CLIENT_NAME:      (_isPersonalProfile && _currentEntityData?.entity_name) ? _currentEntityData.entity_name : _currentClient.client_name,
+        CLIENT_NAME:      (_isPersonalProfile && _reportEntityData?.entity_name) ? _reportEntityData.entity_name : _currentClient.client_name,
         DATE_RANGE:       dateRangeLabel,
         MONTH:            MONTH_LABELS[month - 1] || '',
         MONTH_YEAR:       `${MONTH_SHORT[month - 1] || ''}'${String(year).slice(2)}`,
