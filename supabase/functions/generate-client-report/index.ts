@@ -109,6 +109,30 @@ Deno.serve(async (req: Request) => {
     const reportName = `${client.client_name.trim()} — ${monthLabel} Report`
     const newFileId   = await copyFile(accessToken, templateId, reportName, monthDir)
 
+    // ── For personal profiles: scrape LinkedIn captions and fill title tokens ──
+    // Personal profile LinkedIn exports have no post_title, so card title tokens
+    // arrive empty. Fetch og:description from each post URL and use the first
+    // sentence as the card title before stamping the slide.
+    if (reportType === 'personal') {
+      const captionJobs: Array<{ tokenNames: string[]; url: string }> = []
+      if (top_post_url) {
+        captionJobs.push({ tokenNames: ['TOP_POST_TITLE', 'TOP_POST_TITLE_SHORT'], url: top_post_url })
+      }
+      for (const [linkToken, url] of Object.entries(links || {})) {
+        if (linkToken.endsWith('_TITLE') && !['TOP_POST_TITLE', 'TOP_POST_TITLE_SHORT'].includes(linkToken)) {
+          captionJobs.push({ tokenNames: [linkToken], url })
+        }
+      }
+      const captionResults = await Promise.allSettled(
+        captionJobs.map(async job => ({ ...job, caption: await fetchPostCaption(job.url) }))
+      )
+      for (const r of captionResults) {
+        if (r.status === 'fulfilled' && r.value.caption) {
+          for (const name of r.value.tokenNames) tokens[name] = r.value.caption
+        }
+      }
+    }
+
     // ── Fill in every text token in one batch ───────────────────
     const textRequests = Object.entries(tokens).map(([key, value]) => ({
       replaceAllText: {
@@ -244,6 +268,55 @@ async function fetchOgImageBytes(postUrl: string): Promise<{ bytes: Uint8Array; 
     console.warn('[fetchOgImageBytes] og:image scrape failed:', e)
     return null
   }
+}
+
+/* ── Scrape the first sentence of a LinkedIn post caption ── */
+
+async function fetchPostCaption(postUrl: string): Promise<string> {
+  // Try oembed first — sometimes has description text
+  try {
+    const oembedRes = await fetch(
+      `https://www.linkedin.com/oembed?url=${encodeURIComponent(postUrl)}&format=json`,
+      { headers: { 'User-Agent': 'LinkedInBot/1.0 (compatible; Jakarta Commons-HttpClient/3.1 +http://www.linkedin.com)' } },
+    )
+    if (oembedRes.ok) {
+      const data = await oembedRes.json() as { description?: string }
+      const txt = (data.description || '').trim()
+      if (txt && !txt.toLowerCase().includes('linkedin.com')) {
+        return firstSentence(txt)
+      }
+    }
+  } catch {}
+
+  // Scrape og:description from the post page
+  try {
+    const pageRes = await fetch(postUrl, {
+      headers: {
+        'User-Agent': 'Googlebot/2.1 (+http://www.google.com/bot.html)',
+        'Accept':     'text/html,application/xhtml+xml',
+      },
+      redirect: 'follow',
+    })
+    const html = await pageRes.text()
+    const m = html.match(/<meta[^>]+property="og:description"[^>]+content="([^"]+)"/) ||
+              html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:description"/)
+    if (m) {
+      let txt = m[1]
+        .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim()
+      // LinkedIn og:description is often: "Name on LinkedIn: "caption text here""
+      const prefixed = txt.match(/^.+? on LinkedIn:\s*["""']([\s\S]+?)['"""]*$/)
+      if (prefixed) txt = prefixed[1].trim()
+      return firstSentence(txt)
+    }
+  } catch {}
+
+  return ''
+}
+
+function firstSentence(text: string): string {
+  const m = text.match(/^[^.?!]*[.?!]/)
+  return (m ? m[0] : text).trim()
 }
 
 function jpegDimensions(bytes: Uint8Array): { width: number; height: number } | null {
