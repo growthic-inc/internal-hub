@@ -530,20 +530,25 @@ const ClientDashboard = (() => {
         ]
 
         for (const [dimKey, cfg] of Object.entries(DEMO_DIMS)) {
-          const rows = demoData
+          const allRows = demoData
             .filter(r => r.dimension === dimKey)
             .sort((a, b) => b.value - a.value)
-            .slice(0, 8)
-          if (!rows.length) continue
+          if (!allRows.length) continue
 
-          const maxVal   = rows[0].value
-          const scaleMax = Math.max(Math.ceil(maxVal / 10) * 10, 10)
+          // Sum all values so each bar shows its real share of the total audience.
+          const total = allRows.reduce((s, r) => s + r.value, 0)
+          if (total === 0) continue
+
+          const rows = allRows.slice(0, 8)
+          const maxPct   = rows[0].value / total * 100
+          const scaleMax = Math.max(Math.ceil(maxPct / 10) * 10, 10)
           const tickStep = Math.ceil(scaleMax / 5 / 10) * 10 || 10
           const ticks    = Array.from({ length: Math.floor(scaleMax / tickStep) + 1 }, (_, i) => i * tickStep)
 
           const barsHtml = rows.map((row, i) => {
-            const barPct = Math.max((row.value / scaleMax) * 100, 2).toFixed(1)
-            const valStr = String(row.value)
+            const pct    = row.value / total * 100
+            const barPct = Math.max((pct / scaleMax) * 100, 2).toFixed(1)
+            const valStr = parseFloat(pct.toFixed(1)) + '%'
             return `
               <div style="display:flex;align-items:center;gap:12px;margin-bottom:13px;">
                 <div style="width:200px;min-width:200px;text-align:right;font-size:12.5px;color:#444;line-height:1.3;padding-right:6px;">${row.label}</div>
@@ -558,7 +563,7 @@ const ClientDashboard = (() => {
           const ticksHtml = `
             <div style="display:flex;margin-left:212px;margin-top:6px;">
               ${ticks.map((t, idx) => `
-                <div style="flex:${idx === 0 ? '0 0 0px' : '1 1 0'};text-align:${idx === 0 ? 'left' : idx === ticks.length - 1 ? 'right' : 'center'};font-size:11px;color:#aaa;">${t}</div>
+                <div style="flex:${idx === 0 ? '0 0 0px' : '1 1 0'};text-align:${idx === 0 ? 'left' : idx === ticks.length - 1 ? 'right' : 'center'};font-size:11px;color:#aaa;">${t}%</div>
               `).join('')}
             </div>`
 
