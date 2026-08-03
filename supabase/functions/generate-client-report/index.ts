@@ -120,13 +120,16 @@ Deno.serve(async (req: Request) => {
       await batchUpdate(accessToken, newFileId, textRequests)
     }
 
-    // ── Enforce white text on the exec summary top-post title (company only) ──
+    // ── Enforce white text on the exec summary top-post title ───────────
     // replaceAllText can reset text style to theme default (black). Force white
     // so the title stays readable on the dark-blue card background.
-    if (reportType === 'company') {
+    // Company template uses the objectId 's2_post_title' (set during rebuild).
+    // Personal template uses the native objectId 'g3f637b59831_1_182'.
+    if (top_post_url) {
+      const titleOid = reportType === 'company' ? 's2_post_title' : 'g3f637b59831_1_182'
       await batchUpdate(accessToken, newFileId, [{
         updateTextStyle: {
-          objectId:  's2_post_title',
+          objectId: titleOid,
           style: {
             foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 1, blue: 1 } } },
             bold:     true,
@@ -143,13 +146,13 @@ Deno.serve(async (req: Request) => {
       await insertChartImage(accessToken, newFileId, monthDir, `{{${chartToken}}}`, base64)
     }
 
-    // ── Drop in the top post's OG image (company reports only) ─────────
-    if (top_post_url && reportType === 'company') {
+    // ── Drop in the top post's OG image ─────────────────────────────────
+    if (top_post_url) {
       await insertPostImage('{{TOP_POST_IMAGE}}', accessToken, newFileId, monthDir, top_post_url)
     }
 
     // ── Drop in post images for the Top Performing Posts slide ────────
-    if (reportType === 'company' && Array.isArray(post_image_urls)) {
+    if (Array.isArray(post_image_urls)) {
       const postTokens = ['{{POST_1_IMAGE}}', '{{POST_2_IMAGE}}', '{{POST_3_IMAGE}}']
       for (let i = 0; i < Math.min(post_image_urls.length, 3); i++) {
         const url = post_image_urls[i]
@@ -158,12 +161,13 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Directly hyperlink the Top Performing Posts left card title ──────
-    // Uses the known shape objectId to bypass text-matching (which can fail
-    // on multi-line text) and reliably links lc_title to the top post URL.
-    if (top_post_url && reportType === 'company') {
+    // Company template: objectId 'lc_title' (set during rebuild).
+    // Personal template: objectId 'g3f637b59831_1_365'.
+    if (top_post_url) {
+      const lcTitleOid = reportType === 'company' ? 'lc_title' : 'g3f637b59831_1_365'
       await batchUpdate(accessToken, newFileId, [{
         updateTextStyle: {
-          objectId:  'lc_title',
+          objectId:  lcTitleOid,
           style:     { link: { url: top_post_url } },
           textRange: { type: 'ALL' },
           fields:    'link',
@@ -325,15 +329,25 @@ async function insertPostImage(
 
   // Ensure text elements that sit over the image area stay in front of the
   // newly created image (createImage places the image at the top of the z-stack).
-  const FRONT_IDS: Record<string, string[]> = {
-    '{{TOP_POST_IMAGE}}': ['s2_post_title', 's2_post_divider', 's2_post_label'],
-    '{{POST_1_IMAGE}}':   ['lc_title', 'lc_badge', 'lc_impressions_v', 'lc_impressions_l', 'lc_likes_v', 'lc_likes_l', 'lc_comments_v', 'lc_comments_l'],
+  // Two groups per token: company template objectIds and personal template objectIds.
+  // Each group is tried independently — whichever has valid IDs succeeds, the other is caught.
+  const FRONT_ID_GROUPS: Record<string, string[][]> = {
+    '{{TOP_POST_IMAGE}}': [
+      ['s2_post_title', 's2_post_divider', 's2_post_label'],                        // company
+      ['g3f637b59831_1_182', 'g3f637b59831_1_183'],                                 // personal
+    ],
+    '{{POST_1_IMAGE}}': [
+      ['lc_title', 'lc_badge', 'lc_impressions_v', 'lc_impressions_l', 'lc_likes_v', 'lc_likes_l', 'lc_comments_v', 'lc_comments_l'],  // company
+      ['g3f637b59831_1_365', 'g3f637b59831_1_358', 'g3f637b59831_1_359', 'g3f637b59831_1_360', 'g3f637b59831_1_361', 'g3f637b59831_1_362', 'g3f637b59831_1_363', 'g3f637b59831_1_364'],  // personal
+    ],
   }
-  const frontIds = FRONT_IDS[placeholderToken]
-  if (frontIds) {
-    await batchUpdate(token, presentationId, [{
-      updatePageElementsZOrder: { pageObjectIds: frontIds, operation: 'BRING_TO_FRONT' },
-    }]).catch(() => {})
+  const groups = FRONT_ID_GROUPS[placeholderToken]
+  if (groups) {
+    await Promise.allSettled(groups.map(ids =>
+      batchUpdate(token, presentationId, [{
+        updatePageElementsZOrder: { pageObjectIds: ids, operation: 'BRING_TO_FRONT' },
+      }])
+    ))
   }
 }
 
