@@ -412,7 +412,8 @@ const ClientDashboard = (() => {
       // headline, so it's truncated the same as the URL fallback to avoid
       // overflowing the fixed-size title boxes in the Slides template.
       const titleOf      = p => Utils.truncate(p.post_title || p.post_url || '', 100)
-      const titleShortOf = p => { const t = titleOf(p); const m = t.match(/^[^.?!]*[.?!]/); return (m ? m[0] : t).trim() || t }
+      const cardTitleOf  = p => _isPersonalProfile ? (p.post_title || '') : titleOf(p)
+      const titleShortOf = p => { const t = cardTitleOf(p); const m = t.match(/^[^.?!]*[.?!]/); return (m ? m[0] : t).trim() || t }
       const postCard = (p) => p ? {
         TITLE:       titleShortOf(p),
         // No separate caption/body field exists in the post data today.
@@ -459,7 +460,7 @@ const ClientDashboard = (() => {
       tokens.TOP_POST_TITLE       = top.TITLE
       tokens.TOP_POST_TITLE_SHORT = (() => {
         const raw = sorted[0]?.post_title || ''
-        if (!raw) return top.TITLE  // no title — use URL as-is (titleOf already truncated it)
+        if (!raw) return _isPersonalProfile ? '' : top.TITLE
         const first = raw.match(/^[^.?!]*[.?!]/)
         return (first ? first[0] : raw).trim() || raw
       })()
