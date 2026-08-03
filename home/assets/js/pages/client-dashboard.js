@@ -456,7 +456,12 @@ const ClientDashboard = (() => {
       const links = {}
       const top = postCard(sorted[0])
       tokens.TOP_POST_TITLE       = top.TITLE
-      tokens.TOP_POST_TITLE_SHORT = (sorted[0]?.post_title || '').split('.')[0].trim() || top.TITLE
+      tokens.TOP_POST_TITLE_SHORT = (() => {
+        const raw = sorted[0]?.post_title || ''
+        if (!raw) return top.TITLE  // no title — use URL as-is (titleOf already truncated it)
+        const first = raw.match(/^[^.?!]*[.?!]/)
+        return (first ? first[0] : raw).trim() || raw
+      })()
       tokens.TOP_POST_DESCRIPTION = top.DESCRIPTION
       tokens.TOP_POST_IMPRESSIONS = top.IMPRESSIONS
       tokens.TOP_POST_LIKES       = top.LIKES
@@ -531,17 +536,18 @@ const ClientDashboard = (() => {
           if (!rows.length) continue
 
           const maxVal   = rows[0].value
-          const scaleMax = Math.max(Math.ceil(maxVal / 5) * 5, 5)
-          const ticks    = Array.from({ length: scaleMax / 5 + 1 }, (_, i) => i * 5)
+          const scaleMax = Math.max(Math.ceil(maxVal / 10) * 10, 10)
+          const tickStep = Math.ceil(scaleMax / 5 / 10) * 10 || 10
+          const ticks    = Array.from({ length: Math.floor(scaleMax / tickStep) + 1 }, (_, i) => i * tickStep)
 
           const barsHtml = rows.map((row, i) => {
             const barPct = Math.max((row.value / scaleMax) * 100, 2).toFixed(1)
-            const valStr = Number.isInteger(row.value) ? `${row.value}%` : `${row.value}%`
+            const valStr = String(row.value)
             return `
-              <div style="display:flex;align-items:center;gap:12px;margin-bottom:11px;">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:13px;">
                 <div style="width:200px;min-width:200px;text-align:right;font-size:12.5px;color:#444;line-height:1.3;padding-right:6px;">${row.label}</div>
-                <div style="flex:1;height:34px;border-radius:4px;overflow:hidden;">
-                  <div style="width:${barPct}%;height:34px;background:${DEMO_PALETTE[i % DEMO_PALETTE.length]};border-radius:4px;display:flex;align-items:center;padding-left:10px;box-sizing:border-box;min-width:42px;">
+                <div style="flex:1;height:36px;border-radius:4px;overflow:hidden;">
+                  <div style="width:${barPct}%;height:36px;background:${DEMO_PALETTE[i % DEMO_PALETTE.length]};border-radius:4px;display:flex;align-items:center;padding-left:10px;box-sizing:border-box;min-width:42px;">
                     <span style="font-size:12px;font-weight:700;color:#fff;white-space:nowrap;">${valStr}</span>
                   </div>
                 </div>
@@ -551,12 +557,12 @@ const ClientDashboard = (() => {
           const ticksHtml = `
             <div style="display:flex;margin-left:212px;margin-top:6px;">
               ${ticks.map((t, idx) => `
-                <div style="flex:${idx === 0 ? '0 0 0px' : '5 1 0'};text-align:${idx === 0 ? 'left' : idx === ticks.length - 1 ? 'right' : 'center'};font-size:11px;color:#aaa;">${t}</div>
+                <div style="flex:${idx === 0 ? '0 0 0px' : '1 1 0'};text-align:${idx === 0 ? 'left' : idx === ticks.length - 1 ? 'right' : 'center'};font-size:11px;color:#aaa;">${t}</div>
               `).join('')}
             </div>`
 
           const chartHtml = `
-            <div style="background:#fff;padding:28px 28px 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;width:760px;box-sizing:border-box;">
+            <div style="background:#fff;padding:32px 36px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;width:920px;box-sizing:border-box;">
               <div style="text-align:center;margin-bottom:22px;">
                 <span style="font-size:13px;font-weight:700;color:#2E3444;text-transform:uppercase;letter-spacing:.08em;">${cfg.label.toUpperCase()}</span>
               </div>
@@ -590,6 +596,7 @@ const ClientDashboard = (() => {
           report_type: _isPersonalProfile ? 'personal' : 'company',
           chart_images: chartImages,
           ...(!_isPersonalProfile && sorted[0]?.post_url ? { top_post_url: sorted[0].post_url } : {}),
+          ...(!_isPersonalProfile ? { post_image_urls: [sorted[0], sorted[1], sorted[2]].filter(p => p?.post_url).map(p => p.post_url) } : {}),
         }),
       })
       const data = await res.json().catch(() => ({}))
