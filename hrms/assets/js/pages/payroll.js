@@ -112,12 +112,15 @@ const Payroll = (() => {
 
   async function _loadSalaries() {
     const { data } = await Config.supabase
-      .from('employee_salary_components')
-      .select('employee_id, component_id, amount')
+      .from('employee_compensation')
+      .select('employee_id, components')
     _empSalaries = {}
     ;(data || []).forEach(r => {
-      if (!_empSalaries[r.employee_id]) _empSalaries[r.employee_id] = {}
-      _empSalaries[r.employee_id][r.component_id] = Number(r.amount) || 0
+      const comps = r.components || {}
+      _empSalaries[r.employee_id] = {}
+      Object.keys(comps).forEach(componentId => {
+        _empSalaries[r.employee_id][componentId] = Number(comps[componentId]) || 0
+      })
     })
   }
 
@@ -337,17 +340,19 @@ const Payroll = (() => {
     btn.disabled    = true
     btn.textContent = 'Saving…'
 
-    const upserts = cols.map(c => ({
-      employee_id:  emp.id,
-      component_id: c.id,
-      amount:       Math.round(parseFloat(document.getElementById(`dci-${c.id}`)?.value) || 0),
-      updated_by:   _user.id,
-      updated_at:   new Date().toISOString(),
-    }))
+    const components = { ...(_empSalaries[emp.id] || {}) }
+    cols.forEach(c => {
+      components[c.id] = Math.round(parseFloat(document.getElementById(`dci-${c.id}`)?.value) || 0)
+    })
 
     const { error } = await Config.supabase
-      .from('employee_salary_components')
-      .upsert(upserts, { onConflict: 'employee_id,component_id' })
+      .from('employee_compensation')
+      .upsert({
+        employee_id: emp.id,
+        components,
+        updated_by:  _user.id,
+        updated_at:  new Date().toISOString(),
+      }, { onConflict: 'employee_id' })
 
     btn.disabled    = false
     btn.textContent = 'Save'
