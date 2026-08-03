@@ -95,10 +95,11 @@ Deno.serve(async (req: Request) => {
     const opsRootId   = Deno.env.get('GOOGLE_DRIVE_OPS_DRIVE_ID')!
 
     // ── Build/find the destination folder: {status} Clients / {Client Name} / {Month Year} ──
-    const statusDir  = await ensureFolder(accessToken, statusFolder(client.status), opsRootId)
-    const clientDir  = await ensureFolder(accessToken, client.client_name.trim(), statusDir)
-    const monthLabel = `${MONTH_NAMES[month - 1]} ${year}`
-    const monthDir   = await ensureFolder(accessToken, monthLabel, clientDir)
+    const statusDir    = await ensureFolder(accessToken, statusFolder(client.status), opsRootId)
+    const clientDir    = await ensureFolder(accessToken, client.client_name.trim(), statusDir)
+    const reportsDir   = await ensureFolder(accessToken, 'Monthly Reports', clientDir)
+    const monthLabel   = `${MONTH_NAMES[month - 1]} ${year}`
+    const monthDir     = await ensureFolder(accessToken, monthLabel, reportsDir)
 
     // ── Replace, don't accumulate: clear anything already in this
     //    month's folder before generating the fresh report + charts.
