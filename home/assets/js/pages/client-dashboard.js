@@ -467,7 +467,8 @@ const ClientDashboard = (() => {
       tokens.TOP_POST_LIKES       = top.LIKES
       tokens.TOP_POST_COMMENTS    = top.COMMENTS
       tokens.TOP_POST_REPOSTS     = top.REPOSTS
-      if (sorted[0]?.post_url) links.TOP_POST_TITLE = sorted[0].post_url
+      if (sorted[0]?.post_url) links.TOP_POST_TITLE       = sorted[0].post_url
+      if (sorted[0]?.post_url) links.TOP_POST_TITLE_SHORT = sorted[0].post_url
       ;[2, 3, 4, 5].forEach((n, i) => {
         const p = sorted[i + 1]
         const c = postCard(p)
