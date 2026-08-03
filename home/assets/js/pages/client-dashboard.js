@@ -425,7 +425,7 @@ const ClientDashboard = (() => {
 
       const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
       const tokens = {
-        CLIENT_NAME:      _currentClient.client_name,
+        CLIENT_NAME:      (_isPersonalProfile && _currentEntityData?.entity_name) ? _currentEntityData.entity_name : _currentClient.client_name,
         DATE_RANGE:       dateRangeLabel,
         MONTH:            MONTH_LABELS[month - 1] || '',
         MONTH_YEAR:       `${MONTH_SHORT[month - 1] || ''}'${String(year).slice(2)}`,
