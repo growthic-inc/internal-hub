@@ -596,8 +596,8 @@ const ClientDashboard = (() => {
           month, year, tokens, links,
           report_type: _isPersonalProfile ? 'personal' : 'company',
           chart_images: chartImages,
-          ...(!_isPersonalProfile && sorted[0]?.post_url ? { top_post_url: sorted[0].post_url } : {}),
-          ...(!_isPersonalProfile ? { post_image_urls: [sorted[0], sorted[1], sorted[2]].filter(p => p?.post_url).map(p => p.post_url) } : {}),
+          ...(sorted[0]?.post_url ? { top_post_url: sorted[0].post_url } : {}),
+          post_image_urls: [sorted[0], sorted[1], sorted[2]].filter(p => p?.post_url).map(p => p.post_url),
         }),
       })
       const data = await res.json().catch(() => ({}))
