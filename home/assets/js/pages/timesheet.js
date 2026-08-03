@@ -356,10 +356,11 @@ const Timesheet = (() => {
     const isToday    = iso === today
     const dayHours   = dayEntries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
 
-    // Hard lock: dates more than 7 days in the past, or any future date
+    // Hard lock: dates more than N days in the past, or any future date
+    // (N is temporarily widened — see _editLockDays)
     const diffDays  = Math.floor((new Date(today) - new Date(iso)) / 86400000)
     const isFuture  = iso > today
-    const isLocked  = diffDays > 7
+    const isLocked  = diffDays > _editLockDays()
     const isHoliday = _isHoliday(iso)
     const isSunday  = day.getDay() === 0
 
@@ -1013,7 +1014,7 @@ const Timesheet = (() => {
   function _getMissedDays(year, month, entries, leaves) {
     const today   = new Date()
     const cutoff  = new Date(today)
-    cutoff.setDate(cutoff.getDate() - 7)
+    cutoff.setDate(cutoff.getDate() - _editLockDays())
     cutoff.setHours(23, 59, 59, 999)
 
     const daysInMonth = new Date(year, month, 0).getDate()
@@ -2739,6 +2740,14 @@ const Timesheet = (() => {
   }
 
   /* ── Date helpers ───────────────────────────────────────── */
+  // TEMPORARY: widen the normal 7-day edit lock through 2026-08-07 so the team
+  // can backfill 20 Jul – 3 Aug. Self-reverts to the normal 7-day window the
+  // day after — no manual follow-up needed. Remove once no longer needed.
+  // Requested by Sunil Naudiyal, 2026-08-03.
+  function _editLockDays() {
+    const todayISO = _toISO(new Date())
+    return todayISO <= '2026-08-07' ? 18 : 7
+  }
   function _getMondayOf(date) {
     const d = new Date(date); const day = d.getDay()
     d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day))
