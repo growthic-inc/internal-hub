@@ -834,7 +834,9 @@ const Payroll = (() => {
             <div style="font-weight:500;font-size:13px;">${Utils.escapeHtml(emp.name || '—')}</div>
             <div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(emp.designation || '')}</div>
           </td>
-          <td style="text-align:right;font-size:12px;">${_fmt(r.monthly_salary)}</td>
+          <td style="text-align:right;font-size:12px;">
+            <button data-open-ded="${r.id}" style="background:none;border:none;padding:0;cursor:pointer;color:inherit;font-size:12px;text-decoration:underline;text-underline-offset:2px;text-decoration-color:var(--border);" title="See how this was calculated">${_fmt(r.monthly_salary)}</button>
+          </td>
           <td style="text-align:right;font-size:12px;">
             ${r.deductions > 0
               ? `<button class="btn--link-danger" data-open-ded="${r.id}">− ${_fmt(r.deductions)}</button>`
@@ -1227,7 +1229,7 @@ const Payroll = (() => {
 
     Utils.openModal(`
       <div class="modal-header">
-        <h3 class="modal-title">Deduction — ${Utils.escapeHtml(emp.name || '')}</h3>
+        <h3 class="modal-title">Pay Calculation — ${Utils.escapeHtml(emp.name || '')}</h3>
         <button class="modal-close" onclick="Utils.closeModal()">${CLOSE_SVG}</button>
       </div>
       <div class="modal-body" style="padding:20px 24px;">
