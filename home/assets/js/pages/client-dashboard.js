@@ -129,8 +129,9 @@ const ClientDashboard = (() => {
   async function init(user) {
     _user = user
     _p = {
-      can_create: App.hasAccess('client_dashboard', 'upload_performance_data', 'can_upload'),
-      can_edit:   App.hasAccess('client_dashboard', 'update_client_status',    'can_edit'),
+      can_create:   App.hasAccess('client_dashboard', 'upload_performance_data', 'can_upload'),
+      can_edit:     App.hasAccess('client_dashboard', 'update_client_status',    'can_edit'),
+      can_generate: App.hasAccess('client_dashboard', 'generate_report',         'can_manage'),
     }
     _trendChart = null; _pubChart = null; _followersChart = null; _visitorsChart = null; _currentClient = null
     _activeMetrics = _getDefaultActiveMetrics()
@@ -143,7 +144,11 @@ const ClientDashboard = (() => {
     } else {
       document.getElementById('db-upload-btn')?.remove()
     }
-    document.getElementById('db-fetch-report-btn')?.addEventListener('click', _exportReport)
+    if (_p.can_generate) {
+      document.getElementById('db-fetch-report-btn')?.addEventListener('click', _exportReport)
+    } else {
+      document.getElementById('db-fetch-report-btn')?.remove()
+    }
   }
 
   /* ── Client dropdown ────────────────────────────────────── */
@@ -1995,5 +2000,6 @@ ModuleRegistry.register({
     view_dashboard:          'View Dashboard',
     upload_performance_data: 'Upload Performance Data',
     update_client_status:    'Update Client Status',
+    generate_report:         'Generate Report',
   },
 })

@@ -812,7 +812,7 @@ const Access = (() => {
   /* ── Default access matrix ───────────────────────────────── */
   const DEFAULT_ACCESS = {
     management: {
-      client_dashboard:    { view_dashboard: 'view_only',   upload_performance_data: 'can_manage',  update_client_status: 'can_manage'  },
+      client_dashboard:    { view_dashboard: 'view_only',   upload_performance_data: 'can_manage',  update_client_status: 'can_manage',  generate_report: 'can_manage'  },
       client_directory:    { view_clients:   'view_only',   create_client:           'can_manage',  edit_client:          'can_manage',  edit_project_codes: 'can_edit', manage_project_codes: 'no_access' },
       client_repository:   { view_files:     'view_only',   upload_files:            'can_upload',  manage_files:         'can_manage'  },
       timesheet:           { log_entry:      'can_upload',  submit_timesheet:        'can_upload',  approve_timesheets:   'can_approve' },
@@ -825,7 +825,7 @@ const Access = (() => {
       policies:            { view_policies: 'view_only', manage_policies: 'no_access' },
     },
     operations_growth: {
-      client_dashboard:    { view_dashboard: 'view_only',   upload_performance_data: 'can_manage',  update_client_status: 'can_manage'  },
+      client_dashboard:    { view_dashboard: 'view_only',   upload_performance_data: 'can_manage',  update_client_status: 'can_manage',  generate_report: 'can_manage'  },
       client_directory:    { view_clients:   'view_only',   create_client:           'can_manage',  edit_client:          'can_manage',  edit_project_codes: 'can_edit', manage_project_codes: 'no_access' },
       client_repository:   { view_files:     'view_only',   upload_files:            'can_upload',  manage_files:         'can_manage'  },
       timesheet:           { log_entry:      'can_upload',  submit_timesheet:        'can_upload',  approve_timesheets:   'can_approve' },
@@ -838,7 +838,7 @@ const Access = (() => {
       policies:            { view_policies: 'view_only', manage_policies: 'no_access' },
     },
     people_culture: {
-      client_dashboard:    { view_dashboard: 'view_only',   upload_performance_data: 'no_access',   update_client_status: 'no_access'   },
+      client_dashboard:    { view_dashboard: 'view_only',   upload_performance_data: 'no_access',   update_client_status: 'no_access',   generate_report: 'no_access'  },
       client_directory:    { view_clients:   'view_only',   create_client:           'no_access',   edit_client:          'no_access',   edit_project_codes: 'no_access', manage_project_codes: 'no_access' },
       client_repository:   { view_files:     'view_only',   upload_files:            'no_access',   manage_files:         'no_access'   },
       timesheet:           { log_entry:      'can_upload',  submit_timesheet:        'can_upload',  approve_timesheets:   'can_approve' },
@@ -851,7 +851,7 @@ const Access = (() => {
       policies:            { view_policies: 'view_only', manage_policies: 'can_manage' },
     },
     business_development: {
-      client_dashboard:    { view_dashboard: 'view_only',   upload_performance_data: 'no_access',   update_client_status: 'no_access'   },
+      client_dashboard:    { view_dashboard: 'view_only',   upload_performance_data: 'no_access',   update_client_status: 'no_access',   generate_report: 'no_access'  },
       client_directory:    { view_clients:   'view_only',   create_client:           'can_upload',  edit_client:          'can_edit',    edit_project_codes: 'no_access', manage_project_codes: 'no_access' },
       client_repository:   { view_files:     'view_only',   upload_files:            'no_access',   manage_files:         'no_access'   },
       timesheet:           { log_entry:      'can_upload',  submit_timesheet:        'can_upload',  approve_timesheets:   'no_access'   },
@@ -864,7 +864,7 @@ const Access = (() => {
       policies:            { view_policies: 'view_only', manage_policies: 'no_access' },
     },
     content_strategy: {
-      client_dashboard:    { view_dashboard: 'view_only',   upload_performance_data: 'no_access',   update_client_status: 'no_access'   },
+      client_dashboard:    { view_dashboard: 'view_only',   upload_performance_data: 'no_access',   update_client_status: 'no_access',   generate_report: 'no_access'  },
       client_directory:    { view_clients:   'view_only',   create_client:           'no_access',   edit_client:          'no_access',   edit_project_codes: 'no_access', manage_project_codes: 'no_access' },
       client_repository:   { view_files:     'view_only',   upload_files:            'can_upload',  manage_files:         'no_access'   },
       timesheet:           { log_entry:      'can_upload',  submit_timesheet:        'can_upload',  approve_timesheets:   'can_approve' },
@@ -877,7 +877,7 @@ const Access = (() => {
       policies:            { view_policies: 'view_only', manage_policies: 'no_access' },
     },
     creative: {
-      client_dashboard:    { view_dashboard: 'view_only',   upload_performance_data: 'no_access',   update_client_status: 'no_access'   },
+      client_dashboard:    { view_dashboard: 'view_only',   upload_performance_data: 'no_access',   update_client_status: 'no_access',   generate_report: 'no_access'  },
       client_directory:    { view_clients:   'view_only',   create_client:           'no_access',   edit_client:          'no_access',   edit_project_codes: 'no_access', manage_project_codes: 'no_access' },
       client_repository:   { view_files:     'view_only',   upload_files:            'can_upload',  manage_files:         'no_access'   },
       timesheet:           { log_entry:      'can_upload',  submit_timesheet:        'can_upload',  approve_timesheets:   'can_approve' },
@@ -890,7 +890,7 @@ const Access = (() => {
       policies:            { view_policies: 'view_only', manage_policies: 'no_access' },
     },
     creators: {
-      client_dashboard:    { view_dashboard: 'no_access',   upload_performance_data: 'no_access',   update_client_status: 'no_access'   },
+      client_dashboard:    { view_dashboard: 'no_access',   upload_performance_data: 'no_access',   update_client_status: 'no_access',   generate_report: 'no_access'  },
       client_directory:    { view_clients:   'no_access',   create_client:           'no_access',   edit_client:          'no_access',   edit_project_codes: 'no_access', manage_project_codes: 'no_access' },
       client_repository:   { view_files:     'view_only',   upload_files:            'can_upload',  manage_files:         'no_access'   },
       timesheet:           { log_entry:      'can_upload',  submit_timesheet:        'can_upload',  approve_timesheets:   'no_access'   },
@@ -903,7 +903,7 @@ const Access = (() => {
       policies:            { view_policies: 'view_only', manage_policies: 'no_access' },
     },
     finance: {
-      client_dashboard:    { view_dashboard: 'view_only',   upload_performance_data: 'no_access',   update_client_status: 'no_access'   },
+      client_dashboard:    { view_dashboard: 'view_only',   upload_performance_data: 'no_access',   update_client_status: 'no_access',   generate_report: 'no_access'  },
       client_directory:    { view_clients:   'view_only',   create_client:           'no_access',   edit_client:          'no_access',   edit_project_codes: 'no_access', manage_project_codes: 'no_access' },
       client_repository:   { view_files:     'view_only',   upload_files:            'no_access',   manage_files:         'no_access'   },
       timesheet:           { log_entry:      'can_upload',  submit_timesheet:        'can_upload',  approve_timesheets:   'no_access'   },
