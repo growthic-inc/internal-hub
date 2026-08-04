@@ -16,7 +16,7 @@ const Payroll = (() => {
   let _appraisals         = []      // employee_compensation rows with reason='appraisal'
   let _isHR                = false  // can give the first (HR) approval
   let _isManagement        = false  // can give the final (Management) approval
-  let _managementEmployees = []     // employees eligible for the appraisal workflow
+  let _eligibleEmployees   = []     // active employees eligible for the appraisal workflow
 
   // Dashboard
   let _dashFilter  = 'active'
@@ -119,7 +119,7 @@ const Payroll = (() => {
     const mgmtDept = depts.find(d => d.system_key === 'management')
     const hrDept   = depts.find(d => d.system_key === 'people_culture')
 
-    _managementEmployees = mgmtDept ? _employees.filter(e => e.department_id === mgmtDept.id) : []
+    _eligibleEmployees = _employees.filter(e => e.status === 'active')
     _isManagement = !!(mgmtDept && _user && _user.department_id === mgmtDept.id)
     _isHR         = !!(_user && (_user.role === 'super_admin' || (hrDept && _user.department_id === hrDept.id)))
   }
@@ -455,7 +455,7 @@ const Payroll = (() => {
 
     const toolbar = document.getElementById('payroll-toolbar-actions')
     if (toolbar) {
-      toolbar.innerHTML = _managementEmployees.length
+      toolbar.innerHTML = _eligibleEmployees.length
         ? `<button class="btn btn--primary btn--sm" id="appraisal-new-btn">New Appraisal</button>`
         : ''
     }
@@ -514,7 +514,7 @@ const Payroll = (() => {
               <tbody>${rows}</tbody>
             </table>
           ` : `<p class="empty-state" style="padding:24px;">
-                 No appraisals yet. ${_managementEmployees.length ? 'Use "New Appraisal" to start one.' : 'This workflow currently only applies to the Management department.'}
+                 No appraisals yet. ${_eligibleEmployees.length ? 'Use "New Appraisal" to start one.' : ''}
                </p>`}
         </div>
       </div>
@@ -579,7 +579,7 @@ const Payroll = (() => {
   }
 
   function _openNewAppraisalModal() {
-    if (!_managementEmployees.length) return
+    if (!_eligibleEmployees.length) return
 
     const fixedCols = _fixedComponents()
     const varCols   = _variableComponents()
@@ -595,7 +595,7 @@ const Payroll = (() => {
       </div>
     `
 
-    const empOptions = _managementEmployees.map(e => `<option value="${e.id}">${Utils.escapeHtml(e.name)}</option>`).join('')
+    const empOptions = _eligibleEmployees.map(e => `<option value="${e.id}">${Utils.escapeHtml(e.name)}</option>`).join('')
 
     Utils.openModal(`
       <div class="modal-header">
