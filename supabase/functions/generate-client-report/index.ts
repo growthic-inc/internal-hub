@@ -135,26 +135,35 @@ Deno.serve(async (req: Request) => {
     const reportName = `${client.client_name.trim()} — ${monthLabel} Report`
     const newFileId   = await copyFile(accessToken, templateId, reportName, monthDir)
 
-    // ── For personal profiles: scrape LinkedIn captions and fill title tokens ──
-    // Personal profile LinkedIn exports have no post_title, so card title tokens
-    // arrive empty. Fetch og:description from each post URL and use the first
-    // sentence as the card title before stamping the slide.
+    // ── Pre-fetch all LinkedIn post data in parallel (caption + image bytes) ──
+    // Each URL is fetched ONCE: caption and image come from the same request.
+    // All fetches have 8-second timeouts so a slow LinkedIn response can't hang
+    // the function and cause a "Failed to fetch" timeout error on the client.
+    const allPostUrls = [
+      ...(top_post_url ? [top_post_url] : []),
+      ...(Array.isArray(post_image_urls) ? post_image_urls.filter(Boolean) : []),
+    ]
+    // De-dupe (top_post_url may equal post_image_urls[0])
+    const uniqueUrls = [...new Set(allPostUrls)]
+    const postDataMap = new Map<string, { caption: string; imageBytes: Uint8Array | null; mimeType: string }>()
+    await Promise.allSettled(
+      uniqueUrls.map(async url => {
+        const data = await fetchLinkedInPost(url)
+        postDataMap.set(url, data)
+      })
+    )
+
+    // ── For personal profiles: fill title tokens from scraped captions ──
     if (reportType === 'personal') {
-      const captionJobs: Array<{ tokenNames: string[]; url: string }> = []
-      if (top_post_url) {
-        captionJobs.push({ tokenNames: ['TOP_POST_TITLE', 'TOP_POST_TITLE_SHORT'], url: top_post_url })
+      const topData = top_post_url ? postDataMap.get(top_post_url) : null
+      if (topData?.caption) {
+        tokens['TOP_POST_TITLE']       = topData.caption
+        tokens['TOP_POST_TITLE_SHORT'] = topData.caption
       }
       for (const [linkToken, url] of Object.entries(links || {})) {
         if (linkToken.endsWith('_TITLE') && !['TOP_POST_TITLE', 'TOP_POST_TITLE_SHORT'].includes(linkToken)) {
-          captionJobs.push({ tokenNames: [linkToken], url })
-        }
-      }
-      const captionResults = await Promise.allSettled(
-        captionJobs.map(async job => ({ ...job, caption: await fetchPostCaption(job.url) }))
-      )
-      for (const r of captionResults) {
-        if (r.status === 'fulfilled' && r.value.caption) {
-          for (const name of r.value.tokenNames) tokens[name] = r.value.caption
+          const d = postDataMap.get(url)
+          if (d?.caption) tokens[linkToken] = d.caption
         }
       }
     }
@@ -196,17 +205,19 @@ Deno.serve(async (req: Request) => {
       await insertChartImage(accessToken, newFileId, monthDir, `{{${chartToken}}}`, base64)
     }
 
-    // ── Drop in the top post's OG image ─────────────────────────────────
+    // ── Drop in post images (reuse pre-fetched bytes — no extra LinkedIn requests) ──
     if (top_post_url) {
-      await insertPostImage('{{TOP_POST_IMAGE}}', accessToken, newFileId, monthDir, top_post_url)
+      const d = postDataMap.get(top_post_url)
+      await insertPostImage('{{TOP_POST_IMAGE}}', accessToken, newFileId, monthDir, top_post_url, d?.imageBytes ?? undefined, d?.mimeType)
     }
 
-    // ── Drop in post images for the Top Performing Posts slide ────────
     if (Array.isArray(post_image_urls)) {
       const postTokens = ['{{POST_1_IMAGE}}', '{{POST_2_IMAGE}}', '{{POST_3_IMAGE}}']
       for (let i = 0; i < Math.min(post_image_urls.length, 3); i++) {
         const url = post_image_urls[i]
-        if (url) await insertPostImage(postTokens[i], accessToken, newFileId, monthDir, url)
+        if (!url) continue
+        const d = postDataMap.get(url)
+        if (url) await insertPostImage(postTokens[i], accessToken, newFileId, monthDir, url, d?.imageBytes ?? undefined, d?.mimeType)
       }
     }
 
@@ -241,103 +252,85 @@ Deno.serve(async (req: Request) => {
   }
 })
 
-/* ── Top post OG image: fetch from LinkedIn URL and insert into slide 2 ── */
+/* ── Fetch a LinkedIn post: caption + image bytes in minimal requests ──
+   Fetches the page at most once per call (oembed first, page scrape fallback).
+   All outbound requests have an 8-second timeout so a slow LinkedIn response
+   cannot hang the edge function and cause a "Failed to fetch" on the client. */
 
-async function fetchOgImageBytes(postUrl: string): Promise<{ bytes: Uint8Array; mimeType: string } | null> {
-  // Strategy 1: LinkedIn oembed API — returns thumbnail_url without needing auth
-  try {
-    const oembedUrl = `https://www.linkedin.com/oembed?url=${encodeURIComponent(postUrl)}&format=json`
-    const oembedRes = await fetch(oembedUrl, {
-      headers: { 'User-Agent': 'LinkedInBot/1.0 (compatible; Jakarta Commons-HttpClient/3.1 +http://www.linkedin.com)' },
-    })
-    console.log('[fetchOgImageBytes] oembed status:', oembedRes.status, 'for', postUrl)
-    if (oembedRes.ok) {
-      const data = await oembedRes.json() as { thumbnail_url?: string }
-      console.log('[fetchOgImageBytes] oembed thumbnail_url:', data.thumbnail_url)
-      if (data.thumbnail_url) {
-        const imgRes = await fetch(data.thumbnail_url)
-        if (imgRes.ok) {
-          const mimeType = imgRes.headers.get('content-type')?.split(';')[0] ?? 'image/jpeg'
-          const bytes = new Uint8Array(await imgRes.arrayBuffer())
-          console.log('[fetchOgImageBytes] oembed image downloaded, size:', bytes.length, 'mime:', mimeType)
-          return { bytes, mimeType }
-        }
-      }
-    }
-  } catch (e) {
-    console.warn('[fetchOgImageBytes] oembed attempt failed:', e)
-  }
+async function fetchLinkedInPost(postUrl: string): Promise<{
+  caption: string
+  imageBytes: Uint8Array | null
+  mimeType: string
+}> {
+  const t = () => AbortSignal.timeout(8_000)
 
-  // Strategy 2: og:image scraping with Googlebot UA (fallback)
-  try {
-    const pageRes = await fetch(postUrl, {
-      headers: {
-        'User-Agent': 'Googlebot/2.1 (+http://www.google.com/bot.html)',
-        'Accept': 'text/html,application/xhtml+xml',
-      },
-      redirect: 'follow',
-    })
-    console.log('[fetchOgImageBytes] page fetch status:', pageRes.status)
-    const html = await pageRes.text()
-    console.log('[fetchOgImageBytes] page HTML length:', html.length)
-    const m = html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/) ||
-              html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:image"/)
-    console.log('[fetchOgImageBytes] og:image found:', !!m)
-    if (!m) return null
-    const imageUrl = m[1].replace(/&amp;/g, '&')
-    const imgRes = await fetch(imageUrl)
-    if (!imgRes.ok) return null
-    const mimeType = imgRes.headers.get('content-type')?.split(';')[0] ?? 'image/jpeg'
-    const bytes = new Uint8Array(await imgRes.arrayBuffer())
-    return { bytes, mimeType }
-  } catch (e) {
-    console.warn('[fetchOgImageBytes] og:image scrape failed:', e)
-    return null
-  }
-}
-
-/* ── Scrape the first sentence of a LinkedIn post caption ── */
-
-async function fetchPostCaption(postUrl: string): Promise<string> {
-  // Try oembed first — sometimes has description text
+  // Strategy 1: oembed — single request, returns thumbnail_url + sometimes description
   try {
     const oembedRes = await fetch(
       `https://www.linkedin.com/oembed?url=${encodeURIComponent(postUrl)}&format=json`,
-      { headers: { 'User-Agent': 'LinkedInBot/1.0 (compatible; Jakarta Commons-HttpClient/3.1 +http://www.linkedin.com)' } },
+      { headers: { 'User-Agent': 'LinkedInBot/1.0 (compatible; Jakarta Commons-HttpClient/3.1 +http://www.linkedin.com)' }, signal: t() },
     )
     if (oembedRes.ok) {
-      const data = await oembedRes.json() as { description?: string }
-      const txt = (data.description || '').trim()
-      if (txt && !txt.toLowerCase().includes('linkedin.com')) {
-        return firstSentence(txt)
+      const data = await oembedRes.json() as { thumbnail_url?: string; description?: string }
+      const rawCaption = (data.description || '').trim()
+      const caption = (rawCaption && !rawCaption.toLowerCase().includes('linkedin.com'))
+        ? firstSentence(rawCaption) : ''
+      if (data.thumbnail_url) {
+        try {
+          const imgRes = await fetch(data.thumbnail_url, { signal: t() })
+          if (imgRes.ok) {
+            const mimeType = imgRes.headers.get('content-type')?.split(';')[0] ?? 'image/jpeg'
+            const imageBytes = new Uint8Array(await imgRes.arrayBuffer())
+            return { caption, imageBytes, mimeType }
+          }
+        } catch {}
       }
+      if (caption) return { caption, imageBytes: null, mimeType: 'image/jpeg' }
     }
-  } catch {}
+  } catch (e) {
+    console.warn('[fetchLinkedInPost] oembed failed:', e)
+  }
 
-  // Scrape og:description from the post page
+  // Strategy 2: page scrape — ONE fetch extracts both og:description and og:image
   try {
     const pageRes = await fetch(postUrl, {
-      headers: {
-        'User-Agent': 'Googlebot/2.1 (+http://www.google.com/bot.html)',
-        'Accept':     'text/html,application/xhtml+xml',
-      },
+      headers: { 'User-Agent': 'Googlebot/2.1 (+http://www.google.com/bot.html)', 'Accept': 'text/html,application/xhtml+xml' },
       redirect: 'follow',
+      signal: t(),
     })
     const html = await pageRes.text()
-    const m = html.match(/<meta[^>]+property="og:description"[^>]+content="([^"]+)"/) ||
-              html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:description"/)
-    if (m) {
-      let txt = m[1]
-        .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim()
-      // LinkedIn og:description is often: "Name on LinkedIn: "caption text here""
+
+    // Caption from og:description
+    const descM = html.match(/<meta[^>]+property="og:description"[^>]+content="([^"]+)"/) ||
+                  html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:description"/)
+    let caption = ''
+    if (descM) {
+      let txt = descM[1].replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim()
       const prefixed = txt.match(/^.+? on LinkedIn:\s*["""']([\s\S]+?)['"""]*$/)
       if (prefixed) txt = prefixed[1].trim()
-      return firstSentence(txt)
+      caption = firstSentence(txt)
     }
-  } catch {}
 
-  return ''
+    // Image from og:image
+    const imgM = html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/) ||
+                 html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:image"/)
+    if (imgM) {
+      try {
+        const imageUrl = imgM[1].replace(/&amp;/g, '&')
+        const imgRes = await fetch(imageUrl, { signal: t() })
+        if (imgRes.ok) {
+          const mimeType = imgRes.headers.get('content-type')?.split(';')[0] ?? 'image/jpeg'
+          const imageBytes = new Uint8Array(await imgRes.arrayBuffer())
+          return { caption, imageBytes, mimeType }
+        }
+      } catch {}
+    }
+    return { caption, imageBytes: null, mimeType: 'image/jpeg' }
+  } catch (e) {
+    console.warn('[fetchLinkedInPost] page scrape failed:', e)
+  }
+
+  return { caption: '', imageBytes: null, mimeType: 'image/jpeg' }
 }
 
 function firstSentence(text: string): string {
@@ -358,16 +351,22 @@ function jpegDimensions(bytes: Uint8Array): { width: number; height: number } | 
 }
 
 async function insertPostImage(
-  placeholderToken: string, token: string, presentationId: string, folderId: string, postUrl: string,
+  placeholderToken: string, token: string, presentationId: string, folderId: string,
+  postUrl: string, preloadedBytes?: Uint8Array, preloadedMime?: string,
 ): Promise<void> {
   console.log('[insertPostImage] starting, token:', placeholderToken, 'postUrl:', postUrl)
-  const result = await fetchOgImageBytes(postUrl)
-  if (!result) {
-    console.warn('[insertPostImage] Could not fetch OG image — skipping', placeholderToken)
+  let bytes: Uint8Array | null = preloadedBytes ?? null
+  let mimeType = preloadedMime ?? 'image/jpeg'
+  if (!bytes) {
+    const result = await fetchLinkedInPost(postUrl)
+    bytes = result.imageBytes
+    mimeType = result.mimeType
+  }
+  if (!bytes) {
+    console.warn('[insertPostImage] Could not fetch image — skipping', placeholderToken)
     return
   }
   console.log('[insertPostImage] image fetched, proceeding to insert')
-  const { bytes, mimeType } = result
 
   const pres  = await getPresentation(token, presentationId)
   const found = findShapeByText(pres, placeholderToken)
