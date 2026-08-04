@@ -1251,6 +1251,10 @@ const Payroll = (() => {
                   <strong>${_fmt(Math.round(seg.day_rate))}/day</strong>
                 </div>
                 <div class="hrms-summary-row">
+                  <span>Working Days</span>
+                  <strong>${seg.working_days ?? '—'}${seg.working_days !== undefined ? ` of ${seg.days} day${seg.days !== 1 ? 's' : ''}` : ''}</strong>
+                </div>
+                <div class="hrms-summary-row">
                   <span>Unpaid Leave</span>
                   <strong style="color:#DC2626;">${seg.unpaid_leave_days} day${seg.unpaid_leave_days !== 1 ? 's' : ''}</strong>
                 </div>
