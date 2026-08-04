@@ -680,7 +680,14 @@ const Timesheet = (() => {
   function _openEntryModal(preDate = null, existingEntry = null) {
     const isEdit        = !!existingEntry
     const todayISO      = _toISO(new Date())
-    const minDateISO    = (() => { const d = new Date(); d.setDate(d.getDate() - 7); return _toISO(d) })()
+    const normalMinISO  = (() => { const d = new Date(); d.setDate(d.getDate() - _editLockDays()); return _toISO(d) })()
+    // A rejected entry stays editable no matter how old its date is — being
+    // rejected is what re-opens it, not the calendar. Pull the floor back to
+    // the entry's own date so its pre-filled value is never treated as
+    // invalid, without opening the door to picking an even older date.
+    const minDateISO    = (isEdit && existingEntry.status === 'rejected' && existingEntry.date < normalMinISO)
+      ? existingEntry.date
+      : normalMinISO
     const weekStartISO  = _toISO(_weekStart)
     const weekEndISO    = _toISO(_weekEnd(_weekStart))
     const defaultDate   = preDate
@@ -882,7 +889,7 @@ const Timesheet = (() => {
       const errs = []
       if (!date)                      errs.push('Date is required.')
       if (date > todayISO)            errs.push('Cannot log entries for future dates.')
-      if (date < minDateISO)          errs.push('Cannot log entries older than 7 days.')
+      if (date < minDateISO)          errs.push('This date is outside the editable window.')
       if (isNaN(hours) || hours <= 0) errs.push('Hours must be greater than 0.')
       if (hours > 12)                 errs.push('Hours cannot exceed 12 per entry.')
       if (!desc)                      errs.push('Work description is required.')
