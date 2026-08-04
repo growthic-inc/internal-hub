@@ -471,7 +471,7 @@ const Payroll = (() => {
       return `
         <tr>
           <td>
-            <div style="font-weight:500;font-size:13px;">${Utils.escapeHtml(emp.name || '—')}</div>
+            <button data-appr-history="${a.employee_id}" style="font-weight:500;font-size:13px;background:none;border:none;padding:0;cursor:pointer;color:var(--text);text-decoration:underline;text-underline-offset:2px;">${Utils.escapeHtml(emp.name || '—')}</button>
             <div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(emp.designation || '')}</div>
           </td>
           <td style="font-size:12px;">${a.effective_from || '—'}</td>
@@ -533,6 +533,10 @@ const Payroll = (() => {
 
     content.querySelectorAll('[data-appr-reject]').forEach(btn => {
       btn.addEventListener('click', () => _openRejectAppraisalModal(btn.dataset.apprReject))
+    })
+
+    content.querySelectorAll('[data-appr-history]').forEach(btn => {
+      btn.addEventListener('click', () => _openCompensationHistoryModal(btn.dataset.apprHistory))
     })
   }
 
@@ -671,6 +675,97 @@ const Payroll = (() => {
       Utils.showToast('Appraisal submitted for HR approval.', 'success')
       await _loadAppraisalsTab()
     })
+  }
+
+  const HISTORY_REASON_LABEL = { initial: 'Joining', appraisal: 'Appraisal' }
+
+  async function _openCompensationHistoryModal(employeeId) {
+    const emp = _employees.find(e => e.id === employeeId) || {}
+
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">Compensation History — ${Utils.escapeHtml(emp.name || '')}</h3>
+        <button class="modal-close" onclick="Utils.closeModal()">${CLOSE_SVG}</button>
+      </div>
+      <div class="modal-body" style="padding:20px 24px;">
+        <div id="hist-body"><div class="page-loading">Loading…</div></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Close</button>
+      </div>
+    `, 'hist-modal')
+
+    const { data } = await Config.supabase
+      .from('employee_compensation')
+      .select(`*,
+        hr_approver:employees!hr_approved_by(name),
+        mgmt_approver:employees!management_approved_by(name),
+        submitter:employees!submitted_by(name)`)
+      .eq('employee_id', employeeId)
+      .order('effective_from', { ascending: true })
+
+    const entries = data || []
+    const body = document.getElementById('hist-body')
+    if (!body) return
+
+    if (!entries.length) {
+      body.innerHTML = `<p class="empty-state" style="padding:24px;">No compensation history recorded yet.</p>`
+      return
+    }
+
+    let prevApprovedMonthly = null
+    const rows = entries.map(e => {
+      const monthly = _fixedMonthlyFromComponents(e.components)
+      let pctHtml = '<span style="color:var(--text-muted);">—</span>'
+      if (e.status === 'approved') {
+        if (prevApprovedMonthly !== null && prevApprovedMonthly > 0) {
+          const pct = (((monthly - prevApprovedMonthly) / prevApprovedMonthly) * 100).toFixed(1)
+          pctHtml = `<span style="color:${monthly >= prevApprovedMonthly ? '#1D9E75' : '#B91C1C'};">${monthly >= prevApprovedMonthly ? '+' : ''}${pct}%</span>`
+        }
+        prevApprovedMonthly = monthly
+      }
+
+      const approvers = []
+      if (e.hr_approver?.name)   approvers.push(`HR: ${Utils.escapeHtml(e.hr_approver.name)}`)
+      if (e.mgmt_approver?.name) approvers.push(`Management: ${Utils.escapeHtml(e.mgmt_approver.name)}`)
+      if (!approvers.length && e.reason !== 'initial') approvers.push('—')
+
+      return `
+        <tr>
+          <td style="font-size:12px;">${e.effective_from}${e.effective_to ? ` → ${e.effective_to}` : ' → Present'}</td>
+          <td style="font-size:12px;">${HISTORY_REASON_LABEL[e.reason] || e.reason}</td>
+          <td style="text-align:right;font-size:12px;font-weight:600;">${_fmt(monthly)}</td>
+          <td style="text-align:right;font-size:12px;">${pctHtml}</td>
+          <td>
+            <span style="font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;${APPRAISAL_STATUS_STYLE[e.status] || ''}">
+              ${APPRAISAL_STATUS_LABEL[e.status] || e.status}
+            </span>
+          </td>
+          <td style="font-size:11px;color:var(--text-muted);">${approvers.join(' · ') || '—'}</td>
+        </tr>
+      `
+    }).join('')
+
+    body.innerHTML = `
+      <p style="font-size:11px;color:var(--text-muted);margin:0 0 14px;">
+        Every joining and appraisal event for this employee, in order — the same record used to calculate payroll each month.
+      </p>
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Effective Period</th>
+              <th>Reason</th>
+              <th style="text-align:right;">Fixed Monthly</th>
+              <th style="text-align:right;">Change</th>
+              <th>Status</th>
+              <th>Approved By</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `
   }
 
   /* ════════════════════════════════════════════════════════════
@@ -1088,9 +1183,7 @@ const Payroll = (() => {
     const perDay     = monthly / 30
     const unpaidDays = Number(rec.unpaid_leave_days   || 0)
     const missedDays = Number(rec.missed_timesheet_days || 0)
-    const totalDays  = unpaidDays + missedDays
-    const autoCalc   = Math.round(perDay * totalDays)
-    const isOverridden = Math.abs(Number(rec.deductions) - autoCalc) > 1
+    const breakdown  = Array.isArray(rec.calc_breakdown) ? rec.calc_breakdown : null
 
     // Fetch audit history with changer name
     const { data: logs } = await Config.supabase
@@ -1099,6 +1192,11 @@ const Payroll = (() => {
       .eq('payroll_record_id', rec.id)
       .eq('field_name', 'deductions')
       .order('changed_at', { ascending: true })
+
+    // "Overridden" means a human actually changed it — not a mismatch
+    // against a naive re-estimate, which doesn't know about mid-month
+    // rate changes and would false-positive on every split month.
+    const isOverridden = (logs || []).length > 0
 
     const historyRows = (logs || []).map(l => {
       const who  = l.changer?.name || 'HR'
@@ -1137,29 +1235,63 @@ const Payroll = (() => {
 
         <div class="hrms-section-label" style="margin-bottom:10px;">Breakdown</div>
         <div class="hrms-salary-summary" style="margin-bottom:20px;">
-          <div class="hrms-summary-row">
-            <span>Monthly Salary</span>
-            <strong>${_fmt(monthly)}</strong>
-          </div>
-          <div class="hrms-summary-row">
-            <span>Per Day Rate</span>
-            <strong>${_fmt(Math.round(perDay))}/day</strong>
-          </div>
-          <div class="hrms-summary-row" style="padding-top:8px;border-top:1px solid var(--border);margin-top:4px;">
-            <span>Unpaid Leave</span>
-            <strong style="color:#DC2626;">${unpaidDays} day${unpaidDays !== 1 ? 's' : ''} &nbsp;·&nbsp; −${_fmt(Math.round(perDay * unpaidDays))}</strong>
-          </div>
-          <div class="hrms-summary-row">
-            <span>Missed Timesheet</span>
-            <strong style="color:#DC2626;">${missedDays} day${missedDays !== 1 ? 's' : ''} &nbsp;·&nbsp; −${_fmt(Math.round(perDay * missedDays))}</strong>
-          </div>
-          <div class="hrms-summary-row hrms-summary-row--deduction" style="padding-top:8px;border-top:1px solid var(--border);margin-top:4px;">
-            <span>Auto-calculated Total</span>
-            <strong>−${_fmt(autoCalc)}</strong>
-          </div>
+          ${breakdown && breakdown.length ? `
+            ${breakdown.length > 1 ? `<p style="font-size:11px;color:var(--text-muted);margin:0 0 10px;">A compensation change took effect mid-month — each period below is priced at its own rate.</p>` : ''}
+            ${breakdown.map((seg, i) => `
+              <div style="${i > 0 ? 'border-top:1px solid var(--border);margin-top:10px;padding-top:10px;' : ''}">
+                ${breakdown.length > 1 ? `<div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;">${seg.segment_start} → ${seg.segment_end} (${seg.days} days)</div>` : ''}
+                <div class="hrms-summary-row">
+                  <span>Monthly Salary</span>
+                  <strong>${_fmt(seg.monthly_salary)}</strong>
+                </div>
+                <div class="hrms-summary-row">
+                  <span>Per Day Rate</span>
+                  <strong>${_fmt(Math.round(seg.day_rate))}/day</strong>
+                </div>
+                <div class="hrms-summary-row">
+                  <span>Unpaid Leave</span>
+                  <strong style="color:#DC2626;">${seg.unpaid_leave_days} day${seg.unpaid_leave_days !== 1 ? 's' : ''}</strong>
+                </div>
+                <div class="hrms-summary-row">
+                  <span>Missed Timesheet</span>
+                  <strong style="color:#DC2626;">${seg.missed_timesheet_days} day${seg.missed_timesheet_days !== 1 ? 's' : ''}</strong>
+                </div>
+                <div class="hrms-summary-row">
+                  <span>Segment Deduction</span>
+                  <strong style="color:#DC2626;">−${_fmt(seg.segment_deduction)}</strong>
+                </div>
+              </div>
+            `).join('')}
+            <div class="hrms-summary-row hrms-summary-row--deduction" style="padding-top:8px;border-top:1px solid var(--border);margin-top:10px;">
+              <span>Auto-calculated Total</span>
+              <strong>−${_fmt(rec.deductions)}</strong>
+            </div>
+          ` : `
+            <div class="hrms-summary-row">
+              <span>Monthly Salary</span>
+              <strong>${_fmt(monthly)}</strong>
+            </div>
+            <div class="hrms-summary-row">
+              <span>Per Day Rate</span>
+              <strong>${_fmt(Math.round(perDay))}/day</strong>
+            </div>
+            <div class="hrms-summary-row" style="padding-top:8px;border-top:1px solid var(--border);margin-top:4px;">
+              <span>Unpaid Leave</span>
+              <strong style="color:#DC2626;">${unpaidDays} day${unpaidDays !== 1 ? 's' : ''} &nbsp;·&nbsp; −${_fmt(Math.round(perDay * unpaidDays))}</strong>
+            </div>
+            <div class="hrms-summary-row">
+              <span>Missed Timesheet</span>
+              <strong style="color:#DC2626;">${missedDays} day${missedDays !== 1 ? 's' : ''} &nbsp;·&nbsp; −${_fmt(Math.round(perDay * missedDays))}</strong>
+            </div>
+            <div class="hrms-summary-row hrms-summary-row--deduction" style="padding-top:8px;border-top:1px solid var(--border);margin-top:4px;">
+              <span>Auto-calculated Total</span>
+              <strong>−${_fmt(rec.deductions)}</strong>
+            </div>
+            <p style="font-size:11px;color:var(--text-muted);margin-top:8px;">Detailed segment breakdown isn't available for this record — it was generated before breakdown tracking was added. Regenerate this payroll run to get it.</p>
+          `}
           ${isOverridden ? `
             <div class="hrms-summary-row" style="background:#FEF3C7;border-radius:6px;padding:6px 10px;margin-top:6px;">
-              <span style="font-size:12px;color:#92400E;">⚠ Overridden to</span>
+              <span style="font-size:12px;color:#92400E;">⚠ Manually overridden to</span>
               <strong style="color:#92400E;">−${_fmt(rec.deductions)}</strong>
             </div>
           ` : ''}
