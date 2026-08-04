@@ -51,6 +51,31 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: userErr } = await anonClient.auth.getUser()
     if (userErr || !user) return json({ error: 'Unauthorized' }, 401)
 
+    // ── Access control: check generate_report permission ──────
+    const adminClient = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    )
+    const { data: callerEmp } = await adminClient
+      .from('employees')
+      .select('role, department')
+      .eq('email', user.email)
+      .single()
+
+    if (callerEmp?.role !== 'super_admin') {
+      const { data: accessRows } = await adminClient
+        .from('access_matrix')
+        .select('id')
+        .eq('department', callerEmp?.department)
+        .eq('module', 'client_dashboard')
+        .eq('feature', 'generate_report')
+        .neq('access_level', 'no_access')
+        .limit(1)
+      if (!accessRows || accessRows.length === 0) {
+        return json({ error: 'Access denied.' }, 403)
+      }
+    }
+
     // ── Parse body ────────────────────────────────────────────
     const body = await req.json() as {
       client_id:          string
