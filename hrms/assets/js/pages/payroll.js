@@ -12,6 +12,12 @@ const Payroll = (() => {
   let _empSalaries = {}   // { employee_id: { component_id: amount } }
   let _activeTab   = 'dashboard'
 
+  // Appraisal workflow (Management department only)
+  let _appraisals         = []      // employee_compensation rows with reason='appraisal'
+  let _isHR                = false  // can give the first (HR) approval
+  let _isManagement        = false  // can give the final (Management) approval
+  let _managementEmployees = []     // employees eligible for the appraisal workflow
+
   // Dashboard
   let _dashFilter  = 'active'
   let _dashView    = 'detailed'   // 'detailed' | 'summary'
@@ -65,6 +71,7 @@ const Payroll = (() => {
           <div class="tabs" id="payroll-tabs">
             <button class="tab-btn tab-btn--active" data-tab="dashboard">Dashboard</button>
             <button class="tab-btn" data-tab="processing">Payroll Processing</button>
+            <button class="tab-btn" data-tab="appraisals">Appraisals</button>
             <button class="tab-btn" data-tab="settings">Settings</button>
           </div>
           <div id="payroll-toolbar-actions"></div>
@@ -104,16 +111,32 @@ const Payroll = (() => {
   }
 
   async function _loadCoreData() {
-    const [emps, comps] = await Promise.all([_fetchEmployees(), _fetchComponents()])
+    const [emps, comps, depts] = await Promise.all([_fetchEmployees(), _fetchComponents(), _fetchDepartments()])
     _employees  = emps
     _components = comps
     await _loadSalaries()
+
+    const mgmtDept = depts.find(d => d.system_key === 'management')
+    const hrDept   = depts.find(d => d.system_key === 'people_culture')
+
+    _managementEmployees = mgmtDept ? _employees.filter(e => e.department_id === mgmtDept.id) : []
+    _isManagement = !!(mgmtDept && _user && _user.department_id === mgmtDept.id)
+    _isHR         = !!(_user && (_user.role === 'super_admin' || (hrDept && _user.department_id === hrDept.id)))
+  }
+
+  async function _fetchDepartments() {
+    const { data } = await Config.supabase.from('departments').select('id, system_key')
+    return data || []
   }
 
   async function _loadSalaries() {
+    // Only the currently-open, approved entry per employee — the table
+    // can also hold closed history plus pending/rejected appraisal rows.
     const { data } = await Config.supabase
       .from('employee_compensation')
       .select('employee_id, components')
+      .eq('status', 'approved')
+      .is('effective_to', null)
     _empSalaries = {}
     ;(data || []).forEach(r => {
       const comps = r.components || {}
@@ -127,9 +150,10 @@ const Payroll = (() => {
   function _loadTab(tab) {
     const toolbar = document.getElementById('payroll-toolbar-actions')
     if (toolbar) toolbar.innerHTML = ''
-    if (tab === 'dashboard')  _loadDashboardTab()
-    if (tab === 'processing') _loadProcessingTab()
-    if (tab === 'settings')   _loadSettingsTab()
+    if (tab === 'dashboard')   _loadDashboardTab()
+    if (tab === 'processing')  _loadProcessingTab()
+    if (tab === 'appraisals')  _loadAppraisalsTab()
+    if (tab === 'settings')    _loadSettingsTab()
   }
 
   /* ════════════════════════════════════════════════════════════
@@ -345,14 +369,36 @@ const Payroll = (() => {
       components[c.id] = Math.round(parseFloat(document.getElementById(`dci-${c.id}`)?.value) || 0)
     })
 
-    const { error } = await Config.supabase
+    // employee_compensation now holds a timeline (multiple rows per
+    // employee over time), so this edits the currently-open row rather
+    // than upserting on employee_id alone.
+    const { data: updated, error: updateError } = await Config.supabase
       .from('employee_compensation')
-      .upsert({
-        employee_id: emp.id,
+      .update({
         components,
-        updated_by:  _user.id,
-        updated_at:  new Date().toISOString(),
-      }, { onConflict: 'employee_id' })
+        updated_by: _user.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('employee_id', emp.id)
+      .eq('status', 'approved')
+      .is('effective_to', null)
+      .select()
+
+    let error = updateError
+    if (!error && (!updated || updated.length === 0)) {
+      const insertRes = await Config.supabase
+        .from('employee_compensation')
+        .insert({
+          employee_id:    emp.id,
+          components,
+          effective_from: new Date().toISOString().slice(0, 10),
+          reason:         'initial',
+          status:         'approved',
+          updated_by:     _user.id,
+          updated_at:     new Date().toISOString(),
+        })
+      error = insertRes.error
+    }
 
     btn.disabled    = false
     btn.textContent = 'Save'
@@ -367,6 +413,264 @@ const Payroll = (() => {
     Utils.showToast(`Salary updated for ${emp.name}.`, 'success')
     await _loadSalaries()
     _renderDashboardTab()
+  }
+
+  /* ════════════════════════════════════════════════════════════
+     TAB — APPRAISALS (Management department only)
+  ════════════════════════════════════════════════════════════ */
+  const APPRAISAL_STATUS_STYLE = {
+    pending_hr:         'background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;',
+    pending_management: 'background:#DBEAFE;color:#1E40AF;border:1px solid #93C5FD;',
+    approved:           'background:#ECFDF5;color:#065F46;border:1px solid #6EE7B7;',
+    rejected:           'background:#FEE2E2;color:#B91C1C;border:1px solid #FCA5A5;',
+  }
+  const APPRAISAL_STATUS_LABEL = {
+    pending_hr: 'Pending HR', pending_management: 'Pending Management', approved: 'Approved', rejected: 'Rejected',
+  }
+
+  async function _loadAppraisalsTab() {
+    const content = document.getElementById('payroll-content')
+    if (content) content.innerHTML = '<div class="page-loading">Loading…</div>'
+    _appraisals = await _fetchAppraisals()
+    _renderAppraisalsTab()
+  }
+
+  async function _fetchAppraisals() {
+    const { data } = await Config.supabase
+      .from('employee_compensation')
+      .select('*, employee:employees!employee_id(id, name, designation)')
+      .eq('reason', 'appraisal')
+      .order('updated_at', { ascending: false })
+    return data || []
+  }
+
+  function _fixedMonthlyFromComponents(components) {
+    const annualFixed = _fixedComponents().reduce((s, c) => s + (Number((components || {})[c.id]) || 0), 0)
+    return Math.round(annualFixed / 12)
+  }
+
+  function _renderAppraisalsTab() {
+    const content = document.getElementById('payroll-content')
+    if (!content) return
+
+    const toolbar = document.getElementById('payroll-toolbar-actions')
+    if (toolbar) {
+      toolbar.innerHTML = _managementEmployees.length
+        ? `<button class="btn btn--primary btn--sm" id="appraisal-new-btn">New Appraisal</button>`
+        : ''
+    }
+
+    const rows = _appraisals.map(a => {
+      const emp         = a.employee || {}
+      const oldMonthly  = _monthlyForEmp(a.employee_id)
+      const newMonthly  = _fixedMonthlyFromComponents(a.components)
+      const pctChange   = oldMonthly > 0 ? (((newMonthly - oldMonthly) / oldMonthly) * 100).toFixed(1) : '—'
+      const canApproveHr   = _isHR && a.status === 'pending_hr'
+      const canApproveMgmt = _isManagement && a.status === 'pending_management'
+
+      return `
+        <tr>
+          <td>
+            <div style="font-weight:500;font-size:13px;">${Utils.escapeHtml(emp.name || '—')}</div>
+            <div style="font-size:11px;color:var(--text-muted);">${Utils.escapeHtml(emp.designation || '')}</div>
+          </td>
+          <td style="font-size:12px;">${a.effective_from || '—'}</td>
+          <td style="text-align:right;font-size:12px;">${_fmt(oldMonthly)}</td>
+          <td style="text-align:right;font-size:12px;font-weight:600;">${_fmt(newMonthly)}</td>
+          <td style="text-align:right;font-size:12px;color:${newMonthly >= oldMonthly ? '#1D9E75' : '#B91C1C'};">
+            ${pctChange === '—' ? '—' : (newMonthly >= oldMonthly ? '+' : '') + pctChange + '%'}
+          </td>
+          <td>
+            <span style="font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;${APPRAISAL_STATUS_STYLE[a.status] || ''}">
+              ${APPRAISAL_STATUS_LABEL[a.status] || a.status}
+            </span>
+          </td>
+          <td>
+            ${canApproveHr || canApproveMgmt ? `
+              <button class="btn btn--xs btn--primary" data-appr-approve="${a.id}" data-appr-stage="${a.status}">Approve</button>
+              <button class="btn btn--xs btn--danger-ghost" data-appr-reject="${a.id}">Reject</button>
+            ` : (a.status === 'rejected' && a.rejected_reason ? `<span style="font-size:11px;color:var(--text-muted);" title="${Utils.escapeHtml(a.rejected_reason)}">Reason ⓘ</span>` : '—')}
+          </td>
+        </tr>
+      `
+    }).join('')
+
+    content.innerHTML = `
+      <div class="section-card">
+        <div class="section-card-body" style="padding:0;overflow-x:auto;">
+          ${_appraisals.length ? `
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Effective Date</th>
+                  <th style="text-align:right;">Current Monthly</th>
+                  <th style="text-align:right;">New Monthly</th>
+                  <th style="text-align:right;">Change</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          ` : `<p class="empty-state" style="padding:24px;">
+                 No appraisals yet. ${_managementEmployees.length ? 'Use "New Appraisal" to start one.' : 'This workflow currently only applies to the Management department.'}
+               </p>`}
+        </div>
+      </div>
+    `
+
+    document.getElementById('appraisal-new-btn')?.addEventListener('click', _openNewAppraisalModal)
+
+    content.querySelectorAll('[data-appr-approve]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id    = btn.dataset.apprApprove
+        const stage = btn.dataset.apprStage
+        if (stage === 'pending_hr')         _approveAppraisal(id, 'hr')
+        if (stage === 'pending_management') _approveAppraisal(id, 'management')
+      })
+    })
+
+    content.querySelectorAll('[data-appr-reject]').forEach(btn => {
+      btn.addEventListener('click', () => _openRejectAppraisalModal(btn.dataset.apprReject))
+    })
+  }
+
+  async function _approveAppraisal(entryId, stage) {
+    const fn = stage === 'hr' ? 'approve_appraisal_hr' : 'approve_appraisal_management'
+    const { error } = await Config.supabase.rpc(fn, { p_entry_id: entryId })
+    if (error) { Utils.showToast(error.message || 'Failed to approve.', 'error'); return }
+    Utils.showToast(stage === 'hr' ? 'Approved — sent to Management for final approval.' : 'Appraisal approved and now active.', 'success')
+    await _loadAppraisalsTab()
+    await _loadSalaries()
+  }
+
+  function _openRejectAppraisalModal(entryId) {
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">Reject Appraisal</h3>
+        <button class="modal-close" onclick="Utils.closeModal()">${CLOSE_SVG}</button>
+      </div>
+      <div class="modal-body" style="padding:20px 24px;">
+        <div id="appr-reject-err" class="alert alert--danger" style="display:none;margin-bottom:14px;"></div>
+        <div class="form-group">
+          <label class="form-label">Reason <span class="required">*</span></label>
+          <input class="form-input" type="text" id="appr-reject-reason" placeholder="Why is this being rejected?">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
+        <button class="btn btn--danger-ghost" id="appr-reject-confirm-btn">Reject</button>
+      </div>
+    `, 'appr-reject-modal')
+
+    document.getElementById('appr-reject-confirm-btn').addEventListener('click', async () => {
+      const errEl  = document.getElementById('appr-reject-err')
+      const reason = document.getElementById('appr-reject-reason').value.trim()
+      if (!reason) { errEl.textContent = 'Please enter a reason.'; errEl.style.display = 'block'; return }
+
+      const { error } = await Config.supabase.rpc('reject_appraisal', { p_entry_id: entryId, p_reason: reason })
+      if (error) { errEl.textContent = error.message || 'Failed to reject.'; errEl.style.display = 'block'; return }
+
+      Utils.closeModal()
+      Utils.showToast('Appraisal rejected.', 'success')
+      await _loadAppraisalsTab()
+    })
+  }
+
+  function _openNewAppraisalModal() {
+    if (!_managementEmployees.length) return
+
+    const fixedCols = _fixedComponents()
+    const varCols   = _variableComponents()
+
+    const _inputField = c => `
+      <div class="form-group">
+        <label class="form-label">${Utils.escapeHtml(c.name)}</label>
+        <div class="input-wrapper">
+          <span class="input-prefix">₹</span>
+          <input class="form-input form-input--prefixed appr-comp-inp" type="number"
+            min="0" step="1" data-comp-id="${c.id}" id="aci-${c.id}" placeholder="0">
+        </div>
+      </div>
+    `
+
+    const empOptions = _managementEmployees.map(e => `<option value="${e.id}">${Utils.escapeHtml(e.name)}</option>`).join('')
+
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">New Appraisal</h3>
+        <button class="modal-close" onclick="Utils.closeModal()">${CLOSE_SVG}</button>
+      </div>
+      <div class="modal-body" style="padding:20px 24px;">
+        <div id="appr-new-err" class="alert alert--danger" style="display:none;margin-bottom:14px;"></div>
+        <div class="hrms-form-grid" style="margin-bottom:14px;">
+          <div class="form-group">
+            <label class="form-label">Employee</label>
+            <select class="form-input" id="appr-emp-sel">${empOptions}</select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Effective Date</label>
+            <input class="form-input" type="date" id="appr-eff-date">
+          </div>
+        </div>
+        <div class="hrms-form-grid" id="appr-fixed-fields">${fixedCols.map(_inputField).join('')}</div>
+        ${varCols.length ? `
+          <hr style="margin:20px 0;border:none;border-top:1px solid var(--border);">
+          <p style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:0 0 14px;">Variable Components</p>
+          <div class="hrms-form-grid" id="appr-var-fields">${varCols.map(_inputField).join('')}</div>
+        ` : ''}
+        <p style="font-size:11px;color:var(--text-muted);margin-top:14px;">
+          This goes to HR for approval first, then Management for final sign-off. Nothing changes for the employee until both approve.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
+        <button class="btn btn--primary" id="appr-new-submit-btn">Submit for Approval</button>
+      </div>
+    `, 'appr-new-modal')
+
+    const _prefill = () => {
+      const empId  = document.getElementById('appr-emp-sel').value
+      const salMap = _empSalaries[empId] || {}
+      document.querySelectorAll('.appr-comp-inp').forEach(inp => {
+        inp.value = salMap[inp.dataset.compId] || ''
+      })
+    }
+    _prefill()
+    document.getElementById('appr-emp-sel').addEventListener('change', _prefill)
+
+    document.getElementById('appr-new-submit-btn').addEventListener('click', async () => {
+      const errEl  = document.getElementById('appr-new-err')
+      errEl.style.display = 'none'
+      const empId   = document.getElementById('appr-emp-sel').value
+      const effDate = document.getElementById('appr-eff-date').value
+      if (!effDate) { errEl.textContent = 'Please choose an effective date.'; errEl.style.display = 'block'; return }
+
+      const components = {}
+      document.querySelectorAll('.appr-comp-inp').forEach(inp => {
+        components[inp.dataset.compId] = Math.round(parseFloat(inp.value) || 0)
+      })
+
+      const btn = document.getElementById('appr-new-submit-btn')
+      btn.disabled    = true
+      btn.textContent = 'Submitting…'
+
+      const { error } = await Config.supabase.rpc('submit_appraisal', {
+        p_employee_id:    empId,
+        p_components:     components,
+        p_effective_from: effDate,
+      })
+
+      btn.disabled    = false
+      btn.textContent = 'Submit for Approval'
+
+      if (error) { errEl.textContent = error.message || 'Failed to submit.'; errEl.style.display = 'block'; return }
+
+      Utils.closeModal()
+      Utils.showToast('Appraisal submitted for HR approval.', 'success')
+      await _loadAppraisalsTab()
+    })
   }
 
   /* ════════════════════════════════════════════════════════════
@@ -1221,7 +1525,7 @@ const Payroll = (() => {
   async function _fetchEmployees() {
     const { data } = await Config.supabase
       .from('employees')
-      .select('id, name, designation, status, deactivated_at')
+      .select('id, name, designation, status, deactivated_at, department_id')
       .order('name')
     return data || []
   }
