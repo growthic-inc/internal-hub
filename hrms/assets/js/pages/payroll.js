@@ -58,6 +58,17 @@ const Payroll = (() => {
     return Math.round(annualFixed / 12)
   }
 
+  // Yearly CTC = Fixed + Variable components combined, annual (not divided
+  // by 12 — unlike Fixed Monthly, this is meant to read as a yearly figure).
+  function _annualCtcFromMap(componentMap) {
+    const map = componentMap || {}
+    return [..._fixedComponents(), ..._variableComponents()]
+      .reduce((sum, c) => sum + (Number(map[c.id]) || 0), 0)
+  }
+  function _annualCtcForEmp(empId) {
+    return _annualCtcFromMap(_empSalaries[empId])
+  }
+
   function _adjLabel(type) {
     return { performance_bonus: 'Performance Bonus', incentive: 'Incentive', others: 'Others' }[type] || type
   }
@@ -465,6 +476,9 @@ const Payroll = (() => {
       const oldMonthly  = _monthlyForEmp(a.employee_id)
       const newMonthly  = _fixedMonthlyFromComponents(a.components)
       const pctChange   = oldMonthly > 0 ? (((newMonthly - oldMonthly) / oldMonthly) * 100).toFixed(1) : '—'
+      const oldCtc      = _annualCtcForEmp(a.employee_id)
+      const newCtc      = _annualCtcFromMap(a.components)
+      const ctcPctChange = oldCtc > 0 ? (((newCtc - oldCtc) / oldCtc) * 100).toFixed(1) : '—'
       const canApproveHr   = _isHR && a.status === 'pending_hr'
       const canApproveMgmt = _isManagement && a.status === 'pending_management'
 
@@ -479,6 +493,11 @@ const Payroll = (() => {
           <td style="text-align:right;font-size:12px;font-weight:600;">${_fmt(newMonthly)}</td>
           <td style="text-align:right;font-size:12px;color:${newMonthly >= oldMonthly ? '#1D9E75' : '#B91C1C'};">
             ${pctChange === '—' ? '—' : (newMonthly >= oldMonthly ? '+' : '') + pctChange + '%'}
+          </td>
+          <td style="text-align:right;font-size:12px;">${_fmt(oldCtc)}</td>
+          <td style="text-align:right;font-size:12px;font-weight:600;">${_fmt(newCtc)}</td>
+          <td style="text-align:right;font-size:12px;color:${newCtc >= oldCtc ? '#1D9E75' : '#B91C1C'};">
+            ${ctcPctChange === '—' ? '—' : (newCtc >= oldCtc ? '+' : '') + ctcPctChange + '%'}
           </td>
           <td>
             <span style="font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;${APPRAISAL_STATUS_STYLE[a.status] || ''}">
@@ -507,6 +526,9 @@ const Payroll = (() => {
                   <th style="text-align:right;">Current Monthly</th>
                   <th style="text-align:right;">New Monthly</th>
                   <th style="text-align:right;">Change</th>
+                  <th style="text-align:right;">Last CTC (Yearly)</th>
+                  <th style="text-align:right;">Updated CTC (Yearly)</th>
+                  <th style="text-align:right;">CTC Change</th>
                   <th>Status</th>
                   <th>Action</th>
                 </tr>
@@ -714,15 +736,23 @@ const Payroll = (() => {
     }
 
     let prevApprovedMonthly = null
+    let prevApprovedCtc     = null
     const rows = entries.map(e => {
       const monthly = _fixedMonthlyFromComponents(e.components)
-      let pctHtml = '<span style="color:var(--text-muted);">—</span>'
+      const ctc     = _annualCtcFromMap(e.components)
+      let pctHtml    = '<span style="color:var(--text-muted);">—</span>'
+      let ctcPctHtml = '<span style="color:var(--text-muted);">—</span>'
       if (e.status === 'approved') {
         if (prevApprovedMonthly !== null && prevApprovedMonthly > 0) {
           const pct = (((monthly - prevApprovedMonthly) / prevApprovedMonthly) * 100).toFixed(1)
           pctHtml = `<span style="color:${monthly >= prevApprovedMonthly ? '#1D9E75' : '#B91C1C'};">${monthly >= prevApprovedMonthly ? '+' : ''}${pct}%</span>`
         }
+        if (prevApprovedCtc !== null && prevApprovedCtc > 0) {
+          const ctcPct = (((ctc - prevApprovedCtc) / prevApprovedCtc) * 100).toFixed(1)
+          ctcPctHtml = `<span style="color:${ctc >= prevApprovedCtc ? '#1D9E75' : '#B91C1C'};">${ctc >= prevApprovedCtc ? '+' : ''}${ctcPct}%</span>`
+        }
         prevApprovedMonthly = monthly
+        prevApprovedCtc     = ctc
       }
 
       const approvers = []
@@ -736,6 +766,8 @@ const Payroll = (() => {
           <td style="font-size:12px;">${HISTORY_REASON_LABEL[e.reason] || e.reason}</td>
           <td style="text-align:right;font-size:12px;font-weight:600;">${_fmt(monthly)}</td>
           <td style="text-align:right;font-size:12px;">${pctHtml}</td>
+          <td style="text-align:right;font-size:12px;font-weight:600;">${_fmt(ctc)}</td>
+          <td style="text-align:right;font-size:12px;">${ctcPctHtml}</td>
           <td>
             <span style="font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;${APPRAISAL_STATUS_STYLE[e.status] || ''}">
               ${APPRAISAL_STATUS_LABEL[e.status] || e.status}
@@ -757,6 +789,8 @@ const Payroll = (() => {
               <th>Effective Period</th>
               <th>Reason</th>
               <th style="text-align:right;">Fixed Monthly</th>
+              <th style="text-align:right;">Change</th>
+              <th style="text-align:right;">Yearly CTC</th>
               <th style="text-align:right;">Change</th>
               <th>Status</th>
               <th>Approved By</th>
