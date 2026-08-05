@@ -37,7 +37,7 @@ const Payroll = (() => {
   /* ── Helpers ─────────────────────────────────────────────── */
   function _fmt(n) {
     if (n === null || n === undefined) return '—'
-    return '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+    return '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
   }
 
   function _fixedComponents() {
@@ -55,7 +55,7 @@ const Payroll = (() => {
   function _monthlyForEmp(empId) {
     const salMap     = _empSalaries[empId] || {}
     const annualFixed = _fixedComponents().reduce((sum, c) => sum + (salMap[c.id] || 0), 0)
-    return Math.round(annualFixed / 12)
+    return Math.round((annualFixed / 12) * 100) / 100
   }
 
   // Yearly CTC = Fixed + Variable components combined, annual (not divided
@@ -196,7 +196,7 @@ const Payroll = (() => {
       const salMap      = _empSalaries[e.id] || {}
       const annualFixed = fixedCols.reduce((s, c) => s + (salMap[c.id] || 0), 0)
       const annualVar   = varCols.reduce((s, c) => s + (salMap[c.id] || 0), 0)
-      const monthly     = Math.round(annualFixed / 12)
+      const monthly     = Math.round((annualFixed / 12) * 100) / 100
       const ctc         = annualFixed + annualVar
 
       const compCells = isDetailed ? (
@@ -300,7 +300,7 @@ const Payroll = (() => {
         <div class="input-wrapper">
           <span class="input-prefix">₹</span>
           <input class="form-input form-input--prefixed dash-comp-inp" type="number"
-            min="0" step="1" data-comp-id="${c.id}" data-comp-cat="${c.category}" id="dci-${c.id}"
+            min="0" step="0.01" data-comp-id="${c.id}" data-comp-cat="${c.category}" id="dci-${c.id}"
             placeholder="0" value="${salMap[c.id] || ''}">
         </div>
       </div>
@@ -354,7 +354,7 @@ const Payroll = (() => {
   function _dashSummaryHtml(fixedCols, salMap, varCols = []) {
     const annualFixed = fixedCols.reduce((s, c) => s + (Number(salMap[c.id]) || 0), 0)
     const annualVar   = varCols.reduce((s, c) => s + (Number(salMap[c.id]) || 0), 0)
-    const monthly     = Math.round(annualFixed / 12)
+    const monthly     = Math.round((annualFixed / 12) * 100) / 100
     const ctc         = annualFixed + annualVar
     return `
       <div class="hrms-summary-row">
@@ -377,7 +377,7 @@ const Payroll = (() => {
 
     const components = { ...(_empSalaries[emp.id] || {}) }
     cols.forEach(c => {
-      components[c.id] = Math.round(parseFloat(document.getElementById(`dci-${c.id}`)?.value) || 0)
+      components[c.id] = Math.round((parseFloat(document.getElementById(`dci-${c.id}`)?.value) || 0) * 100) / 100
     })
 
     // employee_compensation now holds a timeline (multiple rows per
@@ -485,7 +485,7 @@ const Payroll = (() => {
 
   function _fixedMonthlyFromComponents(components) {
     const annualFixed = _fixedComponents().reduce((s, c) => s + (Number((components || {})[c.id]) || 0), 0)
-    return Math.round(annualFixed / 12)
+    return Math.round((annualFixed / 12) * 100) / 100
   }
 
   function _renderAppraisalsTab() {
@@ -647,7 +647,7 @@ const Payroll = (() => {
         <div class="input-wrapper">
           <span class="input-prefix">₹</span>
           <input class="form-input form-input--prefixed appr-comp-inp" type="number"
-            min="0" step="1" data-comp-id="${c.id}" id="aci-${c.id}" placeholder="0">
+            min="0" step="0.01" data-comp-id="${c.id}" id="aci-${c.id}" placeholder="0">
         </div>
       </div>
     `
@@ -706,7 +706,7 @@ const Payroll = (() => {
 
       const components = {}
       document.querySelectorAll('.appr-comp-inp').forEach(inp => {
-        components[inp.dataset.compId] = Math.round(parseFloat(inp.value) || 0)
+        components[inp.dataset.compId] = Math.round((parseFloat(inp.value) || 0) * 100) / 100
       })
 
       const btn = document.getElementById('appr-new-submit-btn')
@@ -1313,7 +1313,7 @@ const Payroll = (() => {
                 </div>
                 <div class="hrms-summary-row">
                   <span>Per Day Rate</span>
-                  <strong>${_fmt(Math.round(seg.day_rate))}/day</strong>
+                  <strong>${_fmt(seg.day_rate)}/day</strong>
                 </div>
                 <div class="hrms-summary-row">
                   <span>Working Days</span>
@@ -1344,15 +1344,15 @@ const Payroll = (() => {
             </div>
             <div class="hrms-summary-row">
               <span>Per Day Rate</span>
-              <strong>${_fmt(Math.round(perDay))}/day</strong>
+              <strong>${_fmt(perDay)}/day</strong>
             </div>
             <div class="hrms-summary-row" style="padding-top:8px;border-top:1px solid var(--border);margin-top:4px;">
               <span>Unpaid Leave</span>
-              <strong style="color:#DC2626;">${unpaidDays} day${unpaidDays !== 1 ? 's' : ''} &nbsp;·&nbsp; −${_fmt(Math.round(perDay * unpaidDays))}</strong>
+              <strong style="color:#DC2626;">${unpaidDays} day${unpaidDays !== 1 ? 's' : ''} &nbsp;·&nbsp; −${_fmt(perDay * unpaidDays)}</strong>
             </div>
             <div class="hrms-summary-row">
               <span>Missed Timesheet</span>
-              <strong style="color:#DC2626;">${missedDays} day${missedDays !== 1 ? 's' : ''} &nbsp;·&nbsp; −${_fmt(Math.round(perDay * missedDays))}</strong>
+              <strong style="color:#DC2626;">${missedDays} day${missedDays !== 1 ? 's' : ''} &nbsp;·&nbsp; −${_fmt(perDay * missedDays)}</strong>
             </div>
             <div class="hrms-summary-row hrms-summary-row--deduction" style="padding-top:8px;border-top:1px solid var(--border);margin-top:4px;">
               <span>Auto-calculated Total</span>
