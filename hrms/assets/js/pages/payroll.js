@@ -1303,10 +1303,10 @@ const Payroll = (() => {
         <div class="hrms-section-label" style="margin-bottom:10px;">Breakdown</div>
         <div class="hrms-salary-summary" style="margin-bottom:20px;">
           ${breakdown && breakdown.length ? `
-            ${breakdown.length > 1 ? `<p style="font-size:11px;color:var(--text-muted);margin:0 0 10px;">A compensation change took effect mid-month — each period below is priced at its own rate.</p>` : ''}
+            ${breakdown.length > 1 ? `<p style="font-size:11px;color:var(--text-muted);margin:0 0 10px;">A compensation change took effect mid-month — each period below is priced at its own rate, ₹/day always calculated as that period's monthly salary ÷ 30.</p>` : ''}
             ${breakdown.map((seg, i) => `
               <div style="${i > 0 ? 'border-top:1px solid var(--border);margin-top:10px;padding-top:10px;' : ''}">
-                ${breakdown.length > 1 ? `<div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;">${seg.segment_start} → ${seg.segment_end} (${seg.days} days)</div>` : ''}
+                ${breakdown.length > 1 ? `<div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;">${seg.segment_start} → ${seg.segment_end}</div>` : ''}
                 <div class="hrms-summary-row">
                   <span>Monthly Salary</span>
                   <strong>${_fmt(seg.monthly_salary)}</strong>
@@ -1314,10 +1314,6 @@ const Payroll = (() => {
                 <div class="hrms-summary-row">
                   <span>Per Day Rate</span>
                   <strong>${_fmt(seg.day_rate)}/day</strong>
-                </div>
-                <div class="hrms-summary-row">
-                  <span>Working Days</span>
-                  <strong>${seg.working_days ?? '—'}${seg.working_days !== undefined ? ` of ${seg.days} day${seg.days !== 1 ? 's' : ''}` : ''}</strong>
                 </div>
                 <div class="hrms-summary-row">
                   <span>Unpaid Leave</span>
@@ -1331,11 +1327,19 @@ const Payroll = (() => {
                   <span>Segment Deduction</span>
                   <strong style="color:#DC2626;">−${_fmt(seg.segment_deduction)}</strong>
                 </div>
+                <div class="hrms-summary-row">
+                  <span>Segment Earning</span>
+                  <strong style="color:#1D9E75;">${_fmt(seg.segment_prorated)}</strong>
+                </div>
               </div>
             `).join('')}
             <div class="hrms-summary-row hrms-summary-row--deduction" style="padding-top:8px;border-top:1px solid var(--border);margin-top:10px;">
-              <span>Auto-calculated Total</span>
-              <strong>−${_fmt(rec.deductions)}</strong>
+              <span>Total Deduction</span>
+              <strong style="color:#DC2626;">−${_fmt(rec.deductions)}</strong>
+            </div>
+            <div class="hrms-summary-row hrms-summary-row--net" style="padding-top:8px;border-top:1px solid var(--border);margin-top:6px;">
+              <span>Total Earning This Month</span>
+              <strong style="color:#1D9E75;">${_fmt(rec.net_pay)}</strong>
             </div>
           ` : `
             <div class="hrms-summary-row">
@@ -1355,8 +1359,12 @@ const Payroll = (() => {
               <strong style="color:#DC2626;">${missedDays} day${missedDays !== 1 ? 's' : ''} &nbsp;·&nbsp; −${_fmt(perDay * missedDays)}</strong>
             </div>
             <div class="hrms-summary-row hrms-summary-row--deduction" style="padding-top:8px;border-top:1px solid var(--border);margin-top:4px;">
-              <span>Auto-calculated Total</span>
-              <strong>−${_fmt(rec.deductions)}</strong>
+              <span>Total Deduction</span>
+              <strong style="color:#DC2626;">−${_fmt(rec.deductions)}</strong>
+            </div>
+            <div class="hrms-summary-row hrms-summary-row--net" style="padding-top:8px;border-top:1px solid var(--border);margin-top:6px;">
+              <span>Total Earning This Month</span>
+              <strong style="color:#1D9E75;">${_fmt(rec.net_pay)}</strong>
             </div>
             <p style="font-size:11px;color:var(--text-muted);margin-top:8px;">Detailed segment breakdown isn't available for this record — it was generated before breakdown tracking was added. Regenerate this payroll run to get it.</p>
           `}
