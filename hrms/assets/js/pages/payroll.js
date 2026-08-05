@@ -452,7 +452,35 @@ const Payroll = (() => {
       .select('*, employee:employees!employee_id(id, name, designation)')
       .eq('reason', 'appraisal')
       .order('updated_at', { ascending: false })
-    return data || []
+    const appraisals = data || []
+
+    // "Last" (pre-appraisal) figures must come from whichever entry was
+    // actually active immediately before this appraisal's effective_from —
+    // NOT from "whatever's currently open," which is wrong the moment the
+    // appraisal itself gets approved and becomes the open entry (old vs.
+    // new would then read the same row, always showing 0% change).
+    const empIds = [...new Set(appraisals.map(a => a.employee_id))]
+    let priorByEmp = {}
+    if (empIds.length) {
+      const { data: allEntries } = await Config.supabase
+        .from('employee_compensation')
+        .select('employee_id, effective_from, status, components')
+        .in('employee_id', empIds)
+        .eq('status', 'approved')
+        .order('effective_from', { ascending: true })
+      ;(allEntries || []).forEach(e => {
+        priorByEmp[e.employee_id] = priorByEmp[e.employee_id] || []
+        priorByEmp[e.employee_id].push(e)
+      })
+    }
+    appraisals.forEach(a => {
+      const timeline = priorByEmp[a.employee_id] || []
+      // Last approved entry strictly before this appraisal took effect.
+      const prior = timeline.filter(e => e.effective_from < a.effective_from).pop()
+      a._priorComponents = prior ? prior.components : null
+    })
+
+    return appraisals
   }
 
   function _fixedMonthlyFromComponents(components) {
@@ -473,12 +501,15 @@ const Payroll = (() => {
 
     const rows = _appraisals.map(a => {
       const emp         = a.employee || {}
-      const oldMonthly  = _monthlyForEmp(a.employee_id)
+      // Prior entry as of right before THIS appraisal took effect — not
+      // "whatever's currently active," which becomes wrong the moment this
+      // same appraisal is approved and becomes the active entry itself.
+      const oldMonthly  = a._priorComponents ? _fixedMonthlyFromComponents(a._priorComponents) : null
       const newMonthly  = _fixedMonthlyFromComponents(a.components)
-      const pctChange   = oldMonthly > 0 ? (((newMonthly - oldMonthly) / oldMonthly) * 100).toFixed(1) : '—'
-      const oldCtc      = _annualCtcForEmp(a.employee_id)
+      const pctChange   = (oldMonthly !== null && oldMonthly > 0) ? (((newMonthly - oldMonthly) / oldMonthly) * 100).toFixed(1) : '—'
+      const oldCtc      = a._priorComponents ? _annualCtcFromMap(a._priorComponents) : null
       const newCtc      = _annualCtcFromMap(a.components)
-      const ctcPctChange = oldCtc > 0 ? (((newCtc - oldCtc) / oldCtc) * 100).toFixed(1) : '—'
+      const ctcPctChange = (oldCtc !== null && oldCtc > 0) ? (((newCtc - oldCtc) / oldCtc) * 100).toFixed(1) : '—'
       const canApproveHr   = _isHR && a.status === 'pending_hr'
       const canApproveMgmt = _isManagement && a.status === 'pending_management'
 
