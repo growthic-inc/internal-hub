@@ -70,7 +70,7 @@ const Payroll = (() => {
   }
 
   function _adjLabel(type) {
-    return { performance_bonus: 'Performance Bonus', incentive: 'Incentive', others: 'Others' }[type] || type
+    return { performance_bonus: 'Performance Bonus', incentive: 'Incentive', others: 'Others', arrears: 'Arrears' }[type] || type
   }
 
   /* ── Render (shell) ─────────────────────────────────────── */
@@ -1252,6 +1252,24 @@ const Payroll = (() => {
     const missedDays = Number(rec.missed_timesheet_days || 0)
     const breakdown  = Array.isArray(rec.calc_breakdown) ? rec.calc_breakdown : null
 
+    // Adjustments (bonuses, incentives, arrears from late-approved comp
+    // changes, etc.) are folded into net_pay but were never shown as line
+    // items — that's what made the final total look disconnected from the
+    // segment math above it. Surface them explicitly.
+    const adjItems = rec.adj_items || []
+    const adjTotal = adjItems.reduce((s, a) => s + Number(a.amount), 0)
+    const adjustmentsHtml = adjItems.length ? `
+      <div style="padding-top:8px;border-top:1px solid var(--border);margin-top:6px;">
+        <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;">Adjustments</div>
+        ${adjItems.map(a => `
+          <div class="hrms-summary-row">
+            <span title="${Utils.escapeHtml(a.remark || '')}">${Utils.escapeHtml(_adjLabel(a.type))}${a.creator?.name ? ` <span style="color:var(--text-muted);">— ${Utils.escapeHtml(a.creator.name)}</span>` : ''}</span>
+            <strong style="color:${Number(a.amount) >= 0 ? '#1D9E75' : '#DC2626'};">${Number(a.amount) >= 0 ? '+' : ''}${_fmt(a.amount)}</strong>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''
+
     // Fetch audit history with changer name
     const { data: logs } = await Config.supabase
       .from('payroll_audit_log')
@@ -1337,6 +1355,7 @@ const Payroll = (() => {
               <span>Total Deduction</span>
               <strong style="color:#DC2626;">−${_fmt(rec.deductions)}</strong>
             </div>
+            ${adjustmentsHtml}
             <div class="hrms-summary-row hrms-summary-row--net" style="padding-top:8px;border-top:1px solid var(--border);margin-top:6px;">
               <span>Total Earning This Month</span>
               <strong style="color:#1D9E75;">${_fmt(rec.net_pay)}</strong>
@@ -1362,6 +1381,7 @@ const Payroll = (() => {
               <span>Total Deduction</span>
               <strong style="color:#DC2626;">−${_fmt(rec.deductions)}</strong>
             </div>
+            ${adjustmentsHtml}
             <div class="hrms-summary-row hrms-summary-row--net" style="padding-top:8px;border-top:1px solid var(--border);margin-top:6px;">
               <span>Total Earning This Month</span>
               <strong style="color:#1D9E75;">${_fmt(rec.net_pay)}</strong>
