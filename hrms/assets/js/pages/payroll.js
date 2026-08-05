@@ -1406,9 +1406,10 @@ const Payroll = (() => {
           </div>
         ` : ''}
 
-        <div class="hrms-section-label" style="margin-bottom:12px;">Override Deduction</div>
+        <div class="hrms-section-label" style="margin-bottom:4px;">Override Deduction</div>
+        <p style="font-size:12px;color:var(--text-muted);margin:0 0 12px;">Changes the Total Deduction (currently −${_fmt(rec.deductions)}) shown above — Total Earning This Month will update to match once saved.</p>
         <div class="form-group" style="margin-bottom:14px;">
-          <label class="form-label">New Amount (₹)</label>
+          <label class="form-label">New Deduction Amount (₹)</label>
           <div class="input-wrapper">
             <span class="input-prefix">₹</span>
             <input class="form-input form-input--prefixed" type="number" id="ded-amount"
