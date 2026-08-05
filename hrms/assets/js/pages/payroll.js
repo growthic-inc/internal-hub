@@ -1342,23 +1342,23 @@ const Payroll = (() => {
                   <strong style="color:#DC2626;">${seg.missed_timesheet_days} day${seg.missed_timesheet_days !== 1 ? 's' : ''}</strong>
                 </div>
                 <div class="hrms-summary-row">
-                  <span>Segment Deduction</span>
+                  <span>Deducted This Period</span>
                   <strong style="color:#DC2626;">−${_fmt(seg.segment_deduction)}</strong>
                 </div>
                 <div class="hrms-summary-row">
-                  <span>Segment Earning</span>
+                  <span>Earned This Period</span>
                   <strong style="color:#1D9E75;">${_fmt(seg.segment_prorated)}</strong>
                 </div>
               </div>
             `).join('')}
-            <div class="hrms-summary-row hrms-summary-row--deduction" style="padding-top:8px;border-top:1px solid var(--border);margin-top:10px;">
-              <span>Total Deduction</span>
-              <strong style="color:#DC2626;">−${_fmt(rec.deductions)}</strong>
+            <div class="hrms-summary-row" style="padding-top:8px;border-top:1px solid var(--border);margin-top:10px;">
+              <span style="color:var(--text-muted);">Total Deduction</span>
+              <span style="color:var(--text-muted);">−${_fmt(rec.deductions)}</span>
             </div>
             ${adjustmentsHtml}
-            <div class="hrms-summary-row hrms-summary-row--net" style="padding-top:8px;border-top:1px solid var(--border);margin-top:6px;">
-              <span>Total Earning This Month</span>
-              <strong style="color:#1D9E75;">${_fmt(rec.net_pay)}</strong>
+            <div class="hrms-summary-row hrms-summary-row--net" style="padding-top:10px;border-top:1px solid var(--border);margin-top:8px;">
+              <span style="font-size:15px;font-weight:600;">Total Earning This Month</span>
+              <strong style="color:#1D9E75;font-size:18px;">${_fmt(rec.net_pay)}</strong>
             </div>
           ` : `
             <div class="hrms-summary-row">
@@ -1377,14 +1377,14 @@ const Payroll = (() => {
               <span>Missed Timesheet</span>
               <strong style="color:#DC2626;">${missedDays} day${missedDays !== 1 ? 's' : ''} &nbsp;·&nbsp; −${_fmt(perDay * missedDays)}</strong>
             </div>
-            <div class="hrms-summary-row hrms-summary-row--deduction" style="padding-top:8px;border-top:1px solid var(--border);margin-top:4px;">
-              <span>Total Deduction</span>
-              <strong style="color:#DC2626;">−${_fmt(rec.deductions)}</strong>
+            <div class="hrms-summary-row" style="padding-top:8px;border-top:1px solid var(--border);margin-top:4px;">
+              <span style="color:var(--text-muted);">Total Deduction</span>
+              <span style="color:var(--text-muted);">−${_fmt(rec.deductions)}</span>
             </div>
             ${adjustmentsHtml}
-            <div class="hrms-summary-row hrms-summary-row--net" style="padding-top:8px;border-top:1px solid var(--border);margin-top:6px;">
-              <span>Total Earning This Month</span>
-              <strong style="color:#1D9E75;">${_fmt(rec.net_pay)}</strong>
+            <div class="hrms-summary-row hrms-summary-row--net" style="padding-top:10px;border-top:1px solid var(--border);margin-top:8px;">
+              <span style="font-size:15px;font-weight:600;">Total Earning This Month</span>
+              <strong style="color:#1D9E75;font-size:18px;">${_fmt(rec.net_pay)}</strong>
             </div>
             <p style="font-size:11px;color:var(--text-muted);margin-top:8px;">Detailed segment breakdown isn't available for this record — it was generated before breakdown tracking was added. Regenerate this payroll run to get it.</p>
           `}
