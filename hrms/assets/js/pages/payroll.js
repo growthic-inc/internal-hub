@@ -55,7 +55,7 @@ const Payroll = (() => {
   function _monthlyForEmp(empId) {
     const salMap     = _empSalaries[empId] || {}
     const annualFixed = _fixedComponents().reduce((sum, c) => sum + (salMap[c.id] || 0), 0)
-    return Math.round((annualFixed / 12) * 100) / 100
+    return Math.round(annualFixed / 12)
   }
 
   // Yearly CTC = Fixed + Variable components combined, annual (not divided
@@ -196,7 +196,7 @@ const Payroll = (() => {
       const salMap      = _empSalaries[e.id] || {}
       const annualFixed = fixedCols.reduce((s, c) => s + (salMap[c.id] || 0), 0)
       const annualVar   = varCols.reduce((s, c) => s + (salMap[c.id] || 0), 0)
-      const monthly     = Math.round((annualFixed / 12) * 100) / 100
+      const monthly     = Math.round(annualFixed / 12)
       const ctc         = annualFixed + annualVar
 
       const compCells = isDetailed ? (
@@ -354,7 +354,7 @@ const Payroll = (() => {
   function _dashSummaryHtml(fixedCols, salMap, varCols = []) {
     const annualFixed = fixedCols.reduce((s, c) => s + (Number(salMap[c.id]) || 0), 0)
     const annualVar   = varCols.reduce((s, c) => s + (Number(salMap[c.id]) || 0), 0)
-    const monthly     = Math.round((annualFixed / 12) * 100) / 100
+    const monthly     = Math.round(annualFixed / 12)
     const ctc         = annualFixed + annualVar
     return `
       <div class="hrms-summary-row">
@@ -485,7 +485,7 @@ const Payroll = (() => {
 
   function _fixedMonthlyFromComponents(components) {
     const annualFixed = _fixedComponents().reduce((s, c) => s + (Number((components || {})[c.id]) || 0), 0)
-    return Math.round((annualFixed / 12) * 100) / 100
+    return Math.round(annualFixed / 12)
   }
 
   function _renderAppraisalsTab() {
