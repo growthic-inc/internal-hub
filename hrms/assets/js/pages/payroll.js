@@ -37,7 +37,7 @@ const Payroll = (() => {
   /* ── Helpers ─────────────────────────────────────────────── */
   function _fmt(n) {
     if (n === null || n === undefined) return '—'
-    return '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+    return '₹' + Math.round(Number(n)).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
   }
 
   function _fixedComponents() {
