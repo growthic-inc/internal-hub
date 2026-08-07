@@ -2747,13 +2747,13 @@ const Timesheet = (() => {
   }
 
   /* ── Date helpers ───────────────────────────────────────── */
-  // TEMPORARY: widen the normal 7-day edit lock through 2026-08-07 so the team
-  // can backfill 20 Jul – 3 Aug. Self-reverts to the normal 7-day window the
+  // TEMPORARY: widen the normal 7-day edit lock through 2026-08-08 so the team
+  // can backfill 1 Jul – 1 Aug. Self-reverts to the normal 7-day window the
   // day after — no manual follow-up needed. Remove once no longer needed.
-  // Requested by Sunil Naudiyal, 2026-08-03.
+  // Requested by Sunil Naudiyal, 2026-08-06 (extends the 2026-08-03 backfill).
   function _editLockDays() {
     const todayISO = _toISO(new Date())
-    return todayISO <= '2026-08-07' ? 18 : 7
+    return todayISO <= '2026-08-08' ? 38 : 7
   }
   function _getMondayOf(date) {
     const d = new Date(date); const day = d.getDay()
