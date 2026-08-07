@@ -102,7 +102,7 @@ const API = (() => {
   async function getEmployees(activeOnly = true) {
     let query = supabase
       .from('employees')
-      .select('id, name, email, role, department, status')
+      .select('id, name, email, role, department, status, profile_image_url')
       .order('name')
     if (activeOnly) query = query.eq('status', 'active')
     return query
