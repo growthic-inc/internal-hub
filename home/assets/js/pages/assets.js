@@ -2211,95 +2211,165 @@ const Assets = (() => {
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--text-muted);">
           Your request will go to HR for approval. Your reporting manager will also be notified.
         </div>
-        <div class="form-group">
-          <label class="form-label">Reason for Request <span class="required">*</span></label>
-          <textarea class="form-input" id="ast-req-reason" rows="2" style="resize:vertical;"
-            placeholder="Why do you need this asset?"></textarea>
-        </div>
         ${!available.length
           ? '<p class="empty-state-text">No assets are currently available.</p>'
-          : `<div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+          : `<div class="form-group">
               <label class="form-label">Select Asset <span class="required">*</span></label>
-              ${available.map(a => `
-                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);gap:12px;">
-                  <div>
-                    <div style="font-weight:600;font-size:14px;">${Utils.escapeHtml(a.name)}</div>
-                    <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${Utils.escapeHtml(a.type || '')}${a.asset_tag ? ' · ' + Utils.escapeHtml(a.asset_tag) : ''}</div>
-                  </div>
-                  <button class="btn btn--sm btn--primary ast-req-btn" data-id="${a.id}" data-name="${Utils.escapeHtml(a.name)}">Request</button>
-                </div>`).join('')}
+              <div class="custom-select-wrap" id="ast-req-asset-wrap" style="min-width:0;">
+                <input class="form-input" type="text" id="ast-req-asset-search"
+                  placeholder="Type to search available assets…" autocomplete="off" />
+                <div class="custom-select-dropdown" id="ast-req-asset-dropdown"
+                     style="display:none;position:absolute;width:100%;left:0;z-index:200;">
+                  <div class="custom-select-list" id="ast-req-asset-list"></div>
+                </div>
+              </div>
+              <input type="hidden" id="ast-req-asset-id" value="" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Reason for Request <span class="required">*</span></label>
+              <textarea class="form-input" id="ast-req-reason" rows="2" style="resize:vertical;"
+                placeholder="Why do you need this asset?"></textarea>
             </div>`}
       </div>
       <div class="modal-footer">
         <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
+        ${available.length ? '<button class="btn btn--primary" id="ast-req-submit-btn">Submit Request</button>' : ''}
       </div>
     `)
 
-    document.querySelectorAll('.ast-req-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const reason = document.getElementById('ast-req-reason')?.value.trim()
-        if (!reason) {
-          Utils.showToast('Please provide a reason for your request.', 'error')
-          document.getElementById('ast-req-reason')?.focus()
-          return
+    if (!available.length) return
+
+    _bindAssetCombobox({
+      searchId:   'ast-req-asset-search',
+      dropdownId: 'ast-req-asset-dropdown',
+      listId:     'ast-req-asset-list',
+      wrapId:     'ast-req-asset-wrap',
+      hiddenId:   'ast-req-asset-id',
+      items:      available,
+    })
+
+    document.getElementById('ast-req-submit-btn')?.addEventListener('click', async () => {
+      const btn      = document.getElementById('ast-req-submit-btn')
+      const assetId   = document.getElementById('ast-req-asset-id')?.value
+      const assetName = document.getElementById('ast-req-asset-search')?.value.trim()
+      const reason    = document.getElementById('ast-req-reason')?.value.trim()
+
+      if (!assetId) {
+        Utils.showToast('Please select an asset from the search results.', 'error')
+        document.getElementById('ast-req-asset-search')?.focus()
+        return
+      }
+      if (!reason) {
+        Utils.showToast('Please provide a reason for your request.', 'error')
+        document.getElementById('ast-req-reason')?.focus()
+        return
+      }
+
+      btn.disabled = true; btn.textContent = 'Submitting…'
+
+      try {
+        // Create request directly at pending_hr — manager gets FYI only
+        const { data: req, error } = await API.createAssetRequest({
+          asset_id:     assetId,
+          requested_by: _user.id,
+          manager_id:   _user.manager_id || null,
+          reason,
+          status:       'pending_hr',
+        })
+        if (error) throw error
+
+        // Notify all HR / Super Admin
+        const hrEmployees = _employees.filter(e =>
+          e.status === 'active' &&
+          (e.role === 'super_admin' || Utils.getDeptSystemKey(e.department) === 'people_culture')
+        )
+        if (hrEmployees.length) {
+          await Promise.all(hrEmployees.map(e => API.createNotification({
+            recipient_employee_id: e.id,
+            type:    'info',
+            message: `${_user.name} has requested asset "${assetName}". Awaiting your approval.`,
+            module:  'assets',
+            record_id: req?.id || null,
+          })))
         }
 
-        btn.disabled = true; btn.textContent = 'Submitting…'
-
-        try {
-          // Create request directly at pending_hr — manager gets FYI only
-          const { data: req, error } = await API.createAssetRequest({
-            asset_id:     btn.dataset.id,
-            requested_by: _user.id,
-            manager_id:   _user.manager_id || null,
-            reason,
-            status:       'pending_hr',
+        // FYI notification to reporting manager (no action needed)
+        if (_user.manager_id) {
+          await API.createNotification({
+            recipient_employee_id: _user.manager_id,
+            type:    'info',
+            message: `FYI: ${_user.name} has requested asset "${assetName}". HR will handle the approval.`,
+            module:  'assets',
+            record_id: req?.id || null,
           })
-          if (error) throw error
-
-          // Notify all HR / Super Admin
-          const hrEmployees = _employees.filter(e =>
-            e.status === 'active' &&
-            (e.role === 'super_admin' || Utils.getDeptSystemKey(e.department) === 'people_culture')
-          )
-          if (hrEmployees.length) {
-            await Promise.all(hrEmployees.map(e => API.createNotification({
-              recipient_employee_id: e.id,
-              type:    'info',
-              message: `${_user.name} has requested asset "${btn.dataset.name}". Awaiting your approval.`,
-              module:  'assets',
-              record_id: req?.id || null,
-            })))
-          }
-
-          // FYI notification to reporting manager (no action needed)
-          if (_user.manager_id) {
-            await API.createNotification({
-              recipient_employee_id: _user.manager_id,
-              type:    'info',
-              message: `FYI: ${_user.name} has requested asset "${btn.dataset.name}". HR will handle the approval.`,
-              module:  'assets',
-              record_id: req?.id || null,
-            })
-          }
-
-          // Refresh requests list
-          if (_p.can_manage) {
-            const { data } = await API.getAllAssetRequests()
-            _requests = data || []
-          } else {
-            const { data } = await API.getMySubmittedAssetRequests(_user.id)
-            _requests = data || []
-          }
-
-          Utils.closeModal()
-          Utils.showToast('Request submitted — HR has been notified.', 'success')
-
-        } catch (err) {
-          btn.disabled = false; btn.textContent = 'Request'
-          Utils.showToast(err.message || 'Failed to submit request.', 'error')
         }
+
+        // Refresh requests list
+        if (_p.can_manage) {
+          const { data } = await API.getAllAssetRequests()
+          _requests = data || []
+        } else {
+          const { data } = await API.getMySubmittedAssetRequests(_user.id)
+          _requests = data || []
+        }
+
+        Utils.closeModal()
+        Utils.showToast('Request submitted — HR has been notified.', 'success')
+
+      } catch (err) {
+        btn.disabled = false; btn.textContent = 'Submit Request'
+        Utils.showToast(err.message || 'Failed to submit request.', 'error')
+      }
+    })
+  }
+
+  /* ── Searchable asset combobox (type to filter available assets) ── */
+  function _bindAssetCombobox({ searchId, dropdownId, listId, wrapId, hiddenId, items }) {
+    const searchEl   = document.getElementById(searchId)
+    const dropdownEl = document.getElementById(dropdownId)
+    const listEl     = document.getElementById(listId)
+    const hiddenEl   = document.getElementById(hiddenId)
+    if (!searchEl || !dropdownEl || !listEl || !hiddenEl) return
+
+    const subtitle = a => [a.type, a.asset_tag].filter(Boolean).join(' · ')
+
+    function renderList(subset) {
+      listEl.innerHTML = subset.length
+        ? subset.map(a => `
+            <div class="custom-select-item" data-id="${a.id}" data-name="${Utils.escapeHtml(a.name)}">
+              <span>${Utils.escapeHtml(a.name)}</span>
+              <span class="text-muted text-sm">${Utils.escapeHtml(subtitle(a))}</span>
+            </div>`).join('')
+        : '<div class="custom-select-empty">No matching assets found</div>'
+
+      listEl.querySelectorAll('.custom-select-item').forEach(el => {
+        el.addEventListener('mousedown', ev => {
+          ev.preventDefault()
+          hiddenEl.value   = el.dataset.id
+          searchEl.value   = el.dataset.name
+          dropdownEl.style.display = 'none'
+        })
       })
+    }
+
+    searchEl.addEventListener('focus', () => { renderList(items); dropdownEl.style.display = 'block' })
+    searchEl.addEventListener('input', () => {
+      const q = searchEl.value.trim().toLowerCase()
+      hiddenEl.value = ''
+      renderList(q ? items.filter(a =>
+        a.name.toLowerCase().includes(q) ||
+        (a.type || '').toLowerCase().includes(q) ||
+        (a.asset_tag || '').toLowerCase().includes(q)
+      ) : items)
+      dropdownEl.style.display = 'block'
+    })
+    searchEl.addEventListener('blur', () => setTimeout(() => { dropdownEl.style.display = 'none' }, 150))
+
+    document.addEventListener('click', function _close(e) {
+      if (!document.getElementById(wrapId)?.contains(e.target)) {
+        dropdownEl.style.display = 'none'
+        document.removeEventListener('click', _close)
+      }
     })
   }
 
