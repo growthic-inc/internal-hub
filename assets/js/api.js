@@ -377,7 +377,7 @@ const API = (() => {
   }
 
   async function updateAssetRequest(id, data) {
-    return supabase.from('asset_requests').update(data).eq('id', id).select().single()
+    return supabase.from('asset_requests').update(data).eq('id', id)
   }
 
   /* ── Asset Return Requests ───────────────────────────────── */
