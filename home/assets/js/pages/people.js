@@ -22,8 +22,9 @@ const People = (() => {
 
   // Types shown in the ADD form (new hires only)
   const EMP_TYPES = [
-    { value: 'full_time', label: 'Full Time' },
-    { value: 'intern',    label: 'Intern' },
+    { value: 'full_time',  label: 'Full Time' },
+    { value: 'intern',     label: 'Intern' },
+    { value: 'probation',  label: 'Probation' },
   ]
   // All types including legacy values — used for edit modal dropdowns and display labels
   const EMP_TYPES_ALL = [
