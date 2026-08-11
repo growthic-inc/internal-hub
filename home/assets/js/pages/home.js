@@ -60,6 +60,7 @@ const HomeModule = (() => {
 
   function _birthdaysInRange(employees, days = 7) {
     const today = new Date()
+    today.setHours(0, 0, 0, 0)
     const result = []
     for (const emp of employees) {
       if (!emp.date_of_birth) continue
