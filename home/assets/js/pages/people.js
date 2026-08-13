@@ -9,7 +9,6 @@ const People = (() => {
   let _user        = null
   let _employees   = []
   let _departments = []
-  let _canManage   = false
   let _empBadgeMap = {}   // employeeId → [{ name, icon, colour, category }]
   let _activeTab   = 'directory'
 
@@ -49,14 +48,12 @@ const People = (() => {
 
   /* ── render ─────────────────────────────────────────────── */
   function render(user) {
-    const canManage = App.hasAccess('people', 'manage_employees', 'can_manage')
     return `
       <div class="page-inner">
         <div class="page-toolbar">
           <div class="tabs" id="ppl-tabs">
             <button class="tab-btn tab-btn--active" data-tab="directory">Directory</button>
             <button class="tab-btn" data-tab="orgchart">Org Chart</button>
-            ${canManage ? `<button class="tab-btn" data-tab="invite">Add Employee</button>` : ''}
           </div>
           <div id="ppl-toolbar-actions"></div>
         </div>
@@ -67,8 +64,7 @@ const People = (() => {
 
   /* ── init ───────────────────────────────────────────────── */
   async function init(user) {
-    _user      = user
-    _canManage = App.hasAccess('people', 'manage_employees', 'can_manage')
+    _user = user
 
     const [empRes, deptRes, badgeRes] = await Promise.all([
       API.getEmployeesFull(),
@@ -113,27 +109,11 @@ const People = (() => {
 
   function _loadTab(tab) {
     const actions = document.getElementById('ppl-toolbar-actions')
-    if (actions) {
-      actions.innerHTML = (tab === 'directory' && _canManage)
-        ? `<button class="btn btn--primary btn--sm" id="ppl-add-btn">+ Add Employee</button>`
-        : ''
-      if (tab === 'directory' && _canManage) {
-        document.getElementById('ppl-add-btn')?.addEventListener('click', () => _switchToInviteTab())
-      }
-    }
+    if (actions) actions.innerHTML = ''
     switch (tab) {
       case 'directory': return _renderDirectory()
       case 'orgchart':  return _renderOrgChart()
-      case 'invite':    return _renderInvitePanel()
     }
-  }
-
-  function _switchToInviteTab() {
-    document.querySelectorAll('#ppl-tabs .tab-btn').forEach(b => {
-      b.classList.toggle('tab-btn--active', b.dataset.tab === 'invite')
-    })
-    _activeTab = 'invite'
-    _loadTab('invite')
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -282,31 +262,6 @@ const People = (() => {
     _showProfileView(emp)
   }
 
-  function _kycDocRow(icon, label, url) {
-    if (url) {
-      return `
-        <a href="${Utils.escapeHtml(url)}" target="_blank" rel="noopener noreferrer"
-           style="display:flex;align-items:center;gap:8px;padding:9px 12px;
-                  border:1px solid var(--border);border-radius:7px;
-                  font-size:12px;color:var(--primary);text-decoration:none;
-                  transition:background 0.12s;"
-           onmouseover="this.style.background='var(--surface)'"
-           onmouseout="this.style.background=''">
-          <span style="font-size:15px;">${icon}</span>
-          <span style="font-weight:500;flex:1;">${label}</span>
-          <span style="font-size:10px;color:var(--text-muted);">View ↗</span>
-        </a>`
-    }
-    return `
-      <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;
-                  border:1px dashed var(--border);border-radius:7px;
-                  font-size:12px;color:var(--text-muted);">
-        <span style="font-size:15px;">${icon}</span>
-        <span style="flex:1;">${label}</span>
-        <span style="font-size:10px;">Not uploaded</span>
-      </div>`
-  }
-
   async function _showProfileView(emp) {
     const isActive   = emp.status === 'active'
     const avatarHtml = emp.profile_image_url
@@ -326,15 +281,11 @@ const People = (() => {
       return months === 0 ? `${years}yr` : `${years}yr ${months}mo`
     })()
 
-    // Can this viewer award badges?
-    const _canAwardBadge = _canManage || (_user && emp.manager_id === _user.id)
+    // Award-badge stays a manager (Tier 2) action here — HR's blanket
+    // award capability, and KYC/edit/deactivate, now live in /hrms.
+    const _canAwardBadge = _user && emp.manager_id === _user.id
 
-    // Fetch badges + KYC in parallel
-    const [{ data: empBadges }, kycRes] = await Promise.all([
-      API.getEmployeeBadges(emp.id),
-      _canManage ? API.getEmployeeKyc(emp.id) : Promise.resolve({ data: null }),
-    ])
-    const kyc = kycRes?.data || {}
+    const { data: empBadges } = await API.getEmployeeBadges(emp.id)
 
     const badgeChips = (empBadges || []).map(eb => {
       const b = eb.badge || {}
@@ -532,7 +483,7 @@ const People = (() => {
         </div>` : ''}
 
         <!-- ── Emergency Contact ──────────────────────────────── -->
-        <div style="padding:16px 24px;${_canManage ? 'border-bottom:1px solid var(--border);' : ''}">
+        <div style="padding:16px 24px;">
           ${_sec('Emergency Contact')}
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">
             <div class="people-field">
@@ -550,61 +501,15 @@ const People = (() => {
           </div>
         </div>
 
-        ${_canManage ? `
-        <!-- ── KYC Documents (HR / Super Admin only) ──────────── -->
-        <div style="padding:16px 24px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-            ${_sec('KYC Documents')}
-            ${kyc.kyc_submitted_at
-              ? `<span style="font-size:11px;color:var(--success);font-weight:500;margin-bottom:12px;">✓ Submitted ${Utils.formatDate(kyc.kyc_submitted_at)}</span>`
-              : `<span style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">Not yet submitted</span>`}
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            ${_kycDocRow('🪪', 'Aadhaar Card',  kyc.kyc_aadhar_url)}
-            ${_kycDocRow('🏷️', 'PAN Card',      kyc.kyc_pan_url)}
-            ${_kycDocRow('📘', 'Passport',       kyc.kyc_passport_url)}
-            ${_kycDocRow('🖼️', 'Passport Photo', kyc.kyc_passport_photo_url)}
-          </div>
-        </div>` : ''}
-
       </div>
 
-      ${_canManage ? `
-        <div class="modal-footer" style="gap:8px;">
-          <button class="btn btn--ghost" onclick="Utils.closeModal()">Close</button>
-          <button class="btn btn--ghost btn--sm" id="ppl-modal-deact-btn"
-            data-id="${emp.id}" data-name="${Utils.escapeHtml(emp.name)}"
-            data-status="${emp.status}">
-            ${emp.status === 'active' ? 'Deactivate' : 'Reactivate'}
-          </button>
-          <button class="btn btn--primary" id="ppl-modal-edit-btn" data-id="${emp.id}">
-            Edit Employee
-          </button>
-        </div>
-      ` : `
-        <div class="modal-footer">
-          <button class="btn btn--ghost" onclick="Utils.closeModal()">Close</button>
-        </div>
-      `}
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Close</button>
+      </div>
     `, 'people-profile-modal')
 
-    if (_canManage) {
-      document.getElementById('ppl-modal-edit-btn')?.addEventListener('click', () => {
-        Utils.closeModal()
-        _openEditModal(emp.id)
-      })
-      document.getElementById('ppl-modal-deact-btn')?.addEventListener('click', (e) => {
-        const btn = e.currentTarget
-        Utils.closeModal()
-        if (btn.dataset.status === 'active') {
-          _deactivateEmployee(btn.dataset.id, btn.dataset.name)
-        } else {
-          _reactivateEmployee(btn.dataset.id, btn.dataset.name)
-        }
-      })
-    }
-
-    // Award Badge button — visible to HR or direct manager
+    // Award Badge button — visible to direct manager only here (Tier 2);
+    // HR's blanket award capability lives in /hrms alongside edit/KYC.
     document.getElementById('ppl-award-badge-btn')?.addEventListener('click', () => {
       _openAwardBadgeModal(emp)
     })
@@ -725,387 +630,6 @@ const People = (() => {
       Utils.closeModal()
       Utils.showToast(`🎉 Badge awarded to ${emp.name}!`, 'success')
     })
-  }
-
-  /* ══════════════════════════════════════════════════════════
-     EDIT EMPLOYEE MODAL (HR only)
-  ══════════════════════════════════════════════════════════ */
-  function _openEditModal(empId) {
-    const emp = _employees.find(e => e.id === empId)
-    if (!emp) return
-
-    const deptOptions = _departments.map(d =>
-      `<option value="${Utils.escapeHtml(d.slug)}"${emp.department === d.slug ? ' selected' : ''}>
-        ${Utils.escapeHtml(d.name)}
-      </option>`
-    ).join('')
-
-    const mgrOptions = _employees
-      .filter(e => e.id !== empId && e.status === 'active')
-      .map(e =>
-        `<option value="${e.id}"${emp.manager_id === e.id ? ' selected' : ''}>
-          ${Utils.escapeHtml(e.name)}${e.designation ? ' — ' + Utils.escapeHtml(e.designation) : ''}
-        </option>`
-      ).join('')
-
-    const roleOptions = ROLES.map(r =>
-      `<option value="${r.value}"${emp.role === r.value ? ' selected' : ''}>${r.label}</option>`
-    ).join('')
-
-    // Use EMP_TYPES_ALL in the edit modal so existing employees with legacy
-    // employment types (part_time, freelancer, probation) still show correctly
-    const empTypeOptions = EMP_TYPES_ALL.map(t =>
-      `<option value="${t.value}"${emp.employment_type === t.value ? ' selected' : ''}>${t.label}</option>`
-    ).join('')
-
-    const locationOptions = WORK_LOCATIONS.map(l =>
-      `<option value="${l.value}"${emp.work_location === l.value ? ' selected' : ''}>${l.label}</option>`
-    ).join('')
-
-    Utils.openModal(`
-      <div class="modal-header">
-        <h3 class="modal-title">Edit Employee — ${Utils.escapeHtml(emp.name)}</h3>
-        <button class="modal-close" onclick="Utils.closeModal()">${CLOSE_SVG}</button>
-      </div>
-      <div class="modal-body" style="max-height:70vh;overflow-y:auto;">
-        <div id="ppl-edit-err" class="alert alert--danger" style="display:none;"></div>
-
-        <!-- Profile Image -->
-        <div class="form-group">
-          <label class="form-label">Profile Image</label>
-          ${emp.profile_image_url
-            ? `<div style="margin-bottom:8px;">
-                <img src="${Utils.escapeHtml(emp.profile_image_url)}" alt=""
-                  style="width:60px;height:60px;border-radius:50%;object-fit:cover;">
-               </div>`
-            : ''}
-          <input class="form-input" type="file" id="ppl-edit-img" accept="image/*">
-          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">
-            Accepted: JPG, PNG, WEBP. Max 2MB.
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Full Name <span class="required">*</span></label>
-            <input class="form-input" id="ppl-edit-name" value="${Utils.escapeHtml(emp.name)}">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Work Email <span style="font-size:11px;color:var(--text-muted);">(read-only)</span></label>
-            <input class="form-input" id="ppl-edit-email" value="${Utils.escapeHtml(emp.email || '')}"
-              readonly style="background:var(--surface-alt);cursor:not-allowed;">
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Personal Email</label>
-            <input class="form-input" type="email" id="ppl-edit-personal-email"
-              value="${Utils.escapeHtml(emp.personal_email || '')}">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Phone</label>
-            <input class="form-input" id="ppl-edit-phone"
-              value="${Utils.escapeHtml(emp.phone_number || '')}">
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Date of Birth</label>
-            <input class="form-input" type="date" id="ppl-edit-dob"
-              value="${emp.date_of_birth ? emp.date_of_birth.substring(0, 10) : ''}">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Designation</label>
-            <input class="form-input" id="ppl-edit-designation"
-              value="${Utils.escapeHtml(emp.designation || '')}">
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Department</label>
-            <select class="form-select" id="ppl-edit-dept">
-              <option value="">— Select —</option>
-              ${deptOptions}
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Role${_user.role === 'super_admin' ? '' : ' <span style="font-size:11px;color:var(--text-muted);">(read-only)</span>'}</label>
-            <select class="form-select" id="ppl-edit-role" ${_user.role === 'super_admin' ? '' : 'disabled style="background:var(--surface-alt);cursor:not-allowed;"'}>
-              ${roleOptions}
-            </select>
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Employment Type</label>
-            <select class="form-select" id="ppl-edit-emp-type">
-              <option value="">— Select —</option>
-              ${empTypeOptions}
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Work Location</label>
-            <select class="form-select" id="ppl-edit-location">
-              <option value="">— Select —</option>
-              ${locationOptions}
-            </select>
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Joining Date</label>
-            <input class="form-input" type="date" id="ppl-edit-joining"
-              value="${emp.joining_date ? emp.joining_date.substring(0, 10) : ''}">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Reporting Manager</label>
-            <select class="form-select" id="ppl-edit-manager">
-              <option value="">— None —</option>
-              ${mgrOptions}
-            </select>
-          </div>
-        </div>
-
-        <!-- Probation -->
-        <div class="form-group">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-            <input type="checkbox" id="ppl-edit-probation-done"
-              ${emp.probation_completed ? 'checked' : ''}>
-            <span class="form-label" style="margin:0;">Probation Completed</span>
-          </label>
-        </div>
-        <div class="form-group" id="ppl-edit-probation-date-wrap"
-          style="display:${emp.probation_completed ? 'block' : 'none'};">
-          <label class="form-label">Probation Completed Date</label>
-          <input class="form-input" type="date" id="ppl-edit-probation-date"
-            value="${emp.probation_completed_date ? emp.probation_completed_date.substring(0, 10) : ''}">
-        </div>
-
-        <!-- Biometric -->
-        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;
-            color:var(--text-muted);margin-bottom:12px;">Biometric</div>
-          <div class="form-group">
-            <label class="form-label">Bio ID</label>
-            <input class="form-input" type="number" id="ppl-edit-bio-id" min="1"
-              value="${emp.bio_id || ''}" placeholder="e.g. 4" style="max-width:200px;">
-            <div class="form-hint">Numeric ID from the biometric attendance machine.</div>
-          </div>
-        </div>
-
-        <!-- Emergency Contact -->
-        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;
-            color:var(--text-muted);margin-bottom:12px;">Emergency Contact</div>
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Name</label>
-              <input class="form-input" id="ppl-edit-ec-name"
-                value="${Utils.escapeHtml(emp.emergency_contact_name || '')}">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Relationship</label>
-              <input class="form-input" id="ppl-edit-ec-rel"
-                value="${Utils.escapeHtml(emp.emergency_contact_relationship || '')}">
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Phone</label>
-            <input class="form-input" id="ppl-edit-ec-phone"
-              value="${Utils.escapeHtml(emp.emergency_contact_phone || '')}">
-          </div>
-        </div>
-
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
-        <button class="btn btn--primary" id="ppl-edit-save">Save Changes</button>
-      </div>
-    `, 'people-profile-modal')
-
-    // Toggle probation date field
-    document.getElementById('ppl-edit-probation-done')?.addEventListener('change', (e) => {
-      const wrap = document.getElementById('ppl-edit-probation-date-wrap')
-      if (wrap) wrap.style.display = e.target.checked ? 'block' : 'none'
-    })
-
-    document.getElementById('ppl-edit-save')?.addEventListener('click', () => _saveEditEmployee(empId))
-  }
-
-  async function _saveEditEmployee(empId) {
-    const errEl   = document.getElementById('ppl-edit-err')
-    const saveBtn = document.getElementById('ppl-edit-save')
-
-    const name = document.getElementById('ppl-edit-name')?.value.trim()
-    if (!name) {
-      errEl.textContent   = 'Full name is required.'
-      errEl.style.display = 'block'
-      return
-    }
-
-    saveBtn.disabled    = true
-    saveBtn.textContent = 'Saving…'
-    errEl.style.display = 'none'
-
-    let profileImageUrl = undefined
-
-    // Handle profile image upload
-    const imgInput = document.getElementById('ppl-edit-img')
-    if (imgInput?.files?.[0]) {
-      const file = imgInput.files[0]
-      const ext  = file.name.split('.').pop().toLowerCase()
-      const { error: uploadErr } = await Config.supabase.storage
-        .from('employee-avatars')
-        .upload(`${empId}.${ext}`, file, { upsert: true, contentType: file.type })
-      if (uploadErr) {
-        errEl.textContent   = 'Image upload failed: ' + uploadErr.message
-        errEl.style.display = 'block'
-        saveBtn.disabled    = false
-        saveBtn.textContent = 'Save Changes'
-        return
-      }
-      const { data: urlData } = Config.supabase.storage
-        .from('employee-avatars')
-        .getPublicUrl(`${empId}.${ext}`)
-      profileImageUrl = urlData.publicUrl
-    }
-
-    const probationDone = document.getElementById('ppl-edit-probation-done')?.checked || false
-
-    const payload = {
-      name,
-      personal_email:                  document.getElementById('ppl-edit-personal-email')?.value.trim() || null,
-      phone_number:                    document.getElementById('ppl-edit-phone')?.value.trim()          || null,
-      date_of_birth:                   document.getElementById('ppl-edit-dob')?.value                  || null,
-      designation:                     document.getElementById('ppl-edit-designation')?.value.trim()    || null,
-      department:                      document.getElementById('ppl-edit-dept')?.value                  || null,
-      role:                            document.getElementById('ppl-edit-role')?.value                  || null,
-      employment_type:                 document.getElementById('ppl-edit-emp-type')?.value              || null,
-      work_location:                   document.getElementById('ppl-edit-location')?.value              || null,
-      joining_date:                    document.getElementById('ppl-edit-joining')?.value               || null,
-      manager_id:                      document.getElementById('ppl-edit-manager')?.value               || null,
-      probation_completed:             probationDone,
-      probation_completed_date:        probationDone
-        ? (document.getElementById('ppl-edit-probation-date')?.value || null)
-        : null,
-      emergency_contact_name:          document.getElementById('ppl-edit-ec-name')?.value.trim()  || null,
-      emergency_contact_relationship:  document.getElementById('ppl-edit-ec-rel')?.value.trim()   || null,
-      emergency_contact_phone:         document.getElementById('ppl-edit-ec-phone')?.value.trim() || null,
-      bio_id: (() => { const v = document.getElementById('ppl-edit-bio-id')?.value.trim(); return v ? parseInt(v, 10) : null })(),
-    }
-
-    if (profileImageUrl !== undefined) {
-      payload.profile_image_url = profileImageUrl
-    }
-
-    const { error } = await API.updateEmployeeFull(empId, payload)
-
-    saveBtn.disabled    = false
-    saveBtn.textContent = 'Save Changes'
-
-    if (error) {
-      errEl.textContent   = error.message
-      errEl.style.display = 'block'
-      return
-    }
-
-    // Refresh local data
-    const { data } = await API.getEmployeesFull()
-    _employees = data || []
-
-    Utils.closeModal()
-    Utils.showToast('Employee updated successfully.', 'success')
-
-    // Re-open profile modal with fresh data
-    _openProfileModal(empId)
-  }
-
-  /* ══════════════════════════════════════════════════════════
-     DEACTIVATE / REACTIVATE
-  ══════════════════════════════════════════════════════════ */
-  function _deactivateEmployee(empId, empName) {
-    const directReports = _employees.filter(e => e.manager_id === empId)
-    if (directReports.length > 0) {
-      Utils.showToast(
-        `Please reassign ${directReports.length} direct report(s) before deactivating.`,
-        'error'
-      )
-      return
-    }
-
-    Utils.openModal(`
-      <div class="modal-header">
-        <h3 class="modal-title">Deactivate Employee</h3>
-        <button class="modal-close" onclick="Utils.closeModal()">${CLOSE_SVG}</button>
-      </div>
-      <div class="modal-body">
-        <div class="alert alert--warning" style="margin-bottom:12px;">
-          This will deactivate the employee's account. They will no longer be able to log in.
-          Any assets assigned to them will be automatically unassigned.
-        </div>
-        <p style="font-size:14px;font-weight:600;color:var(--text);">
-          Deactivate: ${Utils.escapeHtml(empName)}?
-        </p>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn--ghost" onclick="Utils.closeModal()">Cancel</button>
-        <button class="btn btn--danger" id="ppl-deact-confirm">Deactivate</button>
-      </div>
-    `)
-
-    document.getElementById('ppl-deact-confirm')?.addEventListener('click', async () => {
-      const btn = document.getElementById('ppl-deact-confirm')
-      btn.disabled    = true
-      btn.textContent = 'Deactivating…'
-
-      const { error: empErr } = await Config.supabase
-        .from('employees')
-        .update({ status: 'inactive' })
-        .eq('id', empId)
-
-      if (empErr) {
-        Utils.showToast('Failed to deactivate employee.', 'error')
-        btn.disabled    = false
-        btn.textContent = 'Deactivate'
-        return
-      }
-
-      await Config.supabase
-        .from('assets')
-        .update({ assigned_to: null, assigned_date: null, status: 'available' })
-        .eq('assigned_to', empId)
-
-      // Refresh data
-      const { data } = await API.getEmployeesFull()
-      _employees = data || []
-
-      Utils.closeModal()
-      Utils.showToast(`${empName} has been deactivated.`, 'success')
-      _renderDirectoryTable()
-    })
-  }
-
-  async function _reactivateEmployee(empId, empName) {
-    const { error } = await Config.supabase
-      .from('employees')
-      .update({ status: 'active' })
-      .eq('id', empId)
-
-    if (error) {
-      Utils.showToast('Failed to reactivate employee.', 'error')
-      return
-    }
-
-    const { data } = await API.getEmployeesFull()
-    _employees = data || []
-
-    Utils.showToast(`${empName} has been reactivated.`, 'success')
-    _renderDirectoryTable()
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -1232,237 +756,6 @@ const People = (() => {
     `
   }
 
-  /* ══════════════════════════════════════════════════════════
-     INVITE / ADD EMPLOYEE TAB (HR only)
-  ══════════════════════════════════════════════════════════ */
-  function _renderInvitePanel() {
-    const content = document.getElementById('ppl-content')
-    if (!content) return
-    content.className = ''
-
-    if (!_canManage) {
-      content.innerHTML = App.renderAccessDenied('Add Employee')
-      return
-    }
-
-    const deptOptions = _departments.map(d =>
-      `<option value="${Utils.escapeHtml(d.slug)}">${Utils.escapeHtml(d.name)}</option>`
-    ).join('')
-
-    const mgrOptions = _employees
-      .filter(e => e.status === 'active')
-      .map(e =>
-        `<option value="${e.id}">${Utils.escapeHtml(e.name)}${e.designation ? ' — ' + Utils.escapeHtml(e.designation) : ''}</option>`
-      ).join('')
-
-    const empTypeOptions = EMP_TYPES.map(t =>
-      `<option value="${t.value}">${t.label}</option>`
-    ).join('')
-
-    const locationOptions = WORK_LOCATIONS.map(l =>
-      `<option value="${l.value}">${l.label}</option>`
-    ).join('')
-
-    content.innerHTML = `
-      <div class="section-card">
-        <div class="section-card-header">
-          <h3>Add New Employee</h3>
-        </div>
-        <div class="section-card-body" style="max-width:680px;">
-          <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px;line-height:1.6;">
-            Create the employee's account. They'll receive login credentials and be prompted to complete their profile on first sign-in.
-          </p>
-
-          <div id="ppl-inv-err" class="alert alert--danger" style="display:none;"></div>
-          <div id="ppl-inv-success" class="alert alert--success" style="display:none;"></div>
-
-          <!-- Account credentials -->
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:12px;">Account</div>
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Full Name <span class="required">*</span></label>
-              <input class="form-input" id="ppl-inv-name" placeholder="e.g. Priya Sharma">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Work Email <span class="required">*</span></label>
-              <input class="form-input" type="email" id="ppl-inv-email" placeholder="name@thegrowthic.com">
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Temporary Password <span class="required">*</span></label>
-              <input class="form-input" type="password" id="ppl-inv-password" placeholder="Min. 8 characters">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Confirm Password <span class="required">*</span></label>
-              <input class="form-input" type="password" id="ppl-inv-confirm-password" placeholder="Min. 8 characters">
-            </div>
-          </div>
-
-          <!-- Role & organisation -->
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin:20px 0 12px;">Role & Organisation</div>
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Designation <span class="required">*</span></label>
-              <input class="form-input" id="ppl-inv-designation" placeholder="e.g. Content Strategist">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Department <span class="required">*</span></label>
-              <select class="form-select" id="ppl-inv-dept">
-                <option value="">— Select department —</option>
-                ${deptOptions}
-              </select>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Reporting Manager <span class="required">*</span></label>
-              <select class="form-select" id="ppl-inv-manager">
-                <option value="">— None —</option>
-                ${mgrOptions}
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Employment Type <span class="required">*</span></label>
-              <select class="form-select" id="ppl-inv-emp-type">
-                <option value="">— Select —</option>
-                ${empTypeOptions}
-              </select>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Joining Date <span class="required">*</span></label>
-              <input class="form-input" type="date" id="ppl-inv-joining">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Work Location <span class="required">*</span></label>
-              <select class="form-select" id="ppl-inv-location">
-                <option value="">— Select —</option>
-                ${locationOptions}
-              </select>
-            </div>
-          </div>
-
-          <!-- Biometric -->
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin:20px 0 12px;">Biometric</div>
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Bio ID</label>
-              <input class="form-input" type="number" id="ppl-inv-bio-id" placeholder="e.g. 4" min="1" style="max-width:200px;">
-              <div class="form-hint">Numeric ID from the biometric attendance machine. Leave blank if not yet assigned.</div>
-            </div>
-          </div>
-
-          <div style="margin-top:24px;">
-            <button class="btn btn--primary" id="ppl-inv-submit">Add Employee</button>
-          </div>
-        </div>
-      </div>
-    `
-
-    document.getElementById('ppl-inv-submit')?.addEventListener('click', _submitInvite)
-  }
-
-  async function _submitInvite() {
-    const errEl     = document.getElementById('ppl-inv-err')
-    const successEl = document.getElementById('ppl-inv-success')
-    const submitBtn = document.getElementById('ppl-inv-submit')
-
-    errEl.style.display     = 'none'
-    successEl.style.display = 'none'
-
-    const name            = document.getElementById('ppl-inv-name')?.value.trim()
-    const email           = document.getElementById('ppl-inv-email')?.value.trim()
-    const password        = document.getElementById('ppl-inv-password')?.value
-    const confirmPassword = document.getElementById('ppl-inv-confirm-password')?.value
-    const designation     = document.getElementById('ppl-inv-designation')?.value.trim()
-    const department      = document.getElementById('ppl-inv-dept')?.value
-    const employment_type = document.getElementById('ppl-inv-emp-type')?.value
-    const work_location   = document.getElementById('ppl-inv-location')?.value
-    const joining_date    = document.getElementById('ppl-inv-joining')?.value
-    const manager_id      = document.getElementById('ppl-inv-manager')?.value || null
-
-    const missing = []
-    if (!name)            missing.push('Full Name')
-    if (!email)           missing.push('Work Email')
-    if (!password)        missing.push('Temporary Password')
-    if (!designation)     missing.push('Designation')
-    if (!department)      missing.push('Department')
-    if (!manager_id)      missing.push('Reporting Manager')
-    if (!employment_type) missing.push('Employment Type')
-    if (!work_location)   missing.push('Work Location')
-    if (!joining_date)    missing.push('Joining Date')
-
-    if (missing.length) {
-      errEl.textContent   = `Please fill in: ${missing.join(', ')}.`
-      errEl.style.display = 'block'
-      return
-    }
-
-    if (password.length < 8) {
-      errEl.textContent   = 'Password must be at least 8 characters.'
-      errEl.style.display = 'block'
-      return
-    }
-
-    if (password !== confirmPassword) {
-      errEl.textContent   = 'Passwords do not match.'
-      errEl.style.display = 'block'
-      return
-    }
-
-    submitBtn.disabled    = true
-    submitBtn.textContent = 'Adding employee…'
-
-    const bioIdRaw = document.getElementById('ppl-inv-bio-id')?.value.trim()
-    const bio_id   = bioIdRaw ? parseInt(bioIdRaw, 10) : null
-
-    const result = await API.createEmployee({
-      name,
-      email,
-      password,
-      designation,
-      department,
-      role: 'employee',   // always employee — role changes are SQL-only
-      employment_type,
-      work_location,
-      joining_date,
-      manager_id,
-      bio_id,
-    })
-
-    submitBtn.disabled    = false
-    submitBtn.textContent = 'Add Employee'
-
-    if (result.error) {
-      errEl.textContent   = result.error.message || 'Failed to create employee. Please try again.'
-      errEl.style.display = 'block'
-      return
-    }
-
-    successEl.textContent   = `${name} has been added. Share their login credentials and ask them to sign in and complete their profile.`
-    successEl.style.display = 'block'
-
-    // Reset form fields
-    ;['ppl-inv-name', 'ppl-inv-email', 'ppl-inv-password', 'ppl-inv-confirm-password', 'ppl-inv-designation', 'ppl-inv-joining'].forEach(id => {
-      const el = document.getElementById(id)
-      if (el) el.value = ''
-    })
-    ;['ppl-inv-dept', 'ppl-inv-emp-type', 'ppl-inv-location', 'ppl-inv-manager'].forEach(id => {
-      const el = document.getElementById(id)
-      if (el) el.selectedIndex = 0
-    })
-
-    // Refresh employees list
-    const { data } = await API.getEmployeesFull()
-    _employees = data || []
-    const _empById = Object.fromEntries(_employees.map(e => [e.id, e]))
-    _employees.forEach(e => {
-      e._managerName = e.manager?.name || (e.manager_id && _empById[e.manager_id]?.name) || null
-    })
-  }
-
   /* ── Label helpers ──────────────────────────────────────── */
   function _empTypeLabel(val) {
     const found = EMP_TYPES_ALL.find(t => t.value === val)
@@ -1485,8 +778,6 @@ ModuleRegistry.register({
   icon:      `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>`,
   getModule: () => People,
   features:  {
-    view_employees:   'View Employees',
-    manage_employees: 'Manage Employees (edit/deactivate)',
-    manage_access:    'Manage Access Control',
+    view_employees: 'View Employees',
   },
 })

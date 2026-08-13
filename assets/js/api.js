@@ -852,6 +852,33 @@ const API = (() => {
       .order('name')
   }
 
+  // HRMS-only — same as getEmployeesFull() but also includes bank details.
+  // Deliberately a separate function so Growthic One's shared code path
+  // never fetches these fields into a regular employee's browser, even
+  // though the UI wouldn't render them (the employees table's read RLS
+  // is open, so what the frontend chooses to select is the real boundary).
+  async function getEmployeesFullWithBank() {
+    return supabase
+      .from('employees')
+      .select(`
+        id, employee_id, name, email, personal_email, phone_number,
+        date_of_birth, role, department, designation, employment_type,
+        work_location, profile_image_url, linkedin_url, bio_id,
+        address, permanent_address,
+        current_address_house_no, current_address_building, current_address_street,
+        current_address_landmark, current_address_city, current_address_state,
+        current_address_pincode, current_address_type,
+        permanent_address_house_no, permanent_address_building, permanent_address_street,
+        permanent_address_landmark, permanent_address_city, permanent_address_state,
+        permanent_address_pincode, permanent_address_type,
+        emergency_contact_name, emergency_contact_relationship, emergency_contact_phone,
+        status, joining_date, probation_completed, probation_completed_date,
+        bank_account_number, bank_ifsc, profile_completed,
+        manager_id, manager:employees!manager_id(id, name, designation)
+      `)
+      .order('name')
+  }
+
   /* ── Employee creation (Phase 8 — no invite, sets password directly) ── */
   async function createEmployee(data) {
     const { data: { session } } = await supabase.auth.getSession()
@@ -1960,7 +1987,7 @@ const API = (() => {
     // Phase 7
     getDepartments, addDepartment, deleteDepartment,
     createDepartmentRpc, renameDepartmentRpc,
-    getEmployeesFull, updateEmployeeFull, acknowledgePolicy, getEmployeeKyc,
+    getEmployeesFull, getEmployeesFullWithBank, updateEmployeeFull, acknowledgePolicy, getEmployeeKyc,
     getOrgChart,
     getLeaveTypes, createLeaveType, updateLeaveType, deleteLeaveType,
     getLeaveCredits, getAllLeaveCredits, addLeaveCredit, deleteLeaveCredit,
