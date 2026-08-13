@@ -13,6 +13,7 @@ const Timesheet = (() => {
   let _internalProjects  = []   // active internal projects with their work areas
   let _directReports     = []   // employees whose manager_id === _user.id
   let _isManager         = false
+  let _subordinateIds    = new Set() // employees actually in this user's reporting chain — used to gate approve/reject actions
   let _myLeaves          = []   // user's approved leave requests
   let _myWfhs            = []   // user's approved WFH requests
   let _myClientVisits    = []   // user's approved client visits
@@ -108,13 +109,16 @@ const Timesheet = (() => {
     _myClientVisits   = leaveData.clientVisits || []
     _holidays         = (holidaysData || []).map(h => h.date)
 
-    // HR (can_approve) sees all active employees; managers see their reporting subtree
+    // HR (can_approve) sees all active employees; managers see their reporting subtree.
+    // Note: seeing an employee's timesheet and being allowed to approve it are separate —
+    // approval rights are always scoped to the real reporting chain (or super_admin).
+    const { data: subs } = await API.getAllSubordinates(_user.id)
+    _subordinateIds = new Set((subs || []).map(e => e.id))
     if (_p.can_approve) {
       const { data: allEmps } = await API.getEmployees()
       _directReports = allEmps || []
     } else {
-      const { data: reports } = await API.getAllSubordinates(_user.id)
-      _directReports = reports || []
+      _directReports = subs || []
     }
     _isManager = _directReports.length > 0
 
@@ -136,6 +140,14 @@ const Timesheet = (() => {
     } else {
       _loadTab('mine')
     }
+  }
+
+  // Approve/Reject rights are scoped to the real reporting chain, not just
+  // broad view access — an admin can see everyone's timesheet but can only
+  // act on entries belonging to their own subordinates. super_admin can act on any.
+  function _canApproveEmployee(employeeId) {
+    if (employeeId === _user.id) return false
+    return _user.role === 'super_admin' || _subordinateIds.has(employeeId)
   }
 
   /* ── Tab management ─────────────────────────────────────── */
@@ -1573,7 +1585,7 @@ const Timesheet = (() => {
     const desc       = e.work_description || e.task_description || ''
     const lateIcon   = e.is_late ? `<span title="Logged late" style="color:#F59E0B;font-size:11px;">🕐</span>` : ''
 
-    const approveRejectBar = e.status === 'submitted' && e.employee_id !== _user.id ? `
+    const approveRejectBar = e.status === 'submitted' && _canApproveEmployee(e.employee_id) ? `
       <div class="ts-card-approve-bar">
         <button class="btn btn--xs btn--secondary ts-person-approve" data-id="${e.id}">Approve</button>
         <button class="btn btn--xs btn--danger ts-person-reject" data-id="${e.id}">Reject</button>
@@ -2089,7 +2101,7 @@ const Timesheet = (() => {
           <td style="text-align:right;font-weight:700;white-space:nowrap;padding-top:14px;">${parseFloat(e.hours).toFixed(1)}h</td>
           <td style="padding-top:14px;">${_statusBadge(e.status)}</td>
           <td style="white-space:nowrap;padding-top:14px;">
-            ${_p.can_approve && e.status === 'submitted' && e.employee_id !== _user.id ? `
+            ${e.status === 'submitted' && _canApproveEmployee(e.employee_id) ? `
               <button class="btn btn--xs btn--secondary ts-approve-entry" data-id="${e.id}" style="margin-right:4px;">Approve</button>
               <button class="btn btn--xs btn--danger ts-reject-entry"  data-id="${e.id}">Reject</button>
             ` : e.status === 'rejected' && e.rejection_comment ? `
