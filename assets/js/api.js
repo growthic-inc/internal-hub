@@ -1141,12 +1141,26 @@ const API = (() => {
       .gte('end_date', today)
   }
 
-  async function getPendingTimesheetApprovalsCount(employeeId) {
+  async function getPendingTimesheetApprovalsCount(employeeId, role) {
+    // super_admin can act on any submitted timesheet — company-wide count.
+    if (role === 'super_admin') {
+      const res = await supabase
+        .from('timesheets')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'submitted')
+        .neq('employee_id', employeeId)
+      return res.count || 0
+    }
+    // Everyone else (including 'admin') can only act on their own reporting
+    // chain — mirror that here so this count matches what's actually approvable.
+    const { data: subs } = await supabase.rpc('get_all_subordinates', { root_manager_id: employeeId })
+    const ids = (subs || []).map(s => s.id)
+    if (!ids.length) return 0
     const res = await supabase
       .from('timesheets')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'submitted')
-      .neq('employee_id', employeeId)
+      .in('employee_id', ids)
     return res.count || 0
   }
 

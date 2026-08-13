@@ -613,7 +613,7 @@ const HomeModule = (() => {
       API.getWhoIsOutToday(),
       API.getWhoIsWfhToday(),
       API.getPendingApprovalsCount(user.id),
-      API.getPendingTimesheetApprovalsCount(user.id),
+      API.getPendingTimesheetApprovalsCount(user.id, user.role),
       API.getUpcomingEventsData(30),
       API.getRecentAnnouncements(3),
       API.getBirthdayEmployees(),
