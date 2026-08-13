@@ -1487,7 +1487,6 @@ ModuleRegistry.register({
   features:  {
     view_employees:   'View Employees',
     manage_employees: 'Manage Employees (edit/deactivate)',
-    invite_employee:  'Invite New Employee',
     manage_access:    'Manage Access Control',
   },
 })
