@@ -29,8 +29,6 @@ const LeaveTracker = (() => {
   let _canApproveLeave    = false   // can approve team leave/WFH requests
   let _attendanceRecords  = []      // employee_attendance rows for current month
   let _attendanceMonth    = null    // Date: first day of displayed month
-  let _uploadLog          = []      // attendance_upload_log rows
-  let _canUploadAttendance  = false
   let _lateThreshold        = '10:30'   // HH:MM from app_settings
   let _lateEffectiveFrom    = ''        // YYYY-MM from app_settings
 
@@ -251,7 +249,6 @@ const LeaveTracker = (() => {
     _user             = user
     _isHR             = App.hasAccess('leave_tracker', 'manage_leave_settings', 'can_manage')
     _canApproveLeave  = App.hasAccess('leave_tracker', 'approve_leave', 'can_approve')
-    _canUploadAttendance = App.hasAccess('leave_tracker', 'upload_attendance', 'can_manage')
     _calMonth         = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
     _attendanceMonth  = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
     _activeTab        = 'attendance'
@@ -327,11 +324,6 @@ const LeaveTracker = (() => {
       if (s.key === 'attendance.late_threshold')     _lateThreshold     = s.value
       if (s.key === 'attendance.late_effective_from') _lateEffectiveFrom = s.value
     })
-
-    if (_canUploadAttendance || _user.role === 'super_admin') {
-      const logRes = await API.getAttendanceUploadLog()
-      _uploadLog = logRes.data || []
-    }
 
     _bindTabs()
     _loadTab('attendance')
@@ -553,56 +545,7 @@ const LeaveTracker = (() => {
         <span class="att-legend-item"><span class="att-legend-dot" style="background:#EC4899;"></span>Event</span>
       </div>`
 
-    // Upload section (permission gated)
-    const uploadSection = _canUploadAttendance ? `
-      <div class="section-card mb-4">
-        <div class="section-card-header" style="justify-content:space-between;">
-          <h3>Upload Attendance</h3>
-          <label class="btn btn--primary btn--sm" style="cursor:pointer;">
-            Upload XLS / XLSX
-            <input type="file" id="att-upload-input" accept=".xls,.xlsx" style="display:none;">
-          </label>
-        </div>
-        <div class="section-card-body">
-          <p style="font-size:13px;color:var(--text-muted);margin:0;">
-            Upload the biometric attendance report. Punch times are read from the "Att.log report" sheet (first punch = in, last punch = out), matched by Bio ID. Existing entries for the same date are overwritten.
-          </p>
-          <div id="att-upload-result" style="margin-top:10px;"></div>
-        </div>
-      </div>` : ''
-
-    // Upload history (permission gated)
-    const historyRows = _uploadLog.map(log => `
-      <tr>
-        <td class="text-sm">${new Date(log.uploaded_at).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}</td>
-        <td class="text-sm">${Utils.escapeHtml(log.uploader?.name || '—')}</td>
-        <td class="text-sm">${Utils.escapeHtml(log.file_name)}</td>
-        <td class="text-sm">${log.date_from ? log.date_from + ' → ' + log.date_to : '—'}</td>
-        <td class="text-sm">${log.records_processed}</td>
-        <td class="text-sm">${log.records_matched} matched, ${log.records_skipped} skipped</td>
-        <td><span class="badge ${log.status === 'success' ? 'badge--success' : log.status === 'partial' ? 'badge--warning' : 'badge--danger'}">${log.status === 'partial' ? 'Partial' : log.status === 'success' ? 'Success' : 'Failed'}</span></td>
-      </tr>`).join('')
-
-    const historySection = _canUploadAttendance ? `
-      <div class="section-card">
-        <div class="section-card-header"><h3>Upload History</h3></div>
-        <div class="section-card-body" style="padding:0;">
-          ${_uploadLog.length ? `
-          <div class="table-wrap">
-            <table class="data-table">
-              <thead><tr>
-                <th>Date & Time</th><th>Uploaded By</th><th>File</th><th>Date Range</th>
-                <th>Processed</th><th>Result</th><th>Status</th>
-              </tr></thead>
-              <tbody>${historyRows}</tbody>
-            </table>
-          </div>` : '<p style="padding:16px;font-size:13px;color:var(--text-muted);">No uploads yet.</p>'}
-        </div>
-      </div>` : ''
-
     content.innerHTML = `
-      ${uploadSection}
-
       <div style="display:flex;gap:16px;align-items:flex-start;" class="mb-4">
         <div style="flex:1;min-width:0;">
           <div class="section-card">
@@ -637,8 +580,6 @@ const LeaveTracker = (() => {
           ${_renderUpcomingPanel()}
         </div>
       </div>
-
-      ${historySection}
     `
 
     // Month nav handlers
@@ -655,17 +596,7 @@ const LeaveTracker = (() => {
       }
     })
 
-    // Upload handler
-    if (_canUploadAttendance) {
-      document.getElementById('att-upload-input')?.addEventListener('change', async (e) => {
-        const file = e.target.files[0]
-        if (!file) return
-        await _processAttendanceUpload(file)
-        e.target.value = ''
-      })
-    }
-
-    // Click any date to view what's marked / manage events (HR can add)
+    // Click any date to view what's marked / self-correct
     document.querySelectorAll('.att-cal-cell--clickable[data-att-date]').forEach(cell => {
       cell.addEventListener('click', async () => {
         await _openAttendanceDateModal(cell.dataset.attDate, { holidayMap, leaveMap, wfhMap, clientVisitMap, attMap, eventMap }, exemptCount)
@@ -673,7 +604,7 @@ const LeaveTracker = (() => {
     })
   }
 
-  /* View what's marked on a date + (HR only) add holiday / event */
+  /* View what's marked on a date, and self-correct via exemption if eligible */
   async function _openAttendanceDateModal(dateISO, maps, exemptCount = 0) {
     const holiday   = maps.holidayMap[dateISO]
     const leave     = maps.leaveMap[dateISO]
@@ -760,44 +691,6 @@ const LeaveTracker = (() => {
         </div>`
     }
 
-    // HR add form
-    const addFormHtml = _isHR ? `
-      <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px;">
-        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:12px;">Add to this day</div>
-        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">
-          <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
-            <input type="radio" name="att-add-type" value="holiday" checked style="accent-color:var(--primary);" />
-            <span style="font-size:13px;font-weight:600;">Holiday</span>
-          </label>
-          <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
-            <input type="radio" name="att-add-type" value="event" style="accent-color:var(--primary);" />
-            <span style="font-size:13px;font-weight:600;">Event</span>
-          </label>
-        </div>
-        <div id="att-add-err" class="alert alert--danger" style="display:none;"></div>
-        <div id="att-holiday-fields">
-          <div class="form-group">
-            <label class="form-label">Holiday Name <span class="required">*</span></label>
-            <input class="form-input" type="text" id="att-hol-name" placeholder="e.g. Second Saturday, Diwali…" />
-          </div>
-        </div>
-        <div id="att-event-fields" style="display:none;">
-          <div class="form-group">
-            <label class="form-label">Event Title <span class="required">*</span></label>
-            <input class="form-input" type="text" id="att-evt-title" placeholder="e.g. Team Offsite…" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">End Date</label>
-            <input class="form-input" type="date" id="att-evt-end" value="${dateISO}" min="${dateISO}" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">Description</label>
-            <textarea class="form-input" id="att-evt-desc" rows="2" style="resize:vertical;" placeholder="Optional details…"></textarea>
-          </div>
-        </div>
-        <button class="btn btn--primary btn--sm" id="att-add-save" style="margin-top:4px;">Add</button>
-      </div>` : ''
-
     Utils.openModal(`
       <div class="modal-header">
         <h3 class="modal-title">${Utils.formatDate(dateISO)}</h3>
@@ -806,7 +699,6 @@ const LeaveTracker = (() => {
       <div class="modal-body">
         <div style="display:flex;flex-direction:column;gap:8px;">${summaryHtml}</div>
         ${exemptSectionHtml}
-        ${addFormHtml}
       </div>
     `)
 
@@ -935,231 +827,6 @@ const LeaveTracker = (() => {
       }
     }
 
-    if (_isHR) {
-      document.querySelectorAll('[name="att-add-type"]').forEach(radio => {
-        radio.addEventListener('change', () => {
-          const isHoliday = radio.value === 'holiday'
-          document.getElementById('att-holiday-fields').style.display = isHoliday ? 'block' : 'none'
-          document.getElementById('att-event-fields').style.display   = isHoliday ? 'none' : 'block'
-        })
-      })
-
-      document.getElementById('att-add-save')?.addEventListener('click', async () => {
-        const errEl   = document.getElementById('att-add-err')
-        const btn     = document.getElementById('att-add-save')
-        const addType = document.querySelector('[name="att-add-type"]:checked')?.value
-        errEl.style.display = 'none'
-        btn.disabled = true; btn.textContent = 'Saving…'
-
-        let error
-        if (addType === 'holiday') {
-          const name = document.getElementById('att-hol-name').value.trim()
-          if (!name) { errEl.textContent = 'Please enter a holiday name.'; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Add'; return }
-          ;({ error } = await API.addCompanyHoliday({ date: dateISO, name }))
-        } else {
-          const title = document.getElementById('att-evt-title').value.trim()
-          const end   = document.getElementById('att-evt-end').value || dateISO
-          const desc  = document.getElementById('att-evt-desc').value.trim()
-          if (!title) { errEl.textContent = 'Please enter an event title.'; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Add'; return }
-          ;({ error } = await API.createCompanyEvent({ title, start_date: dateISO, end_date: end, description: desc || null, created_by: _user.id }))
-        }
-
-        btn.disabled = false; btn.textContent = 'Add'
-        if (error) { errEl.textContent = error.message; errEl.style.display = 'block'; return }
-
-        Utils.closeModal()
-        Utils.showToast(`${addType === 'holiday' ? 'Holiday' : 'Event'} added.`, 'success')
-        // Refresh holiday + event data, then re-render the attendance calendar
-        const [holRes, evtRes] = await Promise.all([
-          API.getCompanyHolidays(_attendanceMonth.getFullYear()),
-          API.getCompanyEvents(_attendanceMonth.getFullYear()),
-        ])
-        _holidays = holRes.data || []
-        _events   = evtRes.data || []
-        _loadAttendanceTab()
-      })
-    }
-  }
-
-  async function _processAttendanceUpload(file) {
-    const resultEl = document.getElementById('att-upload-result')
-    if (resultEl) resultEl.innerHTML = '<p style="font-size:13px;color:var(--text-muted);">Processing…</p>'
-
-    try {
-      // Parse XLS using XLSX (globally loaded)
-      const data = await file.arrayBuffer()
-      const wb   = XLSX.read(data, { type: 'array', cellDates: true })
-
-      // Source sheet: "Att.log report" — holds every raw punch per day.
-      // We take the FIRST punch as punch-in and the LAST as punch-out,
-      // ignoring any punches in between.
-      const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('log'))
-      if (!sheetName) {
-        if (resultEl) resultEl.innerHTML = '<p style="color:#EF4444;font-size:13px;">Could not find the "Att.log report" sheet in the file.</p>'
-        return
-      }
-
-      const ws   = wb.Sheets[sheetName]
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
-
-      // ── Determine the date range start ─────────────────────────
-      // Row 2 holds e.g. "2026-06-01 ~ 2026-06-09". Parse the start date.
-      let rangeStart = null, rangeEnd = null
-      for (const r of rows.slice(0, 6)) {
-        for (const cell of r) {
-          const m = String(cell).match(/(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2})/)
-          if (m) { rangeStart = m[1]; rangeEnd = m[2]; break }
-        }
-        if (rangeStart) break
-      }
-      if (!rangeStart) {
-        if (resultEl) resultEl.innerHTML = '<p style="color:#EF4444;font-size:13px;">Could not read the date range from the file header.</p>'
-        return
-      }
-
-      const startDate = new Date(rangeStart + 'T00:00:00')
-      const endDate   = new Date(rangeEnd  + 'T00:00:00')
-      const numDays   = Math.round((endDate - startDate) / 86400000) + 1
-      // Column i of a punch row maps to startDate + i days.
-      const dateForCol = i => {
-        const d = new Date(startDate)
-        d.setDate(d.getDate() + i)
-        return _toISO(d)
-      }
-
-      // Split a concatenated cell like "10:1619:08" into ["10:16","19:08"].
-      // Times are fixed-width HH:MM (5 chars).
-      const splitPunches = v => {
-        const s = String(v).replace(/\s+/g, '')
-        const out = []
-        for (let i = 0; i + 5 <= s.length; i += 5) {
-          const chunk = s.slice(i, i + 5)
-          if (/^\d{2}:\d{2}$/.test(chunk)) out.push(chunk)
-        }
-        return out
-      }
-
-      // ── Walk employee blocks: an "ID:" row, then its punch row ──
-      // ID row has the bio id at the cell following an "ID:" label.
-      const blocks = [] // { bioId, punchRow }
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i]
-        const idLabelCol = row.findIndex(c => String(c).trim().toUpperCase() === 'ID:')
-        if (idLabelCol < 0) continue
-        // bio id is the next non-empty cell after the label
-        let bioId = null
-        for (let c = idLabelCol + 1; c < row.length; c++) {
-          const val = String(row[c]).trim()
-          if (val !== '') { bioId = parseInt(val, 10); break }
-        }
-        if (bioId == null || isNaN(bioId)) continue
-        // The punch row is the next row that is NOT another ID row.
-        const punchRow = rows[i + 1] && rows[i + 1].findIndex(c => String(c).trim().toUpperCase() === 'ID:') < 0
-          ? rows[i + 1]
-          : null
-        blocks.push({ bioId, punchRow })
-      }
-
-      if (!blocks.length) {
-        if (resultEl) resultEl.innerHTML = '<p style="color:#EF4444;font-size:13px;">No employee punch blocks found in the sheet.</p>'
-        return
-      }
-
-      // Fetch employee bio_id map
-      const { data: empData } = await API.getEmployeesWithBioId()
-      const bioMap = {}
-      ;(empData || []).forEach(e => { bioMap[e.bio_id] = e.id })
-
-      let matched = 0, skipped = 0, skippedEmps = 0
-      const records = []
-      const dateFrom = rangeStart, dateTo = rangeEnd
-
-      for (const { bioId, punchRow } of blocks) {
-        const empId = bioMap[bioId]
-        if (!empId) { skippedEmps++; continue }
-        if (!punchRow) continue
-
-        for (let col = 0; col < numDays; col++) {
-          const cell    = punchRow[col]
-          const recDate = dateForCol(col)
-          const punches = (cell === '' || cell == null) ? [] : splitPunches(cell)
-
-          if (!punches.length) {
-            // No punch data for this day — mark as absent so calendar shows "Absent"
-            // not blank "No Data". Calendar rendering checks Sunday/Holiday/Leave first,
-            // so those days still display correctly regardless of is_absent.
-            records.push({
-              employee_id:         empId,
-              date:                recDate,
-              punch_in:            null,
-              punch_out:           null,
-              late_minutes:        0,
-              early_leave_minutes: 0,
-              is_absent:           true,
-              uploaded_by:         _user.id,
-              uploaded_at:         new Date().toISOString(),
-            })
-            matched++
-            continue
-          }
-
-          const punchIn  = punches[0]
-          const punchOut = punches.length > 1 ? punches[punches.length - 1] : null
-
-          records.push({
-            employee_id:         empId,
-            date:                recDate,
-            punch_in:            punchIn,
-            punch_out:           punchOut,
-            late_minutes:        _calcLateMinutes(punchIn, recDate),
-            early_leave_minutes: 0,
-            is_absent:           false,
-            uploaded_by:         _user.id,
-            uploaded_at:         new Date().toISOString(),
-          })
-          matched++
-        }
-      }
-
-      // "skipped" reported to the user = punch records belonging to unmapped Bio IDs.
-      // Approximate by counting days for skipped employees is noisy, so report employees.
-      skipped = skippedEmps
-      const processed = matched + skippedEmps
-      const status = matched === 0 ? 'failed' : skippedEmps > 0 ? 'partial' : 'success'
-
-      // Upsert records
-      if (records.length) {
-        const { error } = await API.upsertAttendanceRecords(records)
-        if (error) {
-          if (resultEl) resultEl.innerHTML = `<p style="color:#EF4444;font-size:13px;">Upload failed: ${Utils.escapeHtml(error.message)}</p>`
-          return
-        }
-      }
-
-      // Log the upload
-      await API.insertAttendanceUploadLog({
-        uploaded_by:       _user.id,
-        file_name:         file.name,
-        records_processed: processed,
-        records_matched:   matched,
-        records_skipped:   skipped,
-        date_from:         dateFrom,
-        date_to:           dateTo,
-        status,
-      })
-
-      // Refresh log and reload tab
-      const logRes = await API.getAttendanceUploadLog()
-      _uploadLog = logRes.data || []
-
-      const msg = `Upload complete — ${matched} day-records saved${skippedEmps > 0 ? `, ${skippedEmps} employee(s) skipped (Bio ID not mapped)` : ''}.`
-      Utils.showToast(msg, status === 'failed' ? 'error' : 'success')
-      _loadAttendanceTab()
-
-    } catch (err) {
-      console.error('[Attendance Upload]', err)
-      if (resultEl) resultEl.innerHTML = `<p style="color:#EF4444;font-size:13px;">Error: ${Utils.escapeHtml(err.message)}</p>`
-    }
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -3026,10 +2693,9 @@ ModuleRegistry.register({
   icon:      `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`,
   getModule: () => LeaveTracker,
   features:  {
-    view_leaves:       'View Own Leaves & WFH',
-    apply_leave:       'Apply for Leave',
-    apply_wfh:         'Apply for WFH',
-    approve_leave:     'Approve / Reject Team Leaves',
-    upload_attendance: 'Upload Attendance Data',
+    view_leaves:   'View Own Leaves & WFH',
+    apply_leave:   'Apply for Leave',
+    apply_wfh:     'Apply for WFH',
+    approve_leave: 'Approve / Reject Team Leaves',
   },
 })

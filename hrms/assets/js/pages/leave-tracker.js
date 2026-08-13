@@ -30,15 +30,26 @@ const LeaveTracker = (() => {
   let _holidays         = []
   let _events           = []
   let _canViewTeamAtt   = false
+  let _canUploadAttendance = false
   let _teamAttMonth     = null
   let _teamAttEmpId     = null
   let _visFilterMonth   = 0
   let _lateThreshold     = '10:30'
   let _lateEffectiveFrom = ''
+  let _uploadLog         = []
+
+  function _calcLateMinutes(punchIn, recordDate) {
+    if (!punchIn || !_lateThreshold) return 0
+    if (_lateEffectiveFrom && recordDate.substring(0, 7) < _lateEffectiveFrom) return 0
+    const [ph, pm] = punchIn.split(':').map(Number)
+    const [th, tm] = _lateThreshold.split(':').map(Number)
+    return Math.max(0, (ph * 60 + pm) - (th * 60 + tm))
+  }
 
   /* ── render ──────────────────────────────────────────────── */
   function render(user) {
-    const isHR = HRMSApp.hasAccess('leave_tracker', 'manage_leave_settings', 'can_manage')
+    const isHR       = HRMSApp.hasAccess('leave_tracker', 'manage_leave_settings', 'can_manage')
+    const canUpload  = HRMSApp.hasAccess('leave_tracker', 'upload_attendance', 'can_manage')
 
     const tabs = []
     if (isHR) {
@@ -46,6 +57,7 @@ const LeaveTracker = (() => {
       tabs.push({ id: 'visibility',    label: 'Visibility' })
       tabs.push({ id: 'settings',      label: 'Settings' })
     }
+    if (canUpload) tabs.push({ id: 'attendance-upload', label: 'Attendance Upload' })
 
     _activeTab = tabs[0]?.id || null
 
@@ -72,7 +84,8 @@ const LeaveTracker = (() => {
   /* ── init ────────────────────────────────────────────────── */
   async function init(user) {
     _user           = user
-    _canViewTeamAtt = HRMSApp.hasAccess('leave_tracker', 'view_team_attendance', 'view_only')
+    _canViewTeamAtt      = HRMSApp.hasAccess('leave_tracker', 'view_team_attendance', 'view_only')
+    _canUploadAttendance = HRMSApp.hasAccess('leave_tracker', 'upload_attendance', 'can_manage')
     _teamAttMonth   = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
 
     const [empRes, ltRes, holRes, evtRes, attSettingsRes] = await Promise.all([
@@ -93,6 +106,11 @@ const LeaveTracker = (() => {
       if (s.key === 'attendance.late_effective_from') _lateEffectiveFrom = s.value
     })
 
+    if (_canUploadAttendance) {
+      const logRes = await API.getAttendanceUploadLog()
+      _uploadLog = logRes.data || []
+    }
+
     _bindTabs()
     if (_activeTab) _loadTab(_activeTab)
   }
@@ -112,9 +130,251 @@ const LeaveTracker = (() => {
     const toolbar = document.getElementById('lt-toolbar-actions')
     if (toolbar) toolbar.innerHTML = ''
     switch (tab) {
-      case 'team-overview': return _loadTeamOverviewTab()
-      case 'visibility':    return _loadVisibilityTab()
-      case 'settings':      return _loadSettingsTab()
+      case 'team-overview':      return _loadTeamOverviewTab()
+      case 'visibility':         return _loadVisibilityTab()
+      case 'settings':           return _loadSettingsTab()
+      case 'attendance-upload':  return _loadAttendanceUploadTab()
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     TAB: ATTENDANCE UPLOAD
+  ══════════════════════════════════════════════════════════ */
+  function _loadAttendanceUploadTab() {
+    const content = document.getElementById('lt-content')
+    if (!content) return
+
+    const historyRows = _uploadLog.map(log => `
+      <tr>
+        <td class="text-sm">${new Date(log.uploaded_at).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}</td>
+        <td class="text-sm">${Utils.escapeHtml(log.uploader?.name || '—')}</td>
+        <td class="text-sm">${Utils.escapeHtml(log.file_name)}</td>
+        <td class="text-sm">${log.date_from ? log.date_from + ' → ' + log.date_to : '—'}</td>
+        <td class="text-sm">${log.records_processed}</td>
+        <td class="text-sm">${log.records_matched} matched, ${log.records_skipped} skipped</td>
+        <td><span class="badge ${log.status === 'success' ? 'badge--success' : log.status === 'partial' ? 'badge--warning' : 'badge--danger'}">${log.status === 'partial' ? 'Partial' : log.status === 'success' ? 'Success' : 'Failed'}</span></td>
+      </tr>`).join('')
+
+    content.innerHTML = `
+      <div class="section-card mb-4">
+        <div class="section-card-header" style="justify-content:space-between;">
+          <h3>Upload Attendance</h3>
+          <label class="btn btn--primary btn--sm" style="cursor:pointer;">
+            Upload XLS / XLSX
+            <input type="file" id="att-upload-input" accept=".xls,.xlsx" style="display:none;">
+          </label>
+        </div>
+        <div class="section-card-body">
+          <p style="font-size:13px;color:var(--text-muted);margin:0;">
+            Upload the biometric attendance report. Punch times are read from the "Att.log report" sheet (first punch = in, last punch = out), matched by Bio ID. Existing entries for the same date are overwritten.
+          </p>
+          <div id="att-upload-result" style="margin-top:10px;"></div>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-card-header"><h3>Upload History</h3></div>
+        <div class="section-card-body" style="padding:0;">
+          ${_uploadLog.length ? `
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr>
+                <th>Date & Time</th><th>Uploaded By</th><th>File</th><th>Date Range</th>
+                <th>Processed</th><th>Result</th><th>Status</th>
+              </tr></thead>
+              <tbody>${historyRows}</tbody>
+            </table>
+          </div>` : '<p style="padding:16px;font-size:13px;color:var(--text-muted);">No uploads yet.</p>'}
+        </div>
+      </div>
+    `
+
+    document.getElementById('att-upload-input')?.addEventListener('change', async (e) => {
+      const file = e.target.files[0]
+      if (!file) return
+      await _processAttendanceUpload(file)
+      e.target.value = ''
+    })
+  }
+
+  async function _processAttendanceUpload(file) {
+    const resultEl = document.getElementById('att-upload-result')
+    if (resultEl) resultEl.innerHTML = '<p style="font-size:13px;color:var(--text-muted);">Processing…</p>'
+
+    try {
+      // Parse XLS using XLSX (globally loaded)
+      const data = await file.arrayBuffer()
+      const wb   = XLSX.read(data, { type: 'array', cellDates: true })
+
+      // Source sheet: "Att.log report" — holds every raw punch per day.
+      // We take the FIRST punch as punch-in and the LAST as punch-out,
+      // ignoring any punches in between.
+      const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('log'))
+      if (!sheetName) {
+        if (resultEl) resultEl.innerHTML = '<p style="color:#EF4444;font-size:13px;">Could not find the "Att.log report" sheet in the file.</p>'
+        return
+      }
+
+      const ws   = wb.Sheets[sheetName]
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+
+      // ── Determine the date range start ─────────────────────────
+      // Row 2 holds e.g. "2026-06-01 ~ 2026-06-09". Parse the start date.
+      let rangeStart = null, rangeEnd = null
+      for (const r of rows.slice(0, 6)) {
+        for (const cell of r) {
+          const m = String(cell).match(/(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2})/)
+          if (m) { rangeStart = m[1]; rangeEnd = m[2]; break }
+        }
+        if (rangeStart) break
+      }
+      if (!rangeStart) {
+        if (resultEl) resultEl.innerHTML = '<p style="color:#EF4444;font-size:13px;">Could not read the date range from the file header.</p>'
+        return
+      }
+
+      const startDate = new Date(rangeStart + 'T00:00:00')
+      const endDate   = new Date(rangeEnd  + 'T00:00:00')
+      const numDays   = Math.round((endDate - startDate) / 86400000) + 1
+      // Column i of a punch row maps to startDate + i days.
+      const dateForCol = i => {
+        const d = new Date(startDate)
+        d.setDate(d.getDate() + i)
+        return _toISO(d)
+      }
+
+      // Split a concatenated cell like "10:1619:08" into ["10:16","19:08"].
+      // Times are fixed-width HH:MM (5 chars).
+      const splitPunches = v => {
+        const s = String(v).replace(/\s+/g, '')
+        const out = []
+        for (let i = 0; i + 5 <= s.length; i += 5) {
+          const chunk = s.slice(i, i + 5)
+          if (/^\d{2}:\d{2}$/.test(chunk)) out.push(chunk)
+        }
+        return out
+      }
+
+      // ── Walk employee blocks: an "ID:" row, then its punch row ──
+      // ID row has the bio id at the cell following an "ID:" label.
+      const blocks = [] // { bioId, punchRow }
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i]
+        const idLabelCol = row.findIndex(c => String(c).trim().toUpperCase() === 'ID:')
+        if (idLabelCol < 0) continue
+        // bio id is the next non-empty cell after the label
+        let bioId = null
+        for (let c = idLabelCol + 1; c < row.length; c++) {
+          const val = String(row[c]).trim()
+          if (val !== '') { bioId = parseInt(val, 10); break }
+        }
+        if (bioId == null || isNaN(bioId)) continue
+        // The punch row is the next row that is NOT another ID row.
+        const punchRow = rows[i + 1] && rows[i + 1].findIndex(c => String(c).trim().toUpperCase() === 'ID:') < 0
+          ? rows[i + 1]
+          : null
+        blocks.push({ bioId, punchRow })
+      }
+
+      if (!blocks.length) {
+        if (resultEl) resultEl.innerHTML = '<p style="color:#EF4444;font-size:13px;">No employee punch blocks found in the sheet.</p>'
+        return
+      }
+
+      // Fetch employee bio_id map
+      const { data: empData } = await API.getEmployeesWithBioId()
+      const bioMap = {}
+      ;(empData || []).forEach(e => { bioMap[e.bio_id] = e.id })
+
+      let matched = 0, skipped = 0, skippedEmps = 0
+      const records = []
+      const dateFrom = rangeStart, dateTo = rangeEnd
+
+      for (const { bioId, punchRow } of blocks) {
+        const empId = bioMap[bioId]
+        if (!empId) { skippedEmps++; continue }
+        if (!punchRow) continue
+
+        for (let col = 0; col < numDays; col++) {
+          const cell    = punchRow[col]
+          const recDate = dateForCol(col)
+          const punches = (cell === '' || cell == null) ? [] : splitPunches(cell)
+
+          if (!punches.length) {
+            // No punch data for this day — mark as absent so calendar shows "Absent"
+            // not blank "No Data". Calendar rendering checks Sunday/Holiday/Leave first,
+            // so those days still display correctly regardless of is_absent.
+            records.push({
+              employee_id:         empId,
+              date:                recDate,
+              punch_in:            null,
+              punch_out:           null,
+              late_minutes:        0,
+              early_leave_minutes: 0,
+              is_absent:           true,
+              uploaded_by:         _user.id,
+              uploaded_at:         new Date().toISOString(),
+            })
+            matched++
+            continue
+          }
+
+          const punchIn  = punches[0]
+          const punchOut = punches.length > 1 ? punches[punches.length - 1] : null
+
+          records.push({
+            employee_id:         empId,
+            date:                recDate,
+            punch_in:            punchIn,
+            punch_out:           punchOut,
+            late_minutes:        _calcLateMinutes(punchIn, recDate),
+            early_leave_minutes: 0,
+            is_absent:           false,
+            uploaded_by:         _user.id,
+            uploaded_at:         new Date().toISOString(),
+          })
+          matched++
+        }
+      }
+
+      // "skipped" reported to the user = punch records belonging to unmapped Bio IDs.
+      // Approximate by counting days for skipped employees is noisy, so report employees.
+      skipped = skippedEmps
+      const processed = matched + skippedEmps
+      const status = matched === 0 ? 'failed' : skippedEmps > 0 ? 'partial' : 'success'
+
+      // Upsert records
+      if (records.length) {
+        const { error } = await API.upsertAttendanceRecords(records)
+        if (error) {
+          if (resultEl) resultEl.innerHTML = `<p style="color:#EF4444;font-size:13px;">Upload failed: ${Utils.escapeHtml(error.message)}</p>`
+          return
+        }
+      }
+
+      // Log the upload
+      await API.insertAttendanceUploadLog({
+        uploaded_by:       _user.id,
+        file_name:         file.name,
+        records_processed: processed,
+        records_matched:   matched,
+        records_skipped:   skipped,
+        date_from:         dateFrom,
+        date_to:           dateTo,
+        status,
+      })
+
+      // Refresh log and reload tab
+      const logRes = await API.getAttendanceUploadLog()
+      _uploadLog = logRes.data || []
+
+      const msg = `Upload complete — ${matched} day-records saved${skippedEmps > 0 ? `, ${skippedEmps} employee(s) skipped (Bio ID not mapped)` : ''}.`
+      Utils.showToast(msg, status === 'failed' ? 'error' : 'success')
+      _loadAttendanceUploadTab()
+
+    } catch (err) {
+      console.error('[Attendance Upload]', err)
+      if (resultEl) resultEl.innerHTML = `<p style="color:#EF4444;font-size:13px;">Error: ${Utils.escapeHtml(err.message)}</p>`
     }
   }
 
@@ -1754,9 +2014,11 @@ ModuleRegistry.register({
   getModule: () => LeaveTracker,
   access:    (user) => user.role === 'super_admin'
     || HRMSApp.hasAccess('leave_tracker', 'manage_leave_settings', 'view_only')
-    || HRMSApp.hasAccess('leave_tracker', 'view_team_attendance', 'view_only'),
+    || HRMSApp.hasAccess('leave_tracker', 'view_team_attendance', 'view_only')
+    || HRMSApp.hasAccess('leave_tracker', 'upload_attendance', 'view_only'),
   features:  {
     manage_leave_settings: 'Manage Leave Types & Holidays',
     view_team_attendance:  'View Team Attendance Calendars',
+    upload_attendance:     'Upload Attendance Data',
   },
 })
