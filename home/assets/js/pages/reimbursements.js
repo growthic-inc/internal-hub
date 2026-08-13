@@ -658,7 +658,8 @@ const Reimbursements = (() => {
       return
     }
 
-    // Notify reporting manager, HR team, and Super Admin
+    // Notify reporting manager and HR only — Super Admin doesn't need to
+    // know until HR has actually approved it (see the approval handler).
     const _notifMsg = `${_user.name} has submitted a pre-approval request (${Utils.getExpenseLabel(expenseType)}, est. ${Utils.formatCurrency(amount)}) — please review.`
     const _notifPayload = { type: 'submitted', message: _notifMsg, module: 'reimbursements', record_id: inserted?.id || null }
     const _notified = new Set([_user.id])  // never notify the submitter themselves
@@ -667,11 +668,8 @@ const Reimbursements = (() => {
       _notified.add(_user.manager_id)
       API.createNotification({ recipient_employee_id: _user.manager_id, ..._notifPayload })
     }
-    const [{ data: hrTeam }, { data: saTeam }] = await Promise.all([
-      API.getEmployeesByDepartment('people_culture'),
-      API.getEmployeesByRole('super_admin'),
-    ])
-    ;[...(hrTeam || []), ...(saTeam || [])].forEach(emp => {
+    const { data: hrTeam } = await API.getEmployeesByDepartment('people_culture')
+    ;(hrTeam || []).forEach(emp => {
       if (!_notified.has(emp.id)) {
         _notified.add(emp.id)
         API.createNotification({ recipient_employee_id: emp.id, ..._notifPayload })
@@ -1129,7 +1127,8 @@ const Reimbursements = (() => {
       return
     }
 
-    // Notify reporting manager, HR team, and Super Admin
+    // Notify reporting manager and HR only — Super Admin doesn't need to
+    // know until HR has actually approved it (see the approval handler).
     const _notifMsg = `${_user.name} has filed an expense claim (${Utils.getExpenseLabel(expenseType)}, ${Utils.formatCurrency(amount)}) — please review.`
     const _notifPayload = { type: 'submitted', message: _notifMsg, module: 'reimbursements', record_id: inserted?.id || null }
     const _notified = new Set([_user.id])
@@ -1138,11 +1137,8 @@ const Reimbursements = (() => {
       _notified.add(_user.manager_id)
       API.createNotification({ recipient_employee_id: _user.manager_id, ..._notifPayload })
     }
-    const [{ data: hrTeam }, { data: saTeam }] = await Promise.all([
-      API.getEmployeesByDepartment('people_culture'),
-      API.getEmployeesByRole('super_admin'),
-    ])
-    ;[...(hrTeam || []), ...(saTeam || [])].forEach(emp => {
+    const { data: hrTeam } = await API.getEmployeesByDepartment('people_culture')
+    ;(hrTeam || []).forEach(emp => {
       if (!_notified.has(emp.id)) {
         _notified.add(emp.id)
         API.createNotification({ recipient_employee_id: emp.id, ..._notifPayload })
@@ -1243,10 +1239,21 @@ const Reimbursements = (() => {
       })
     }
 
-    // After a claim is approved, notify Finance team to initiate payment processing
+    // After a claim is approved, notify whoever can actually mark it paid —
+    // role = 'finance' or 'super_admin' (matches the reimb_update /
+    // people_culture_can_update_reimbursements RLS restriction). The
+    // 'finance' role is currently unheld by anyone, so in practice this
+    // reaches Super Admin — but querying by role (not the empty 'finance'
+    // department) means it'll reach a real finance hire automatically too.
     if (decision === 'approved' && isClaim) {
-      const { data: financeTeam } = await API.getEmployeesByDepartment('finance')
-      ;(financeTeam || []).forEach(emp => {
+      const [{ data: financeRole }, { data: superAdmins }] = await Promise.all([
+        API.getEmployeesByRole('finance'),
+        API.getEmployeesByRole('super_admin'),
+      ])
+      const _payerNotified = new Set()
+      ;[...(financeRole || []), ...(superAdmins || [])].forEach(emp => {
+        if (_payerNotified.has(emp.id)) return
+        _payerNotified.add(emp.id)
         API.createNotification({
           recipient_employee_id: emp.id,
           type:    'approval',
