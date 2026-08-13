@@ -147,7 +147,16 @@ const Timesheet = (() => {
   // act on entries belonging to their own subordinates. super_admin can act on any.
   function _canApproveEmployee(employeeId) {
     if (employeeId === _user.id) return false
-    return _user.role === 'super_admin' || _subordinateIds.has(employeeId)
+    if (_user.role === 'super_admin') return true
+    if (_subordinateIds.has(employeeId)) return true
+    // super_admin has no manager, so their own timesheet can't route
+    // through the normal chain — HR approves it instead, same idea as
+    // leave/WFH falling back to the HR queue when there's no manager.
+    if (_user.department === 'people_culture') {
+      const target = _directReports.find(e => e.id === employeeId)
+      if (target?.role === 'super_admin') return true
+    }
+    return false
   }
 
   /* ── Tab management ─────────────────────────────────────── */
