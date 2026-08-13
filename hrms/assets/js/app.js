@@ -9,15 +9,67 @@ const HRMSApp = (() => {
 
   let _currentUser  = null
 
-  /* ── NAV driven by ModuleRegistry — add a page file to add a route ── */
+  /* ── NAV driven by ModuleRegistry — add a page file to add a route ──
+     Each module may declare an optional `access: (user) => boolean` in its
+     ModuleRegistry.register() call. If present, it controls whether the
+     module appears in the sidebar and whether the router will land on it.
+     Modules with no `access` field are visible to anyone who already
+     passed the Portal Access gate (e.g. nothing sensitive to hide). ── */
   const NAV = ModuleRegistry.getAll().map(m => ({
     id:     m.routeId,
     label:  m.label,
     icon:   m.icon,
     module: m.getModule,
+    access: m.access || null,
   }))
 
   let _activeRoute = NAV[0]?.id || 'payroll'
+
+  /* ── Access matrix — deliberately stricter than Growthic One's App.hasAccess.
+     Only super_admin bypasses. Everyone else — including role='admin' — is
+     checked against their department's actual access_matrix row every time.
+     Getting into /hrms via Portal Access only opens the front door; each
+     module still enforces its own rule independently. ── */
+  const ACCESS_LEVELS = {
+    no_access:   0,
+    view_only:   1,
+    can_upload:  2,
+    can_edit:    3,
+    can_manage:  4,
+    can_approve: 5,
+  }
+
+  let _matrix = null // null = super_admin bypass; otherwise { [module]: { [feature]: level } }
+
+  async function _loadAccessMatrix() {
+    if (_currentUser.role === 'super_admin') {
+      _matrix = null
+      return
+    }
+    if (!_currentUser.department_id) {
+      _matrix = {}
+      return
+    }
+    const knownFeatures = {}
+    ModuleRegistry.getAll().forEach(m => {
+      knownFeatures[m.key] = new Set(Object.keys(m.features || {}))
+    })
+    const { data } = await API.getAccessMatrix(_currentUser.department_id)
+    _matrix = {}
+    ;(data || []).forEach(row => {
+      if (!knownFeatures[row.module])                   return
+      if (!knownFeatures[row.module].has(row.feature))  return
+      if (!_matrix[row.module]) _matrix[row.module] = {}
+      _matrix[row.module][row.feature] = row.access_level
+    })
+  }
+
+  function hasAccess(module, feature, minLevel = 'view_only') {
+    if (_matrix === null) return true // super_admin only
+    const level = _matrix[module]?.[feature]
+    if (!level) return false
+    return (ACCESS_LEVELS[level] || 0) >= (ACCESS_LEVELS[minLevel] || 0)
+  }
 
   /* ── Boot ───────────────────────────────────────────────── */
   async function init() {
@@ -49,6 +101,11 @@ const HRMSApp = (() => {
         if (data) Utils.setDeptCache(data)
       } catch (_) {}
 
+      // 4b. Load this user's real per-module access — Portal Access only
+      //     got them through the front door; each module still checks its
+      //     own rule from here on.
+      await _loadAccessMatrix()
+
       // 5. Render chrome
       _renderSidebar()
       Shell.renderHeaderUser(_currentUser)
@@ -76,10 +133,29 @@ const HRMSApp = (() => {
     }
   }
 
+  // A module with no `access` field is open to anyone past the front door.
+  // One with an `access` function must pass it — checked fresh every time,
+  // never cached from a previous route.
+  function _visibleNav() {
+    return NAV.filter(item => !item.access || item.access(_currentUser))
+  }
+
   /* ── Router ─────────────────────────────────────────────── */
   function _router() {
-    const hash  = window.location.hash.slice(1) || NAV[0]?.id || 'payroll'
-    const item  = NAV.find(n => n.id === hash) || NAV[0]
+    const visible = _visibleNav()
+    const hash    = window.location.hash.slice(1) || visible[0]?.id
+    let   item    = visible.find(n => n.id === hash)
+
+    // Either no hash, or the requested module isn't one this user can
+    // access — fall back to the first module they're actually allowed to
+    // see, rather than silently rendering something they shouldn't reach.
+    if (!item) item = visible[0]
+    if (!item) {
+      const content = document.getElementById('page-content')
+      if (content) content.innerHTML = `<div style="padding:32px;color:var(--text-muted);">No HRMS modules are available for your account.</div>`
+      return
+    }
+
     _activeRoute = item.id
 
     // Update active nav link
@@ -109,7 +185,7 @@ const HRMSApp = (() => {
     const nav = document.getElementById('sidebar-nav')
     if (!nav) return
 
-    nav.innerHTML = NAV.map(item => `
+    nav.innerHTML = _visibleNav().map(item => `
       <a class="nav-item hrms-nav-item${_activeRoute === item.id ? ' nav-item--active' : ''}"
         data-route="${item.id}" href="#${item.id}">
         <span class="nav-icon">${item.icon}</span>
@@ -165,5 +241,7 @@ const HRMSApp = (() => {
   } else {
     init()
   }
+
+  return { hasAccess }
 
 })()
