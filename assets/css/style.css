@@ -673,6 +673,7 @@ ul, ol { list-style: none; }
 /* Page inner wrapper */
 .page-inner {
   max-width: 1200px;
+  margin: 0 auto;
 }
 
 /* Page section header */
