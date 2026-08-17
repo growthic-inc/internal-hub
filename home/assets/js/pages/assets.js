@@ -515,8 +515,12 @@ const Assets = (() => {
           </td>
           <td>${Utils.escapeHtml(reqBy)}</td>
           <td style="max-width:200px;font-size:12px;">${Utils.escapeHtml(r.reason || '—')}</td>
-          <td><span class="badge ${statusCfg.cls}">${statusCfg.label}</span></td>
-          <td class="text-sm text-muted">${Utils.formatDate(r.created_at)}</td>
+          <td>
+            <span class="badge ${statusCfg.cls}">${statusCfg.label}</span>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Requested ${Utils.formatDateTime(r.created_at)}</div>
+            ${r.manager_acted_at ? `<div style="font-size:11px;color:var(--text-muted);">Forwarded by manager · ${Utils.formatDateTime(r.manager_acted_at)}</div>` : ''}
+            ${r.hr_acted_at ? `<div style="font-size:11px;color:var(--text-muted);">${r.hr_status === 'approved' ? 'Approved' : 'Rejected'} by ${Utils.escapeHtml(r.hr_actor?.name || '—')} · ${Utils.formatDateTime(r.hr_acted_at)}</div>` : ''}
+          </td>
           <td style="white-space:nowrap;">
             ${showActions && r.status === 'pending_hr' && _p.can_manage ? `
               <button class="btn btn--xs btn--primary ast-req-approve" data-id="${r.id}">Approve & Assign</button>
@@ -529,7 +533,7 @@ const Assets = (() => {
     function _reqTable(rows, showActions = false) {
       if (!rows.length) return '<p class="empty-state-text" style="padding:16px;">No requests.</p>'
       return `<div style="overflow-x:auto;"><table class="data-table">
-        <thead><tr><th>Asset</th><th>Requested By</th><th>Reason</th><th>Status</th><th>Date</th><th></th></tr></thead>
+        <thead><tr><th>Asset</th><th>Requested By</th><th>Reason</th><th>Status &amp; Timeline</th><th></th></tr></thead>
         <tbody>${rows.map(r => _reqRow(r, showActions)).join('')}</tbody>
       </table></div>`
     }

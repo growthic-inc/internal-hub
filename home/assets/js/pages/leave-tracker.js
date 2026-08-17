@@ -1281,6 +1281,8 @@ const LeaveTracker = (() => {
               <td>
                 ${STATUS_BADGE[r.status] || r.status}
                 ${r.approver_comment ? `<div class="text-sm text-muted" style="margin-top:2px;white-space:pre-wrap;word-break:break-word;">${Utils.escapeHtml(r.approver_comment)}</div>` : ''}
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Submitted ${Utils.formatDateTime(r.created_at)}</div>
+                ${r.acted_at ? `<div style="font-size:11px;color:var(--text-muted);">Decided by ${Utils.escapeHtml(r.approver?.name || '—')} · ${Utils.formatDateTime(r.acted_at)}</div>` : ''}
               </td>
               <td class="text-muted" style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-width:220px;">${Utils.escapeHtml(r.reason || '—')}</td>
               <td style="white-space:nowrap;">
@@ -1600,6 +1602,8 @@ const LeaveTracker = (() => {
               <td>
                 ${STATUS_BADGE[r.status] || r.status}
                 ${r.approver_comment ? `<div class="text-sm text-muted" style="margin-top:2px;white-space:pre-wrap;word-break:break-word;">${Utils.escapeHtml(r.approver_comment)}</div>` : ''}
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Submitted ${Utils.formatDateTime(r.created_at)}</div>
+                ${r.acted_at ? `<div style="font-size:11px;color:var(--text-muted);">Decided · ${Utils.formatDateTime(r.acted_at)}</div>` : ''}
               </td>
               <td class="text-muted" style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-width:220px;">${Utils.escapeHtml(r.reason || '—')}</td>
               <td style="font-size:12px;max-width:220px;white-space:pre-wrap;word-break:break-word;">${r.work_plan ? Utils.escapeHtml(r.work_plan) : '<span class="text-muted">—</span>'}</td>
@@ -1857,6 +1861,8 @@ const LeaveTracker = (() => {
               <td>
                 ${STATUS_BADGE[r.status] || r.status}
                 ${r.approver_comment ? `<div class="text-sm text-muted" style="margin-top:2px;white-space:pre-wrap;word-break:break-word;">${Utils.escapeHtml(r.approver_comment)}</div>` : ''}
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Submitted ${Utils.formatDateTime(r.created_at)}</div>
+                ${r.acted_at ? `<div style="font-size:11px;color:var(--text-muted);">Decided · ${Utils.formatDateTime(r.acted_at)}</div>` : ''}
               </td>
               <td class="text-muted" style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-width:220px;">${Utils.escapeHtml(r.reason || '—')}</td>
               <td style="font-size:12px;">${Utils.escapeHtml(r.approver?.name || '—')}</td>
@@ -2429,9 +2435,18 @@ const LeaveTracker = (() => {
             <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:3px;">Status</div>
             <div style="font-size:14px;">${STATUS_BADGE[r.status] || r.status}</div>
           </div>
-          ${r.acted_at ? `<div style="grid-column:1/-1;">
+          <div>
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:3px;">Submitted On</div>
+            <div style="font-size:14px;font-weight:500;">${Utils.formatDateTime(r.created_at)}</div>
+          </div>
+          ${r.acted_at ? `
+          <div>
             <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:3px;">Decided On</div>
-            <div style="font-size:14px;font-weight:500;">${new Date(r.acted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+            <div style="font-size:14px;font-weight:500;">${Utils.formatDateTime(r.acted_at)}</div>
+          </div>
+          <div style="grid-column:1/-1;">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:3px;">Decided By</div>
+            <div style="font-size:14px;font-weight:500;">${Utils.escapeHtml(r.approver?.name || '—')}</div>
           </div>` : ''}
         </div>
         ${r.reason ? `

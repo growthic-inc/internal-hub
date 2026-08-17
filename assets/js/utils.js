@@ -19,6 +19,16 @@ const Utils = (() => {
     return formatDate(dateStr, { day: 'numeric', month: 'short' })
   }
 
+  function formatDateTime(dateStr) {
+    if (!dateStr) return '—'
+    const d = new Date(dateStr)
+    if (isNaN(d)) return '—'
+    return d.toLocaleString('en-IN', {
+      day: 'numeric', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: true,
+    })
+  }
+
   function formatMonth(dateStr) {
     if (!dateStr) return '—'
     const d = new Date(dateStr)
@@ -249,6 +259,7 @@ const Utils = (() => {
   return {
     formatDate,
     formatDateShort,
+    formatDateTime,
     formatMonth,
     formatCurrency,
     getInitials,

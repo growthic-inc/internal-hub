@@ -157,7 +157,7 @@ const API = (() => {
     // excludeSelfId: always exclude the viewer's own entries — no self-approval allowed.
     let q = supabase
       .from('timesheets')
-      .select('*, employees!employee_id(id, name, profile_image_url, department), clients!client_id(client_name, project_code), internal_project:internal_projects(id, project_code, name), internal_entity:internal_project_entities(id, entity_name)')
+      .select('*, employees!employee_id(id, name, profile_image_url, department), clients!client_id(client_name, project_code), internal_project:internal_projects(id, project_code, name), internal_entity:internal_project_entities(id, entity_name), approver:employees!approved_by(name)')
       .gte('date', from)
       .lte('date', to)
       .order('date', { ascending: false })
@@ -1723,6 +1723,51 @@ const API = (() => {
     return supabase.from('policies').delete().eq('id', id)
   }
 
+  /* ── Knowledge Labs ───────────────────────────────────────── */
+  async function getKnowledgeResources(departmentId = null) {
+    let q = supabase
+      .from('knowledge_resources')
+      .select('*, department:departments(name, system_key), author:employees!created_by(name), owner:employees!owner_id(name, email)')
+      .order('title')
+    if (departmentId) q = q.eq('department_id', departmentId)
+    return q
+  }
+
+  async function createKnowledgeResource(data) {
+    return supabase.from('knowledge_resources').insert(data).select().single()
+  }
+
+  async function updateKnowledgeResource(id, data) {
+    return supabase.from('knowledge_resources').update({ ...data, updated_at: new Date().toISOString() }).eq('id', id)
+  }
+
+  async function deleteKnowledgeResource(id) {
+    return supabase.from('knowledge_resources').delete().eq('id', id)
+  }
+
+  async function getKnowledgeAccessGrants() {
+    return supabase
+      .from('knowledge_access_grants')
+      .select('*, employee:employees!employee_id(name, department:departments(name)), resource:knowledge_resources(title, category, department:departments(name)), granter:employees!granted_by(name), revoker:employees!revoked_by(name)')
+      .order('created_at', { ascending: false })
+  }
+
+  async function grantKnowledgeAccess(employeeId, resourceIds, grantedBy) {
+    const ids  = Array.isArray(resourceIds) ? resourceIds : [resourceIds]
+    const rows = ids.map(resource_id => ({
+      employee_id: employeeId, resource_id, granted_by: grantedBy, revoked_at: null, revoked_by: null,
+    }))
+    return supabase.from('knowledge_access_grants')
+      .upsert(rows, { onConflict: 'employee_id,resource_id' })
+      .select()
+  }
+
+  async function revokeKnowledgeAccess(id, revokedBy) {
+    return supabase.from('knowledge_access_grants')
+      .update({ revoked_at: new Date().toISOString(), revoked_by: revokedBy })
+      .eq('id', id)
+  }
+
   // ── Project Codes ─────────────────────────────────────────
   async function getInternalProjects() {
     return Config.supabase
@@ -2009,6 +2054,8 @@ const API = (() => {
     getRecentBadgeAwards, getAllEmployeeBadgeSummary,
     getPolicyCategories, addPolicyCategory, deletePolicyCategory,
     getPolicies, createPolicy, updatePolicy, deletePolicy,
+    getKnowledgeResources, createKnowledgeResource, updateKnowledgeResource, deleteKnowledgeResource,
+    getKnowledgeAccessGrants, grantKnowledgeAccess, revokeKnowledgeAccess,
     getInternalProjects, createInternalProject, updateInternalProject, setInternalProjectStatus, updateClientProjectDetails, setClientStatus,
     getDeptUtilizationAvg,
     // Phase 10 — Attendance

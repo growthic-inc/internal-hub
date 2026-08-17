@@ -2108,7 +2108,11 @@ const Timesheet = (() => {
             <div style="font-size:12px;white-space:pre-wrap;word-break:break-word;line-height:1.6;">${Utils.escapeHtml(desc)}</div>
           </td>
           <td style="text-align:right;font-weight:700;white-space:nowrap;padding-top:14px;">${parseFloat(e.hours).toFixed(1)}h</td>
-          <td style="padding-top:14px;">${_statusBadge(e.status)}</td>
+          <td style="padding-top:14px;">
+            ${_statusBadge(e.status)}
+            ${e.submitted_at ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Submitted ${Utils.formatDateTime(e.submitted_at)}</div>` : ''}
+            ${e.acted_at && e.approver?.name ? `<div style="font-size:11px;color:var(--text-muted);">${e.status === 'approved' ? 'Approved' : 'Rejected'} by ${Utils.escapeHtml(e.approver.name)} · ${Utils.formatDateTime(e.acted_at)}</div>` : ''}
+          </td>
           <td style="white-space:nowrap;padding-top:14px;">
             ${e.status === 'submitted' && _canApproveEmployee(e.employee_id) ? `
               <button class="btn btn--xs btn--secondary ts-approve-entry" data-id="${e.id}" style="margin-right:4px;">Approve</button>
