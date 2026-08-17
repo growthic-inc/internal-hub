@@ -23,6 +23,8 @@ const API = (() => {
       .select(`
         *,
         account_manager:employees!am_id(id, name),
+        details_updater:employees!details_updated_by(name),
+        status_changer:employees!status_changed_by(name),
         client_entities(
           id, entity_name,
           entity_platforms(platform),
@@ -698,7 +700,7 @@ const API = (() => {
   async function getClientDashboard(clientId) {
     const result = await supabase
       .from('clients')
-      .select('*, client_entities(*), client_platforms(*), scope_of_work(*), account_manager:employees!am_id(id, name), status_updater:employees!client_status_updated_by(name)')
+      .select('*, client_entities(*), client_platforms(*), scope_of_work(*), account_manager:employees!am_id(id, name), status_updater:employees!client_status_updated_by(name), details_updater:employees!details_updated_by(name), status_changer:employees!status_changed_by(name)')
       .eq('id', clientId)
       .single()
     // Deduplicate client_entities by entity_name — guards against DB duplicates
@@ -1234,6 +1236,24 @@ const API = (() => {
       .select('kyc_aadhar_url, kyc_pan_url, kyc_passport_url, kyc_passport_photo_url, kyc_submitted_at')
       .eq('id', employeeId)
       .single()
+  }
+
+  async function getEmployeeAuditLog(employeeId) {
+    return supabase
+      .from('employee_audit_log')
+      .select('*, changer:employees!changed_by(name)')
+      .eq('employee_id', employeeId)
+      .order('changed_at', { ascending: false })
+      .limit(100)
+  }
+
+  async function getReportGenLog(clientId) {
+    return supabase
+      .from('report_generation_log')
+      .select('*, generator:employees!generated_by(name)')
+      .eq('client_id', clientId)
+      .order('generated_at', { ascending: false })
+      .limit(20)
   }
 
   /* ── Org Chart (Phase 7) ──────────────────────────────────── */
@@ -1848,12 +1868,16 @@ const API = (() => {
       .eq('id', id)
   }
 
-  async function updateClientProjectDetails(clientId, { project_description, category, client_domain, client_contacts }) {
+  async function updateClientProjectDetails(clientId, { project_description, category, client_domain, client_contacts }, updatedBy) {
     const updates = {}
     if (project_description !== undefined) updates.project_description = project_description || null
     if (category            !== undefined) updates.category            = category || null
     if (client_domain       !== undefined) updates.client_domain       = client_domain || null
     if (client_contacts     !== undefined) updates.client_contacts     = client_contacts  // array or []
+    if (updatedBy) {
+      updates.details_updated_by = updatedBy
+      updates.details_updated_at = new Date().toISOString()
+    }
     return Config.supabase.from('clients').update(updates).eq('id', clientId)
   }
 
@@ -1861,7 +1885,7 @@ const API = (() => {
   // updateClientStatus which manages the CRM health field.
   // After the DB update succeeds, fire-and-forget a Drive folder move so the
   // client's folders stay in sync with the new status category.
-  async function setClientStatus(clientId, status) {
+  async function setClientStatus(clientId, status, updatedBy) {
     // Fetch current status so we know which folder to move from
     const { data: current } = await Config.supabase
       .from('clients')
@@ -1869,7 +1893,12 @@ const API = (() => {
       .eq('id', clientId)
       .single()
 
-    const result = await Config.supabase.from('clients').update({ status }).eq('id', clientId)
+    const statusUpdate = { status }
+    if (updatedBy) {
+      statusUpdate.status_changed_by = updatedBy
+      statusUpdate.status_changed_at = new Date().toISOString()
+    }
+    const result = await Config.supabase.from('clients').update(statusUpdate).eq('id', clientId)
     if (result.error) return result
 
     // Fire-and-forget Drive folder move (don't block UI on Drive latency)
@@ -2032,7 +2061,7 @@ const API = (() => {
     // Phase 7
     getDepartments, addDepartment, deleteDepartment,
     createDepartmentRpc, renameDepartmentRpc,
-    getEmployeesFull, getEmployeesFullWithBank, updateEmployeeFull, acknowledgePolicy, getEmployeeKyc,
+    getEmployeesFull, getEmployeesFullWithBank, updateEmployeeFull, acknowledgePolicy, getEmployeeKyc, getEmployeeAuditLog, getReportGenLog,
     getOrgChart,
     getLeaveTypes, createLeaveType, updateLeaveType, deleteLeaveType,
     getLeaveCredits, getAllLeaveCredits, addLeaveCredit, deleteLeaveCredit,

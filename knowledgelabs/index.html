@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <base href="/hrms/">
+  <base href="/knowledgelabs/">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Growthic HRMS</title>
+  <title>Knowledge Labs</title>
   <link rel="icon" type="image/x-icon" href="../assets/img/favicon/favicon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="../assets/img/favicon/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="../assets/img/favicon/favicon-16x16.png">
@@ -13,15 +13,13 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Growthic HRMS">
+  <meta name="apple-mobile-web-app-title" content="Knowledge Labs">
   <script src="https://js.sentry-cdn.com/8be1d4537c988c206543f5bfb9f2c31d.min.js" crossorigin="anonymous"></script>
   <script>(function(){var t=localStorage.getItem('theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');})()</script>
   <!-- Shared styles from /home/ -->
   <link rel="stylesheet" href="../assets/css/style.css">
   <link rel="stylesheet" href="../assets/css/components.css">
   <link rel="stylesheet" href="../assets/css/mobile.css">
-  <!-- HRMS-specific styles -->
-  <link rel="stylesheet" href="./assets/css/hrms.css">
   <meta name="theme-color" content="#0F4799">
 </head>
 <body class="app-body">
@@ -33,8 +31,8 @@
       <div class="sidebar-logo">
         <img class="sidebar-logo-mark" src="../assets/img/logo.jpg" alt="Growthic One">
         <div>
-          <span class="sidebar-brand">Growthic HRMS</span>
-          <span class="sidebar-brand-sub">HR & Admin Portal</span>
+          <span class="sidebar-brand">Knowledge Labs</span>
+          <span class="sidebar-brand-sub">Growthic One</span>
         </div>
       </div>
       <nav class="sidebar-nav" id="sidebar-nav"></nav>
@@ -50,7 +48,7 @@
             <line x1="3" y1="18" x2="21" y2="18"/>
           </svg>
         </button>
-        <h1 class="page-title" id="page-title">Loading…</h1>
+        <h1 class="page-title" id="page-title">Knowledge Labs</h1>
         <div class="header-actions">
           <!-- App switcher injected here by Shell.initAppSwitcher() -->
           <button class="btn-icon" id="theme-toggle-btn" title="Toggle dark mode" aria-label="Toggle dark mode">
@@ -78,8 +76,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- SheetJS: client-side XLS/XLSX parsing for attendance upload -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <!-- Shared JS from /home/ -->
   <script src="../assets/js/config.js"></script>
   <script src="../assets/js/utils.js"></script>
@@ -87,23 +83,14 @@
   <script src="../assets/js/shell.js"></script>
   <script src="../assets/js/platform-config.js"></script>
   <script src="../assets/js/api.js"></script>
-  <!-- Shared module registry — must load before HRMS page files -->
-  <script src="../assets/js/module-registry.js"></script>
-  <!-- HRMS pages -->
-  <script src="./assets/js/pages/payroll.js"></script>
-  <script src="./assets/js/pages/policies.js"></script>
-  <script src="./assets/js/pages/reimbursements.js"></script>
-  <script src="./assets/js/pages/leave-tracker.js"></script>
-  <script src="./assets/js/pages/people.js"></script>
-  <script src="./assets/js/pages/timesheet.js"></script>
+  <!-- Knowledge Labs page + shell -->
   <script src="./assets/js/pages/knowledge-labs.js"></script>
-  <!-- HRMS shell (must load last) -->
   <script src="./assets/js/app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/hrms/sw.js', { scope: '/hrms/' })
-          .catch(err => console.warn('[HRMS SW] Registration failed:', err))
+        navigator.serviceWorker.register('/knowledgelabs/sw.js', { scope: '/knowledgelabs/' })
+          .catch(err => console.warn('[Knowledge Labs SW] Registration failed:', err))
       })
 
       let _swReloading = false

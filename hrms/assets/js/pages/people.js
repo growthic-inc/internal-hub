@@ -285,11 +285,14 @@ const People = (() => {
       return months === 0 ? `${years}yr` : `${years}yr ${months}mo`
     })()
 
-    const [{ data: empBadges }, kycRes] = await Promise.all([
+    const isHR = _user?.role === 'super_admin' || Utils.getDeptSystemKey(_user?.department) === 'people_culture'
+    const [{ data: empBadges }, kycRes, auditRes] = await Promise.all([
       API.getEmployeeBadges(emp.id),
       API.getEmployeeKyc(emp.id),
+      isHR ? API.getEmployeeAuditLog(emp.id) : Promise.resolve({ data: [] }),
     ])
     const kyc = kycRes?.data || {}
+    const auditLog = auditRes?.data || []
 
     const badgeChips = (empBadges || []).map(eb => {
       const b = eb.badge || {}
@@ -313,6 +316,25 @@ const People = (() => {
       </div>`
 
     const _sec = label => `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);margin-bottom:12px;">${label}</div>`
+
+    const FIELD_LABELS = {
+      name: 'Full Name', designation: 'Designation', department: 'Department',
+      role: 'Role', employment_type: 'Employment Type', work_location: 'Work Location',
+      joining_date: 'Joining Date', date_of_birth: 'Date of Birth',
+      probation_completed: 'Probation Status', probation_completed_date: 'Probation Completion Date',
+      reporting_manager: 'Reporting Manager', bank_account_number: 'Bank Account', bank_ifsc: 'Bank IFSC',
+    }
+    const _fmtAuditVal = (field, val) => {
+      if (!val) return '—'
+      if (field === 'department') return Utils.escapeHtml(Utils.getDeptLabel(val))
+      if (field === 'role') return Utils.escapeHtml(Utils.getRoleLabel(val))
+      if (field === 'employment_type') return Utils.escapeHtml(Utils.getEmploymentTypeLabel(val))
+      if (field === 'work_location') return Utils.escapeHtml(Utils.getWorkLocationLabel(val))
+      if (field === 'probation_completed') return val === 'true' ? 'Completed' : 'Ongoing'
+      if (['joining_date','date_of_birth','probation_completed_date'].includes(field)) return Utils.escapeHtml(Utils.formatDate(val))
+      if (field === 'bank_account_number') return val.length > 4 ? '****' + Utils.escapeHtml(val.slice(-4)) : '****'
+      return Utils.escapeHtml(val)
+    }
 
     Utils.openModal(`
       <div class="modal-body" style="padding:0;">
@@ -465,6 +487,24 @@ const People = (() => {
             ${_kycDocRow('🖼️', 'Passport Photo', kyc.kyc_passport_photo_url)}
           </div>
         </div>
+
+        ${isHR ? `
+        <div style="padding:16px 24px;border-top:1px solid var(--border);">
+          ${_sec(`Change History${auditLog.length ? ` (${auditLog.length})` : ''}`)}
+          ${auditLog.length === 0
+            ? `<p style="font-size:13px;color:var(--text-muted);margin:0;">No changes recorded yet.</p>`
+            : auditLog.map(row => `
+              <div style="display:flex;gap:12px;padding:9px 0;border-bottom:1px solid var(--border);">
+                <div style="flex:1;min-width:0;">
+                  <div style="font-size:12px;font-weight:600;color:var(--text);">${FIELD_LABELS[row.field_name] || Utils.escapeHtml(row.field_name)}</div>
+                  <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${_fmtAuditVal(row.field_name, row.original_value)} → ${_fmtAuditVal(row.field_name, row.updated_value)}</div>
+                </div>
+                <div style="text-align:right;flex-shrink:0;">
+                  <div style="font-size:11px;color:var(--text-muted);">${Utils.formatDateTime(row.changed_at)}</div>
+                  ${row.changer?.name ? `<div style="font-size:11px;color:var(--text-muted);">by ${Utils.escapeHtml(row.changer.name)}</div>` : ''}
+                </div>
+              </div>`).join('')}
+        </div>` : ''}
 
       </div>
 
@@ -918,6 +958,29 @@ const People = (() => {
       payload.profile_image_url = profileImageUrl
     }
 
+    const existingManagerName = _employees.find(e => e.id === existingEmp.manager_id)?.name || null
+    const newManagerName = _employees.find(e => e.id === payload.manager_id)?.name || null
+
+    const hrAuditRows = [
+      ['name',                    name,                                    existingEmp.name                     || null],
+      ['designation',             payload.designation,                     existingEmp.designation              || null],
+      ['department',              payload.department,                      existingEmp.department               || null],
+      ['role',                    payload.role,                            existingEmp.role                     || null],
+      ['employment_type',         payload.employment_type,                 existingEmp.employment_type          || null],
+      ['work_location',           payload.work_location,                   existingEmp.work_location            || null],
+      ['joining_date',            payload.joining_date,                    existingEmp.joining_date             || null],
+      ['date_of_birth',           payload.date_of_birth,                   existingEmp.date_of_birth            || null],
+      ['probation_completed',     String(payload.probation_completed),     String(existingEmp.probation_completed || false)],
+      ['probation_completed_date',payload.probation_completed_date,        existingEmp.probation_completed_date || null],
+      ['reporting_manager',       newManagerName,                          existingManagerName                       ],
+    ]
+      .filter(([, newVal, oldVal]) => (newVal ?? null) !== (oldVal ?? null))
+      .map(([field, newVal, oldVal]) => ({
+        employee_id: empId, field_name: field,
+        original_value: oldVal ?? null, updated_value: newVal ?? null,
+        changed_by: _user.id,
+      }))
+
     const { error } = await API.updateEmployeeFull(empId, payload)
 
     saveBtn.disabled    = false
@@ -929,8 +992,9 @@ const People = (() => {
       return
     }
 
-    if (bankAuditRows.length) {
-      await Config.supabase.from('employee_audit_log').insert(bankAuditRows)
+    const allAuditRows = [...bankAuditRows, ...hrAuditRows]
+    if (allAuditRows.length) {
+      await Config.supabase.from('employee_audit_log').insert(allAuditRows)
     }
 
     const { data } = await API.getEmployeesFullWithBank()

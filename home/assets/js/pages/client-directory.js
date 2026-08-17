@@ -390,6 +390,7 @@ const ClientDirectory = (() => {
           <div class="cd-info-item">
             <div class="cd-info-label">Status</div>
             <span class="badge ${STATUS_BADGE[c.status] || 'badge--muted'}">${c.status}</span>
+            ${c.status_changed_at ? `<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Changed by ${Utils.escapeHtml(c.status_changer?.name || '—')} · ${Utils.formatDate(c.status_changed_at)}</div>` : ''}
           </div>
           <div class="cd-info-item">
             <div class="cd-info-label">Account Manager</div>
@@ -399,6 +400,12 @@ const ClientDirectory = (() => {
             <div class="cd-info-label">Client Since</div>
             <div class="cd-info-value">${Utils.formatDate(c.created_at)}</div>
           </div>
+          ${c.details_updated_at ? `
+          <div class="cd-info-item">
+            <div class="cd-info-label">Last Edited</div>
+            <div class="cd-info-value" style="font-size:12px;">${Utils.formatDateTime(c.details_updated_at)}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">by ${Utils.escapeHtml(c.details_updater?.name || '—')}</div>
+          </div>` : ''}
         </div>
       </div>
 
@@ -588,7 +595,7 @@ const ClientDirectory = (() => {
         const label      = isInactive ? 'Reactivating…' : 'Deactivating…'
 
         btn.disabled = true; btn.textContent = label
-        const { error } = await API.setClientStatus(c.id, nextStatus)
+        const { error } = await API.setClientStatus(c.id, nextStatus, _user?.id)
         if (error) {
           Utils.showToast('Failed to update client status', 'error')
           btn.disabled = false; btn.textContent = isInactive ? 'Reactivate' : 'Deactivate'
@@ -1601,7 +1608,7 @@ const ClientDirectory = (() => {
         category:            cat || null,
         client_domain:       domain,
         client_contacts:     contacts,
-      })
+      }, _user?.id)
       btn.disabled = false; btn.textContent = 'Save Changes'
 
       if (error) { Utils.showToast('Failed to save changes', 'error'); return }

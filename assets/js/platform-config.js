@@ -29,6 +29,18 @@ const PlatformConfig = (() => {
       access: (user) => user.role === 'super_admin' ||
         (user.portalAccess || []).includes('growthic-hrms'),
     },
+    {
+      id:          'knowledgelabs',
+      name:        'Knowledge Labs',
+      shortName:   'Labs',
+      description: 'Department SOPs, templates, and guidelines.',
+      category:    'core',
+      path:        '/knowledgelabs',
+      // Access rule: any authenticated employee — visibility of individual
+      // resources is handled by RLS (own department + explicit grants),
+      // not by a portal-level gate.
+      access: (user) => !!user,
+    },
   ]
 
   function getAll() {

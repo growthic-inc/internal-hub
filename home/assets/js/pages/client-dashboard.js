@@ -247,7 +247,7 @@ const ClientDashboard = (() => {
     const { dateFrom, dateTo } = _getDateRange()
     const { dateFrom: prevFrom, dateTo: prevTo } = _getPrevDateRange()
     const eid = _currentEntity || null
-    const [metricsRes, postsRes, reportsRes, uploadLogRes, followersRes, visitorsRes, demographicsFollowersRes, demographicsVisitorsRes, prevMetricsRes, prevPostsRes, prevFollowersRes] = await Promise.all([
+    const [metricsRes, postsRes, reportsRes, uploadLogRes, followersRes, visitorsRes, demographicsFollowersRes, demographicsVisitorsRes, prevMetricsRes, prevPostsRes, prevFollowersRes, reportGenLogRes] = await Promise.all([
       API.getSocialMetrics(_currentClient.id, _currentPlatform, dateFrom, dateTo, eid),
       API.getSocialPosts(_currentClient.id, _currentPlatform, dateFrom, dateTo, eid),
       API.getMasterFolderFiles(_currentClient.id, _currentMonth, 'reports'),
@@ -259,9 +259,11 @@ const ClientDashboard = (() => {
       API.getSocialMetrics(_currentClient.id, _currentPlatform, prevFrom, prevTo, eid),
       API.getSocialPosts(_currentClient.id, _currentPlatform, prevFrom, prevTo, eid),
       API.getSocialFollowers(_currentClient.id, _currentPlatform, prevFrom, prevTo, eid),
+      _p.can_generate ? API.getReportGenLog(_currentClient.id) : Promise.resolve({ data: [] }),
     ])
     const metrics = metricsRes.data || [], posts = postsRes.data || []
     const reports = reportsRes.data || [], uploadLog = uploadLogRes.data || []
+    const reportGenLog = reportGenLogRes?.data || []
     const followers = followersRes.data || [], visitors = visitorsRes.data || []
     const demoFollowers = demographicsFollowersRes.data || [], demoVisitors = demographicsVisitorsRes.data || []
     _lastDemoFollowers = demoFollowers
@@ -296,7 +298,7 @@ const ClientDashboard = (() => {
         `<span class="chart-metric-pill${_activeMetrics.includes(k) ? ' active' : ''}" data-metric="${k}">${Utils.escapeHtml(mCfg[k].label)}</span>`
       ).join('')
       body.innerHTML = `
-        ${_renderContextBar(uploadLog, dateFrom, dateTo)}
+        ${_renderContextBar(uploadLog, dateFrom, dateTo, reportGenLog)}
         <div class="kpi-grid--personal">${_renderKPICards(kpis)}</div>
         <div class="chart-card mb-4">
           <div class="chart-card-header">
@@ -645,7 +647,7 @@ const ClientDashboard = (() => {
   }
 
   /* ── Context bar (data info + status) ──────────────────── */
-  function _renderContextBar(uploadLog, dateFrom, dateTo) {
+  function _renderContextBar(uploadLog, dateFrom, dateTo, reportGenLog = []) {
     const last = uploadLog[0]
     let uploadChip = ''
     if (last) {
@@ -656,6 +658,11 @@ const ClientDashboard = (() => {
         Updated ${ago} by ${Utils.escapeHtml(last.uploaded_by_emp?.name || 'someone')}
       </span>`
     }
+    const lastReport = reportGenLog[0]
+    const reportChip = lastReport ? `<span class="ctx-chip">
+      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Report: ${MONTH_LABELS[(lastReport.month || 1) - 1]} ${lastReport.year} by ${Utils.escapeHtml(lastReport.generator?.name || '—')} · ${Utils.formatDate(lastReport.generated_at)}
+    </span>` : ''
     const platIcon = _currentPlatform === 'LinkedIn'
       ? `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg>`
       : `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>`
@@ -680,6 +687,7 @@ const ClientDashboard = (() => {
           ${Utils.formatDate(dateFrom)} — ${Utils.formatDate(dateTo)}
         </span>
         ${uploadChip}
+        ${reportChip}
       </div>
       <div class="db-context-right">
         <div class="client-status-badge ${scls}" id="status-badge">${slabel}</div>
