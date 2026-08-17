@@ -378,6 +378,14 @@
   /* Tabs font size */
   .tab-btn { padding: 8px 10px; font-size: 12px; }
 
+  /* Notification panel: fixed 340px + JS-positioned `right` runs off the
+     left edge on narrow phones — clamp it to the viewport instead.
+     !important needed since app.js sets `right` as an inline style. */
+  .notif-panel {
+    width: calc(100vw - 24px) !important;
+    right: 12px !important;
+  }
+
   /* Stat values */
   .stat-value { font-size: 20px; }
   .kpi-value  { font-size: 20px; }
