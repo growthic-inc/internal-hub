@@ -613,7 +613,7 @@ const API = (() => {
   async function getApprovedClaims() {
     return supabase
       .from('reimbursements')
-      .select('*, submitter:employees!employee_id(name, department), clients(client_name, project_code), approver:employees!approved_by(name)')
+      .select('*, submitter:employees!employee_id(name, department), clients(client_name, project_code), approver:employees!approved_by(name), payer:employees!paid_by(name)')
       .eq('type', 'claim')
       .in('status', ['approved', 'paid'])
       .order('updated_at', { ascending: false })

@@ -375,7 +375,7 @@ const Reimbursements = (() => {
         <div class="section-card-body" style="padding-top:0;">
           <div class="db-filter-bar" style="margin:14px 0 16px;">
             <div class="db-filter-group" style="min-width:150px;">
-              <span class="db-filter-label">Export Range</span>
+              <span class="db-filter-label">Paid Between</span>
               <select class="db-filter-select" id="pay-range-select">
                 <option value="7">Last Week</option>
                 <option value="30" selected>Last 1 Month</option>
@@ -404,9 +404,11 @@ const Reimbursements = (() => {
     })
 
     // Export is a pure client-side filter over the claims already loaded
-    // above — no extra query. Scoped to 'approved' only (not 'paid'):
-    // this is a payables handoff for Finance, so once something's paid
-    // it's already been accounted for and shouldn't show up again.
+    // above — no extra query. This is a reconciliation export (does what
+    // left the account match our records?), so it's scoped to 'paid'
+    // only, filtered by paid_at (when the money actually moved) — not
+    // expense_date, which would miss a claim paid in a later period than
+    // the expense itself was incurred in.
     const rangeSelect = document.getElementById('pay-range-select')
     const customDates = document.getElementById('pay-custom-dates')
     const fromInput    = document.getElementById('pay-export-from')
@@ -435,12 +437,14 @@ const Reimbursements = (() => {
       const { from, to } = _resolveRange()
       if (!from || !to) return
 
-      const rows = all.filter(r =>
-        r.status === 'approved' && r.expense_date && r.expense_date >= from && r.expense_date <= to
-      )
-      if (!rows.length) { Utils.showToast('No approved claims in that date range.', 'info'); return }
+      const rows = all.filter(r => {
+        if (r.status !== 'paid' || !r.paid_at) return false
+        const paidDate = r.paid_at.slice(0, 10) // paid_at is a timestamp; compare just the date part
+        return paidDate >= from && paidDate <= to
+      })
+      if (!rows.length) { Utils.showToast('No paid claims in that date range.', 'info'); return }
 
-      const headers = ['Employee', 'Department', 'Client', 'Project Code', 'Expense Type', 'Amount', 'Expense Date', 'Approved By']
+      const headers = ['Employee', 'Department', 'Client', 'Project Code', 'Expense Type', 'Amount', 'Expense Date', 'Approved By', 'Paid Date', 'Paid By']
       const csvRows = rows.map(r => [
         r.submitter?.name || '',
         Utils.getDeptLabel(r.submitter?.department) || '',
@@ -450,8 +454,10 @@ const Reimbursements = (() => {
         r.hr_approved_amount || r.amount || 0,
         r.expense_date || '',
         r.approver?.name || '',
+        r.paid_at ? r.paid_at.slice(0, 10) : '',
+        r.payer?.name || '',
       ])
-      Utils.downloadCSV(`reimbursement-approved-claims-${from}-to-${to}.csv`, headers, csvRows)
+      Utils.downloadCSV(`reimbursement-paid-claims-${from}-to-${to}.csv`, headers, csvRows)
     })
   }
 
