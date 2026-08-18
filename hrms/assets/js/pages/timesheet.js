@@ -27,6 +27,7 @@ const Timesheet = (() => {
     weekend:   'var(--border)',
     holiday:   '#FBBF24',
     leave:     '#6366F1',
+    pending:   '#93C5FD',
     future:    'var(--border-light)',
   }
   // Legend entries only — submitted/rejected share a color and a label,
@@ -39,6 +40,7 @@ const Timesheet = (() => {
     ['leave',     'Leave'],
     ['holiday',   'Holiday'],
     ['draft',     'Draft'],
+    ['pending',   'Pending (grace period)'],
   ]
 
   function _renderCoverageLegend() {
@@ -245,8 +247,10 @@ const Timesheet = (() => {
         if (entry.status === 'draft')     draft++
         else if (entry.status === 'submitted' || entry.status === 'rejected') submitted++
         else if (entry.status === 'approved') approved++
+      } else if (dateObj > today) {
+        dayStatuses[iso] = 'future'    // hasn't happened yet
       } else if (dateObj > cutoff) {
-        dayStatuses[iso] = 'future'   // not yet due
+        dayStatuses[iso] = 'pending'   // today or recent, still inside the edit-lock grace window
       } else {
         dayStatuses[iso] = 'missed'
         missed++
@@ -306,6 +310,7 @@ const Timesheet = (() => {
       weekend: { bg: 'var(--surface)', border: 'var(--border)' },
       holiday: { bg: '#FEF3C7', border: '#FBBF24' },
       leave: { bg: '#EEF2FF', border: '#6366F1' },
+      pending: { bg: '#EFF6FF', border: '#93C5FD' },
       future: { bg: 'transparent', border: 'var(--border)' },
     }
 
