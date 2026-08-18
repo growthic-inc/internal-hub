@@ -164,6 +164,29 @@ const HomeModule = (() => {
       </div>`
   }
 
+  /* ── Section: Knowledge Labs entry point ──────────────────── */
+
+  function _renderKnowledgeLabsCard(resources) {
+    const list      = resources || []
+    const deptCount = new Set(list.map(r => r.department_id)).size
+
+    const statLine = list.length
+      ? `${deptCount} department${deptCount !== 1 ? 's' : ''} · ${list.length} resource${list.length !== 1 ? 's' : ''} available to you`
+      : `Your department's SOPs and templates will show up here`
+
+    return `
+      <div class="section-card home-fade-in" style="border-left:3px solid var(--primary);margin-top:12px;">
+        <div class="section-card-body" style="display:flex;align-items:center;gap:14px;padding:14px 20px;">
+          <div style="width:38px;height:38px;border-radius:50%;background:var(--primary-light);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">🧪</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:13px;">Knowledge Labs</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${Utils.escapeHtml(statLine)}</div>
+          </div>
+          <a href="/knowledgelabs/" class="btn btn--primary btn--sm">Open</a>
+        </div>
+      </div>`
+  }
+
   /* ── Section: Pending Approvals ──────────────────────────── */
 
   function _renderPendingApprovals(leaveCount, tsCount) {
@@ -608,6 +631,7 @@ const HomeModule = (() => {
       { data: announcements },
       { data: allEmployees },
       { data: myBadges },
+      { data: knowledgeResources },
     ] = await Promise.all([
       API.getTimesheetEntries(user.id, todayISO, todayISO),
       API.getWhoIsOutToday(),
@@ -618,11 +642,13 @@ const HomeModule = (() => {
       API.getRecentAnnouncements(3),
       API.getBirthdayEmployees(),
       API.getEmployeeBadges(user.id),
+      API.getKnowledgeResources(),
     ])
 
     const html = `
       ${_renderHero(user, todayEntries, whoIsOut, whoIsWfh, pendingLeaveCount, pendingTsCount)}
       ${_renderTimesheetNudge(todayEntries)}
+      ${_renderKnowledgeLabsCard(knowledgeResources)}
       ${_renderPendingApprovals(pendingLeaveCount, pendingTsCount)}
 
       <div class="home-content-row" style="margin-top:14px;">

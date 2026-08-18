@@ -127,8 +127,12 @@ const Shell = (() => {
     function _open() {
       const apps = PlatformConfig.getAccessible(user)
       const rect  = btn.getBoundingClientRect()
-      popover.style.top  = `${rect.bottom + 8}px`
-      popover.style.left = `${rect.left}px`
+      // Anchor to the button's RIGHT edge, not its left — the button sits
+      // near the right side of the header, so a left-anchored popover can
+      // run off the viewport. Right-anchoring keeps it fully on-screen.
+      popover.style.top   = `${rect.bottom + 8}px`
+      popover.style.left  = 'auto'
+      popover.style.right = `${window.innerWidth - rect.right}px`
       popover.innerHTML = `
         <div class="app-switcher-label">Apps</div>
         <div class="app-switcher-grid">
@@ -137,7 +141,7 @@ const Shell = (() => {
             return `
               <a class="app-switcher-item${isCurrent ? ' app-switcher-item--current' : ''}"
                  href="${app.path}" ${isCurrent ? 'aria-current="page" tabindex="-1"' : ''}>
-                <div class="app-switcher-icon">${app.shortName[0]}</div>
+                <div class="app-switcher-icon">${app.icon || app.shortName[0]}</div>
                 <div class="app-switcher-name">${app.name}</div>
                 ${isCurrent ? '<div class="app-switcher-badge">Current</div>' : ''}
               </a>`

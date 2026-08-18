@@ -7026,7 +7026,8 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.12);
   padding: 14px;
-  min-width: 220px;
+  min-width: 240px;
+  max-width: calc(100vw - 24px);
 }
 .app-switcher-label {
   font-size: 11px;
