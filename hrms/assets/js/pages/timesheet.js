@@ -13,6 +13,44 @@ const Timesheet = (() => {
   const CHEVRON_L  = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`
   const CHEVRON_R  = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`
 
+  // Single source of truth for the Coverage strip's per-day colors, shared
+  // with the legend so the two can never drift out of sync. 'future' uses a
+  // real, defined variable (not the old --surface-alt, which was undefined
+  // and rendered as transparent — invisible against the row background,
+  // which made the strip look like it broke into unlabeled fragments).
+  const DAY_COLORS = {
+    approved:  '#1D9E75',
+    submitted: '#F59E0B',
+    rejected:  '#F59E0B',
+    draft:     '#94A3B8',
+    missed:    '#EF4444',
+    weekend:   'var(--border)',
+    holiday:   '#FBBF24',
+    leave:     '#6366F1',
+    future:    'var(--border-light)',
+  }
+  // Legend entries only — submitted/rejected share a color and a label,
+  // and future/weekend aren't worth explaining in a legend meant to
+  // clarify the meaningful statuses.
+  const DAY_LEGEND = [
+    ['approved',  'Approved'],
+    ['submitted', 'Submitted'],
+    ['missed',    'Missed'],
+    ['leave',     'Leave'],
+    ['holiday',   'Holiday'],
+    ['draft',     'Draft'],
+  ]
+
+  function _renderCoverageLegend() {
+    return `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:14px;padding:12px 20px;border-bottom:1px solid var(--border);">
+      ${DAY_LEGEND.map(([status, label]) => `
+        <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);">
+          <span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${DAY_COLORS[status]};"></span>${label}
+        </span>
+      `).join('')}
+    </div>`
+  }
+
   function _toISO(date) {
     const y = date.getFullYear()
     const m = String(date.getMonth() + 1).padStart(2, '0')
@@ -116,6 +154,7 @@ const Timesheet = (() => {
     if (content) {
       content.innerHTML = `
         <div class="section-card">
+          ${_renderCoverageLegend()}
           <div class="section-card-body" style="padding:0;">
             <table class="data-table">
               <thead>
@@ -218,22 +257,11 @@ const Timesheet = (() => {
   }
 
   function _renderHeatmapStrip(dayStatuses, daysInMonth, year, month) {
-    const COLORS = {
-      approved: '#1D9E75',
-      submitted: '#F59E0B',
-      rejected: '#F59E0B',
-      draft: '#94A3B8',
-      missed: '#EF4444',
-      weekend: 'var(--border)',
-      holiday: '#FBBF24',
-      leave: '#6366F1',
-      future: 'var(--surface-alt)',
-    }
     let cells = ''
     for (let d = 1; d <= daysInMonth; d++) {
       const iso    = _toISO(new Date(year, month - 1, d))
       const status = dayStatuses[iso] || 'future'
-      cells += `<span title="${d}: ${status}" style="display:inline-block;width:7px;height:14px;margin-right:1px;border-radius:1px;background:${COLORS[status] || COLORS.future};"></span>`
+      cells += `<span title="${d}: ${status}" style="display:inline-block;width:7px;height:14px;margin-right:1px;border-radius:1px;background:${DAY_COLORS[status] || DAY_COLORS.future};"></span>`
     }
     return `<div style="white-space:nowrap;line-height:0;">${cells}</div>`
   }
