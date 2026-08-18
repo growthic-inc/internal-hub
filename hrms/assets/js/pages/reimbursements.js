@@ -367,15 +367,59 @@ const Reimbursements = (() => {
     const { data, error } = await API.getApprovedClaims()
     if (error) { content.innerHTML = '<p class="empty-state">Failed to load.</p>'; return }
 
+    const all = data || []
+
     content.innerHTML = `
       <div class="section-card">
-        <div class="section-card-header"><h3>Approved Claims — Awaiting Payment</h3></div>
-        <div class="section-card-body">${_renderClaimTable(data || [], true, false, true)}</div>
+        <div class="section-card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+          <h3>Approved Claims — Awaiting Payment</h3>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <input type="date" id="pay-export-from" class="db-filter-select" style="min-width:130px;">
+            <input type="date" id="pay-export-to"   class="db-filter-select" style="min-width:130px;">
+            <button class="btn btn--sm btn--ghost" id="pay-export-btn" disabled>Export</button>
+          </div>
+        </div>
+        <div class="section-card-body">${_renderClaimTable(all, true, false, true)}</div>
       </div>
     `
 
     document.querySelectorAll('[data-pay]').forEach(btn => {
       btn.addEventListener('click', () => _openMarkPaidModal(btn.dataset.pay, btn.dataset.name, btn.dataset.amount, btn.dataset.employee))
+    })
+
+    // Export is a pure client-side filter over the claims already loaded
+    // above — no extra query. Scoped to 'approved' only (not 'paid'):
+    // this is a payables handoff for Finance, so once something's paid
+    // it's already been accounted for and shouldn't show up again.
+    const fromInput = document.getElementById('pay-export-from')
+    const toInput   = document.getElementById('pay-export-to')
+    const exportBtn = document.getElementById('pay-export-btn')
+
+    const _updateExportBtn = () => { exportBtn.disabled = !(fromInput.value && toInput.value) }
+    fromInput.addEventListener('change', _updateExportBtn)
+    toInput.addEventListener('change', _updateExportBtn)
+
+    exportBtn.addEventListener('click', () => {
+      const from = fromInput.value, to = toInput.value
+      if (!from || !to) return
+
+      const rows = all.filter(r =>
+        r.status === 'approved' && r.expense_date && r.expense_date >= from && r.expense_date <= to
+      )
+      if (!rows.length) { Utils.showToast('No approved claims in that date range.', 'info'); return }
+
+      const headers = ['Employee', 'Department', 'Client', 'Project Code', 'Expense Type', 'Amount', 'Expense Date', 'Approved By']
+      const csvRows = rows.map(r => [
+        r.submitter?.name || '',
+        Utils.getDeptLabel(r.submitter?.department) || '',
+        r.clients?.client_name || '',
+        r.clients?.project_code || '',
+        Utils.getExpenseLabel(r.expense_type),
+        r.hr_approved_amount || r.amount || 0,
+        r.expense_date || '',
+        r.approver?.name || '',
+      ])
+      Utils.downloadCSV(`reimbursement-approved-claims-${from}-to-${to}.csv`, headers, csvRows)
     })
   }
 

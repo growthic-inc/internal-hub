@@ -256,6 +256,24 @@ const Utils = (() => {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
   }
 
+  /* ── CSV export ───────────────────────────────────────────── */
+  function downloadCSV(filename, headers, rows) {
+    const cell = v => {
+      const s = v == null ? '' : String(v)
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+    }
+    const csv  = [headers, ...rows].map(row => row.map(cell).join(',')).join('\r\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
+
   return {
     formatDate,
     formatDateShort,
@@ -282,6 +300,7 @@ const Utils = (() => {
     debounce,
     canAccess,
     todayIST,
+    downloadCSV,
     EMPLOYMENT_TYPE_LABELS,
     WORK_LOCATION_LABELS,
   }
