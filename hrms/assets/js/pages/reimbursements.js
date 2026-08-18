@@ -371,15 +371,31 @@ const Reimbursements = (() => {
 
     content.innerHTML = `
       <div class="section-card">
-        <div class="section-card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-          <h3>Approved Claims — Awaiting Payment</h3>
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-            <input type="date" id="pay-export-from" class="db-filter-select" style="min-width:130px;">
-            <input type="date" id="pay-export-to"   class="db-filter-select" style="min-width:130px;">
-            <button class="btn btn--sm btn--ghost" id="pay-export-btn" disabled>Export</button>
+        <div class="section-card-header"><h3>Approved Claims — Awaiting Payment</h3></div>
+        <div class="section-card-body" style="padding-top:0;">
+          <div class="db-filter-bar" style="margin:14px 0 16px;">
+            <div class="db-filter-group" style="min-width:150px;">
+              <span class="db-filter-label">Export Range</span>
+              <select class="db-filter-select" id="pay-range-select">
+                <option value="7">Last Week</option>
+                <option value="30" selected>Last 1 Month</option>
+                <option value="90">Last 3 Months</option>
+                <option value="custom">Custom Range</option>
+              </select>
+            </div>
+            <div id="pay-custom-dates" style="display:none;flex-direction:column;gap:4px;">
+              <span class="db-filter-label">From → To</span>
+              <div style="display:flex;gap:6px;align-items:center;">
+                <input type="date" id="pay-export-from" class="db-filter-select" style="min-width:130px;">
+                <input type="date" id="pay-export-to"   class="db-filter-select" style="min-width:130px;">
+              </div>
+            </div>
+            <div class="db-filter-actions">
+              <button class="btn btn--sm btn--ghost" id="pay-export-btn">Export</button>
+            </div>
           </div>
+          ${_renderClaimTable(all, true, false, true)}
         </div>
-        <div class="section-card-body">${_renderClaimTable(all, true, false, true)}</div>
       </div>
     `
 
@@ -391,16 +407,32 @@ const Reimbursements = (() => {
     // above — no extra query. Scoped to 'approved' only (not 'paid'):
     // this is a payables handoff for Finance, so once something's paid
     // it's already been accounted for and shouldn't show up again.
-    const fromInput = document.getElementById('pay-export-from')
-    const toInput   = document.getElementById('pay-export-to')
-    const exportBtn = document.getElementById('pay-export-btn')
+    const rangeSelect = document.getElementById('pay-range-select')
+    const customDates = document.getElementById('pay-custom-dates')
+    const fromInput    = document.getElementById('pay-export-from')
+    const toInput      = document.getElementById('pay-export-to')
+    const exportBtn    = document.getElementById('pay-export-btn')
 
-    const _updateExportBtn = () => { exportBtn.disabled = !(fromInput.value && toInput.value) }
+    const _updateExportBtn = () => {
+      exportBtn.disabled = rangeSelect.value === 'custom' && !(fromInput.value && toInput.value)
+    }
+    rangeSelect.addEventListener('change', () => {
+      customDates.style.display = rangeSelect.value === 'custom' ? 'flex' : 'none'
+      _updateExportBtn()
+    })
     fromInput.addEventListener('change', _updateExportBtn)
     toInput.addEventListener('change', _updateExportBtn)
 
+    function _resolveRange() {
+      if (rangeSelect.value === 'custom') return { from: fromInput.value, to: toInput.value }
+      const to = new Date(), from = new Date()
+      from.setDate(to.getDate() - parseInt(rangeSelect.value, 10))
+      const fmt = d => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+      return { from: fmt(from), to: fmt(to) }
+    }
+
     exportBtn.addEventListener('click', () => {
-      const from = fromInput.value, to = toInput.value
+      const { from, to } = _resolveRange()
       if (!from || !to) return
 
       const rows = all.filter(r =>
