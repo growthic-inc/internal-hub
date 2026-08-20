@@ -483,9 +483,19 @@ const ClientDashboard = (() => {
       // export's "...-share-<id>" vs this actor's "...-activity-<id>", each
       // with a different, unrelated numeric id), so an exact-string match
       // would silently miss posts Apify actually captured correctly.
-      const postSlug = url => url?.match(/\/posts\/(.+?)-(?:share|activity)-\d+/)?.[1] || null
+      // Gated on the entity actually having a LinkedIn URL on file (same
+      // as the Apify button's own visibility check) — not on _isPersonalProfile,
+      // which never gets set for a spokesperson entity under a Company client
+      // (e.g. Shweta Gurnani), even though Apify data exists for that entity.
+      // LinkedIn uses several different URN suffixes for the same post
+      // depending on post type/context (share, activity, ugcPost, and
+      // possibly others not yet seen) — each with a different, unrelated
+      // numeric id. Rather than hardcode every known suffix word, match the
+      // *shape* instead: a word immediately followed by a long numeric id.
+      // That covers any future suffix LinkedIn adds without another fix.
+      const postSlug = url => url?.match(/\/posts\/(.+?)-[A-Za-z]+-\d{10,}/)?.[1] || null
       let _engagementBySlug = {}
-      if (_isPersonalProfile) {
+      if (_currentEntityLinkedinUrl) {
         const firstUrl = sorted.find(p => p.post_url)?.post_url
         const handle = firstUrl?.match(/\/posts\/([^_]+)_/)?.[1]
         if (handle) {
