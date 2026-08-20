@@ -647,11 +647,18 @@ const ClientDashboard = (() => {
               </div>`
           }).join('')
 
+          // Each tick sits at its real value's position on the same 0-scaleMax
+          // scale the bars use (left% = value/scaleMax), not centered inside an
+          // equal-width flex segment — the flex approach put every interior tick
+          // a half-segment too far left, making gaps between ticks look unequal
+          // even though the underlying values were evenly spaced.
           const ticksHtml = `
-            <div style="display:flex;margin-left:212px;margin-top:6px;">
-              ${ticks.map((t, idx) => `
-                <div style="flex:${idx === 0 ? '0 0 0px' : '1 1 0'};text-align:${idx === 0 ? 'left' : idx === ticks.length - 1 ? 'right' : 'center'};font-size:11px;color:#aaa;">${t}%</div>
-              `).join('')}
+            <div style="position:relative;height:16px;margin-left:212px;margin-top:6px;">
+              ${ticks.map((t, idx) => {
+                const leftPct = (t / scaleMax) * 100
+                const translateX = idx === 0 ? '0%' : idx === ticks.length - 1 ? '-100%' : '-50%'
+                return `<div style="position:absolute;left:${leftPct}%;transform:translateX(${translateX});font-size:11px;color:#aaa;white-space:nowrap;">${t}%</div>`
+              }).join('')}
             </div>`
 
           const chartHtml = `
