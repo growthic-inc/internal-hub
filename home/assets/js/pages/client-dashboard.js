@@ -496,8 +496,13 @@ const ClientDashboard = (() => {
       const postSlug = url => url?.match(/\/posts\/(.+?)-[A-Za-z]+-\d{10,}/)?.[1] || null
       let _engagementBySlug = {}
       if (_currentEntityLinkedinUrl) {
-        const firstUrl = sorted.find(p => p.post_url)?.post_url
-        const handle = firstUrl?.match(/\/posts\/([^_]+)_/)?.[1]
+        // Derived from the entity's own stored LinkedIn URL — the same one
+        // Apify was told to scrape — not from any individual post's URL.
+        // A post's own URL can carry a typo'd/legacy handle spelling from
+        // the manual export (verified: one anomalous row used a different
+        // handle than every other post from the same person), which would
+        // silently poison the whole lookup if trusted as the source of truth.
+        const handle = _currentEntityLinkedinUrl?.match(/\/in\/([^/?]+)/)?.[1]
         if (handle) {
           const { data: engRows } = await API.getPersonalPostEngagement(handle)
           ;(engRows || []).forEach(r => {
