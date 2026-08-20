@@ -1316,6 +1316,17 @@ const ClientDirectory = (() => {
       // Pre-generate UUID for new clients so files can be uploaded before DB insert
       const clientId = isEdit ? _editingClientId : crypto.randomUUID()
 
+      // Whether this client had zero entities before this save — if so, and
+      // an entity gets created below, any historical analytics rows for this
+      // client are unambiguously this new entity's (there was nothing else
+      // they could belong to). Uploads made before a client had any entity
+      // land with entity_id = NULL; once an entity exists, the dashboard's
+      // entity filter silently excludes that old data unless it gets linked
+      // here, at the moment the ambiguity is resolved — not discovered later
+      // as a "why is this client's data missing" bug.
+      const hadNoEntitiesBefore = !isEdit
+        || ((_clients.find(c => c.id === _editingClientId)?.client_entities || []).length === 0)
+
       /* Upload any new files first — pass client name directly, no DB lookup */
       let bgUrl = _existingBgUrl
       let saUrl = _existingSaUrl
@@ -1431,6 +1442,26 @@ const ClientDirectory = (() => {
             .select('id').single()
           if (entErr) throw entErr
           eid = entRow.id
+
+          // This is the first entity this client has ever had — link any
+          // orphaned (entity_id = NULL) historical rows to it now, before
+          // the entity filter has a chance to silently hide them. Routed
+          // through an edge function (service role): analytics tables are
+          // intentionally not directly writable by authenticated clients.
+          if (hadNoEntitiesBefore) {
+            const { data: { session } } = await Config.supabase.auth.getSession()
+            if (session) {
+              await fetch(`${Config.SUPABASE_URL}/functions/v1/backfill-entity-data`, {
+                method:  'POST',
+                headers: {
+                  'Content-Type':  'application/json',
+                  'Authorization': `Bearer ${session.access_token}`,
+                  'apikey':        Config.SUPABASE_ANON_KEY,
+                },
+                body: JSON.stringify({ client_id: clientId, entity_id: eid }),
+              }).catch(err => console.warn('[ClientDirectory] backfill-entity-data failed:', err))
+            }
+          }
         }
 
         if (entity.platforms.length) {
