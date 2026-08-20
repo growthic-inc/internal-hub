@@ -474,6 +474,18 @@ const ClientDashboard = (() => {
 
       const sorted = [..._tcPosts].sort((a, b) => _num(b.impressions) - _num(a.impressions))
       const pct = v => (_num(v) * 100).toFixed(2) + '%'
+
+      // Personal Profile's own LinkedIn export never breaks out likes/comments/
+      // reposts per post (a single lumped "Engagements" number) — the Apify
+      // fetch (via the "Apify" button) fills that in, keyed by post_url.
+      // Look those up now so the report uses real counts, not the 0s the
+      // export leaves for comments/reposts.
+      let _engagementByUrl = {}
+      if (_isPersonalProfile) {
+        const urls = [...new Set(sorted.slice(0, 5).map(p => p.post_url).filter(Boolean))]
+        const { data: engRows } = await API.getPersonalPostEngagement(urls)
+        ;(engRows || []).forEach(r => { _engagementByUrl[r.post_url] = r })
+      }
       // Personal Profile's native LinkedIn export ("Top posts" sheet) never
       // includes a caption/title — only the post URL, date, engagements and
       // impressions. Company Page posts do have a "title" field, but LinkedIn
@@ -483,16 +495,20 @@ const ClientDashboard = (() => {
       const titleOf      = p => Utils.truncate(p.post_title || p.post_url || '', 100)
       const cardTitleOf  = p => _isPersonalProfile ? (p.post_title || '') : titleOf(p)
       const titleShortOf = p => { const t = cardTitleOf(p); const m = t.match(/^[^.?!]*[.?!]/); return (m ? m[0] : t).trim() || t }
-      const postCard = (p) => p ? {
-        TITLE:       titleShortOf(p),
-        // No separate caption/body field exists in the post data today.
-        // Left blank rather than duplicating the title into a second box.
-        DESCRIPTION: '',
-        IMPRESSIONS: _num(p.impressions).toLocaleString('en-IN'),
-        LIKES:       _num(p.likes).toLocaleString('en-IN'),
-        COMMENTS:    _num(p.comments).toLocaleString('en-IN'),
-        REPOSTS:     _num(p.reposts_shares).toLocaleString('en-IN'),
-      } : { TITLE:'', DESCRIPTION:'', IMPRESSIONS:'0', LIKES:'0', COMMENTS:'0', REPOSTS:'0' }
+      const postCard = (p) => {
+        if (!p) return { TITLE:'', DESCRIPTION:'', IMPRESSIONS:'0', LIKES:'0', COMMENTS:'0', REPOSTS:'0' }
+        const eng = _engagementByUrl[p.post_url]
+        return {
+          TITLE:       titleShortOf(p),
+          // No separate caption/body field exists in the post data today.
+          // Left blank rather than duplicating the title into a second box.
+          DESCRIPTION: '',
+          IMPRESSIONS: _num(p.impressions).toLocaleString('en-IN'),
+          LIKES:       _num(eng?.likes    ?? p.likes).toLocaleString('en-IN'),
+          COMMENTS:    _num(eng?.comments ?? p.comments).toLocaleString('en-IN'),
+          REPOSTS:     _num(eng?.reposts  ?? p.reposts_shares).toLocaleString('en-IN'),
+        }
+      }
 
       const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
       const tokens = {
@@ -560,7 +576,7 @@ const ClientDashboard = (() => {
         tokens[`POST_${n}_POSTED_BY`]   = p?.posted_by || ''
         tokens[`POST_${n}_IMPRESSIONS`] = p ? _num(p.impressions).toLocaleString('en-IN') : '0'
         tokens[`POST_${n}_CLICKS`]      = p ? _num(p.clicks).toLocaleString('en-IN') : '0'
-        tokens[`POST_${n}_REACTIONS`]   = p ? _num(p.likes).toLocaleString('en-IN') : '0'
+        tokens[`POST_${n}_REACTIONS`]   = p ? _num(_engagementByUrl[p.post_url]?.likes ?? p.likes).toLocaleString('en-IN') : '0'
         tokens[`POST_${n}_ENG_RATE`]    = p ? pct(p.engagement_rate) : '0.00%'
         if (p?.post_url) links[`POST_${n}`] = p.post_url
       })

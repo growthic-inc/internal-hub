@@ -986,6 +986,20 @@ const API = (() => {
   }
 
   /**
+   * Apify-scraped likes/comments/reposts for personal-profile posts, keyed
+   * by post_url — fills the gap LinkedIn's own personal-profile export
+   * leaves (a single lumped "Engagements" number, no per-metric breakdown).
+   * See fetch-linkedin-engagement edge function.
+   */
+  async function getPersonalPostEngagement(postUrls) {
+    if (!postUrls || !postUrls.length) return { data: [] }
+    return supabase
+      .from('personal_post_engagement')
+      .select('post_url, likes, comments, reposts')
+      .in('post_url', postUrls)
+  }
+
+  /**
    * Fetch the upload history for a client+platform (last 10 uploads).
    */
   async function getAnalyticsUploadLog(clientId, platform, entityId = null) {
@@ -2051,7 +2065,7 @@ const API = (() => {
     getDepartmentPermissions, saveDepartmentPermissions,
     getAccessMatrix, getAllDeptAccessMatrix, saveAccessMatrix,
     // Phase 9 — Social Analytics
-    ingestAnalytics, getSocialMetrics, getSocialPosts, getAnalyticsUploadLog,
+    ingestAnalytics, getSocialMetrics, getSocialPosts, getAnalyticsUploadLog, getPersonalPostEngagement,
     getSocialFollowers, getSocialVisitors, getSocialDemographics, uploadAnalyticsToDrive,
     // Phase 8
     createEmployee, updateOwnProfile, uploadAvatar,
