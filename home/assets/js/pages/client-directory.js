@@ -19,8 +19,12 @@ const ClientDirectory = (() => {
 
   // Form state
   let _editingClientId  = null
-  let _formEntities     = []   // [{ id, name, platforms[], services[] }]
+  let _clientType       = 'company'   // 'company' | 'personal_profile' — set once, deliberately, at creation
+  let _formEntities     = []   // [{ id, name, platforms[], services[] }] — 'company' clients only
   let _formSelPlatforms = []   // client-level platform selection
+  let _personalLinkedin = ''   // 'personal_profile' clients only — the one entity's LinkedIn URL
+  let _personalServices = []   // 'personal_profile' clients only — the one entity's services
+  let _personalEntityId = null // 'personal_profile' clients only — the existing sole entity's id, if any
   let _formTeamIds      = []   // employee IDs for Assigned Team
   let _files            = { bg: null, sa: null }   // pending file uploads
   let _existingBgUrl    = null   // storage path or URL from DB
@@ -718,8 +722,12 @@ const ClientDirectory = (() => {
   /* ── Add / Edit Form Modal ──────────────────────────────────── */
   function _openForm(client) {
     _editingClientId  = client?.id || null
+    _clientType       = client?.client_type || 'company'
     _formEntities     = []
     _formSelPlatforms = []
+    _personalLinkedin = ''
+    _personalServices = []
+    _personalEntityId = null
     _formTeamIds      = []
     _files            = { bg: null, sa: null }
     _existingBgUrl    = client?.brand_guidelines_url  || null
@@ -727,13 +735,23 @@ const ClientDirectory = (() => {
 
     if (client) {
       _formSelPlatforms = (client.client_platforms || []).map(p => p.platform_name || p.platform)
-      _formEntities     = (client.client_entities  || []).map(e => ({
-        id:           e.id,
-        name:         e.entity_name,
-        linkedin_url: e.linkedin_url || '',
-        platforms:    (e.entity_platforms || []).map(p => p.platform),
-        services:     (e.entity_services  || []).map(s => s.service),
-      }))
+      if (_clientType === 'personal_profile') {
+        // Exactly one entity backs a personal-profile client — its own analytics
+        // row, kept in sync with this client's own fields, never shown as a
+        // separate "entity" the user manages.
+        const soleEntity = (client.client_entities || [])[0]
+        _personalEntityId = soleEntity?.id || null
+        _personalLinkedin = soleEntity?.linkedin_url || ''
+        _personalServices = (soleEntity?.entity_services || []).map(s => s.service)
+      } else {
+        _formEntities = (client.client_entities || []).map(e => ({
+          id:           e.id,
+          name:         e.entity_name,
+          linkedin_url: e.linkedin_url || '',
+          platforms:    (e.entity_platforms || []).map(p => p.platform),
+          services:     (e.entity_services  || []).map(s => s.service),
+        }))
+      }
     }
 
     const isEdit    = !!client
@@ -765,6 +783,20 @@ const ClientDirectory = (() => {
               <input class="form-input" id="cdf-name" placeholder="Full client or brand name"
                      value="${Utils.escapeHtml(client?.client_name || '')}">
             </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Client Type</label>
+            <div style="display:flex;gap:16px;">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400;">
+                <input type="radio" name="cdf-client-type" value="company" ${_clientType === 'company' ? 'checked' : ''}>
+                Company
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400;">
+                <input type="radio" name="cdf-client-type" value="personal_profile" ${_clientType === 'personal_profile' ? 'checked' : ''}>
+                Personal Profile
+              </label>
+            </div>
+            <span class="form-hint">A company can have multiple tracked profiles (page + spokespeople). A personal profile client IS the one person being tracked — e.g. Akhilesh Srivastava.</span>
           </div>
           <div class="grid-2">
             <div class="form-group">
@@ -898,13 +930,36 @@ const ClientDirectory = (() => {
           </div>
         </div>
 
-        <!-- ENTITIES -->
-        <div class="cd-form-section" style="border-bottom:none;padding-bottom:0;">
+        <!-- ENTITIES (Company clients only) -->
+        <div class="cd-form-section" id="cdf-entities-section"
+             style="border-bottom:none;padding-bottom:0;display:${_clientType === 'company' ? '' : 'none'};">
           <div class="cd-form-section-title" style="display:flex;align-items:center;justify-content:space-between;">
             Entities
             <button type="button" class="btn btn-secondary btn-sm" id="cdf-add-entity">+ Add Entity</button>
           </div>
           <div id="cdf-entities-list"></div>
+        </div>
+
+        <!-- PROFILE DETAILS (Personal Profile clients only) -->
+        <div class="cd-form-section" id="cdf-personal-section"
+             style="border-bottom:none;padding-bottom:0;display:${_clientType === 'personal_profile' ? '' : 'none'};">
+          <div class="cd-form-section-title">Profile Details</div>
+          <div class="form-group">
+            <label class="form-label">LinkedIn Profile URL</label>
+            <input class="form-input" type="url" id="cdf-personal-linkedin"
+                   placeholder="https://linkedin.com/in/theirprofile"
+                   value="${Utils.escapeHtml(_personalLinkedin)}">
+            <span class="form-hint">Used to fetch post engagement (likes/comments/reposts) via Apify.</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Services</label>
+            <div class="pill-select" id="cdf-personal-services">
+              ${SERVICES.map(s => `
+                <button type="button" class="pill-opt${_personalServices.includes(s) ? ' pill-opt--active' : ''}"
+                        data-val="${s}">${s}</button>`).join('')}
+            </div>
+            <span class="form-hint">Platforms come from the "Platforms" selection above.</span>
+          </div>
         </div>
       </div>
 
@@ -953,6 +1008,34 @@ const ClientDirectory = (() => {
     document.getElementById('cdf-add-entity')?.addEventListener('click', () => {
       _formEntities.push({ id: null, name: '', linkedin_url: '', platforms: [], services: [] })
       _renderFormEntities()
+    })
+
+    /* Client Type toggle */
+    document.querySelectorAll('input[name="cdf-client-type"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        _clientType = radio.value
+        const entitiesSection = document.getElementById('cdf-entities-section')
+        const personalSection = document.getElementById('cdf-personal-section')
+        if (entitiesSection) entitiesSection.style.display = _clientType === 'company' ? '' : 'none'
+        if (personalSection) personalSection.style.display = _clientType === 'personal_profile' ? '' : 'none'
+      })
+    })
+
+    /* Personal profile: LinkedIn URL + Services */
+    document.getElementById('cdf-personal-linkedin')?.addEventListener('input', e => {
+      _personalLinkedin = e.target.value
+    })
+    document.getElementById('cdf-personal-services')?.querySelectorAll('.pill-opt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const s = btn.dataset.val
+        if (_personalServices.includes(s)) {
+          _personalServices = _personalServices.filter(x => x !== s)
+          btn.classList.remove('pill-opt--active')
+        } else {
+          _personalServices.push(s)
+          btn.classList.add('pill-opt--active')
+        }
+      })
     })
 
     /* Save */
@@ -1216,10 +1299,12 @@ const ClientDirectory = (() => {
       errEl.textContent = 'Project code must be alphanumeric, all caps, no spaces.'
       errEl.style.display = 'block'; return
     }
-    for (const e of _formEntities) {
-      if (!e.name.trim()) {
-        errEl.textContent = 'Every entity must have a name.'
-        errEl.style.display = 'block'; return
+    if (_clientType === 'company') {
+      for (const e of _formEntities) {
+        if (!e.name.trim()) {
+          errEl.textContent = 'Every entity must have a name.'
+          errEl.style.display = 'block'; return
+        }
       }
     }
 
@@ -1248,12 +1333,28 @@ const ClientDirectory = (() => {
         client_name:          name,
         category:             cat,   // 'Shark' | 'Dolphin' | 'Turtle' | 'Snail'
         status,
+        client_type:          _clientType,   // 'company' | 'personal_profile'
         am_id:                amId,
         overview,
         sow_notes:            sow,
         brand_guidelines_url: bgUrl,
         client_domain:        domain,
         client_contacts:      contacts,
+      }
+
+      // A personal-profile client IS the one tracked person — silently keep
+      // exactly one entity in sync (never surfaced as a separate "entity"
+      // the user manages) by feeding it through the same entity-sync logic
+      // below that company clients already use for their (possibly several)
+      // entities.
+      if (_clientType === 'personal_profile') {
+        _formEntities = [{
+          id:           _personalEntityId,
+          name:         name,
+          linkedin_url: _personalLinkedin.trim(),
+          platforms:    _formSelPlatforms,
+          services:     _personalServices,
+        }]
       }
 
       // Only write commercial fields if the user has that permission
@@ -1292,8 +1393,10 @@ const ClientDirectory = (() => {
         // Update names and reset platforms/services on entities the user kept
         for (const entity of _formEntities) {
           if (entity.id) {
+            const updatePayload = { entity_name: entity.name.trim(), linkedin_url: entity.linkedin_url?.trim() || null }
+            if (_clientType === 'personal_profile') updatePayload.profile_type = 'personal_profile'
             await Config.supabase.from('client_entities')
-              .update({ entity_name: entity.name.trim(), linkedin_url: entity.linkedin_url?.trim() || null }).eq('id', entity.id)
+              .update(updatePayload).eq('id', entity.id)
             await Config.supabase.from('entity_platforms').delete().eq('entity_id', entity.id)
             await Config.supabase.from('entity_services').delete().eq('entity_id', entity.id)
           }
@@ -1320,9 +1423,11 @@ const ClientDirectory = (() => {
         // New entity (id = null): insert it first
         let eid = entity.id
         if (!eid) {
+          const insertPayload = { client_id: clientId, entity_name: entity.name.trim(), linkedin_url: entity.linkedin_url?.trim() || null }
+          if (_clientType === 'personal_profile') insertPayload.profile_type = 'personal_profile'
           const { data: entRow, error: entErr } = await Config.supabase
             .from('client_entities')
-            .insert({ client_id: clientId, entity_name: entity.name.trim(), linkedin_url: entity.linkedin_url?.trim() || null })
+            .insert(insertPayload)
             .select('id').single()
           if (entErr) throw entErr
           eid = entRow.id

@@ -11,7 +11,7 @@ const API = (() => {
   async function getClients(includeArchived = false) {
     let query = supabase
       .from('clients')
-      .select('id, client_name, project_code, category, status, created_at, am_id, overview, client_domain, client_contacts, account_manager:employees!am_id(name, profile_image_url), client_entities(id, entity_name, linkedin_url, profile_type), client_platforms(id, platform_name)')
+      .select('id, client_name, project_code, category, status, client_type, created_at, am_id, overview, client_domain, client_contacts, account_manager:employees!am_id(name, profile_image_url), client_entities(id, entity_name, linkedin_url, profile_type), client_platforms(id, platform_name)')
       .order('client_name')
     if (!includeArchived) query = query.neq('status', 'archived')
     return query
@@ -26,7 +26,7 @@ const API = (() => {
         details_updater:employees!details_updated_by(name),
         status_changer:employees!status_changed_by(name),
         client_entities(
-          id, entity_name,
+          id, entity_name, linkedin_url, profile_type,
           entity_platforms(platform),
           entity_services(service)
         ),
