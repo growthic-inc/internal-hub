@@ -477,14 +477,24 @@ const ClientDashboard = (() => {
 
       // Personal Profile's own LinkedIn export never breaks out likes/comments/
       // reposts per post (a single lumped "Engagements" number) — the Apify
-      // fetch (via the "Apify" button) fills that in, keyed by post_url.
-      // Look those up now so the report uses real counts, not the 0s the
-      // export leaves for comments/reposts.
-      let _engagementByUrl = {}
+      // fetch (via the "Apify" button) fills that in. Matched by the slug
+      // before -share-/-activity- rather than the full post_url: LinkedIn
+      // hands out two different URL formats for the same post (the manual
+      // export's "...-share-<id>" vs this actor's "...-activity-<id>", each
+      // with a different, unrelated numeric id), so an exact-string match
+      // would silently miss posts Apify actually captured correctly.
+      const postSlug = url => url?.match(/\/posts\/(.+?)-(?:share|activity)-\d+/)?.[1] || null
+      let _engagementBySlug = {}
       if (_isPersonalProfile) {
-        const urls = [...new Set(sorted.slice(0, 5).map(p => p.post_url).filter(Boolean))]
-        const { data: engRows } = await API.getPersonalPostEngagement(urls)
-        ;(engRows || []).forEach(r => { _engagementByUrl[r.post_url] = r })
+        const firstUrl = sorted.find(p => p.post_url)?.post_url
+        const handle = firstUrl?.match(/\/posts\/([^_]+)_/)?.[1]
+        if (handle) {
+          const { data: engRows } = await API.getPersonalPostEngagement(handle)
+          ;(engRows || []).forEach(r => {
+            const slug = postSlug(r.post_url)
+            if (slug) _engagementBySlug[slug] = r
+          })
+        }
       }
       // Personal Profile's native LinkedIn export ("Top posts" sheet) never
       // includes a caption/title — only the post URL, date, engagements and
@@ -497,7 +507,7 @@ const ClientDashboard = (() => {
       const titleShortOf = p => { const t = cardTitleOf(p); const m = t.match(/^[^.?!]*[.?!]/); return (m ? m[0] : t).trim() || t }
       const postCard = (p) => {
         if (!p) return { TITLE:'', DESCRIPTION:'', IMPRESSIONS:'0', LIKES:'0', COMMENTS:'0', REPOSTS:'0' }
-        const eng = _engagementByUrl[p.post_url]
+        const eng = _engagementBySlug[postSlug(p.post_url)]
         return {
           TITLE:       titleShortOf(p),
           // No separate caption/body field exists in the post data today.
@@ -576,7 +586,7 @@ const ClientDashboard = (() => {
         tokens[`POST_${n}_POSTED_BY`]   = p?.posted_by || ''
         tokens[`POST_${n}_IMPRESSIONS`] = p ? _num(p.impressions).toLocaleString('en-IN') : '0'
         tokens[`POST_${n}_CLICKS`]      = p ? _num(p.clicks).toLocaleString('en-IN') : '0'
-        tokens[`POST_${n}_REACTIONS`]   = p ? _num(_engagementByUrl[p.post_url]?.likes ?? p.likes).toLocaleString('en-IN') : '0'
+        tokens[`POST_${n}_REACTIONS`]   = p ? _num(_engagementBySlug[postSlug(p.post_url)]?.likes ?? p.likes).toLocaleString('en-IN') : '0'
         tokens[`POST_${n}_ENG_RATE`]    = p ? pct(p.engagement_rate) : '0.00%'
         if (p?.post_url) links[`POST_${n}`] = p.post_url
       })

@@ -986,17 +986,24 @@ const API = (() => {
   }
 
   /**
-   * Apify-scraped likes/comments/reposts for personal-profile posts, keyed
-   * by post_url — fills the gap LinkedIn's own personal-profile export
-   * leaves (a single lumped "Engagements" number, no per-metric breakdown).
-   * See fetch-linkedin-engagement edge function.
+   * Apify-scraped likes/comments/reposts for personal-profile posts — fills
+   * the gap LinkedIn's own personal-profile export leaves (a single lumped
+   * "Engagements" number, no per-metric breakdown). See fetch-linkedin-
+   * engagement edge function.
+   *
+   * Matched by author-handle prefix, not exact post_url: LinkedIn generates
+   * two different URL formats for the same post ("...-share-<id>-..." in
+   * manual exports vs "...-activity-<id>-..." from this actor), each with
+   * a different, unrelated numeric id — an exact match would silently miss
+   * every post. The caller matches the real join key (the slug before
+   * -share-/-activity-) client-side once this broader set is back.
    */
-  async function getPersonalPostEngagement(postUrls) {
-    if (!postUrls || !postUrls.length) return { data: [] }
+  async function getPersonalPostEngagement(authorHandle) {
+    if (!authorHandle) return { data: [] }
     return supabase
       .from('personal_post_engagement')
       .select('post_url, likes, comments, reposts')
-      .in('post_url', postUrls)
+      .ilike('post_url', `%/posts/${authorHandle}_%`)
   }
 
   /**
