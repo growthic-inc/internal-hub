@@ -728,10 +728,11 @@ const ClientDirectory = (() => {
     if (client) {
       _formSelPlatforms = (client.client_platforms || []).map(p => p.platform_name || p.platform)
       _formEntities     = (client.client_entities  || []).map(e => ({
-        id:        e.id,
-        name:      e.entity_name,
-        platforms: (e.entity_platforms || []).map(p => p.platform),
-        services:  (e.entity_services  || []).map(s => s.service),
+        id:           e.id,
+        name:         e.entity_name,
+        linkedin_url: e.linkedin_url || '',
+        platforms:    (e.entity_platforms || []).map(p => p.platform),
+        services:     (e.entity_services  || []).map(s => s.service),
       }))
     }
 
@@ -950,7 +951,7 @@ const ClientDirectory = (() => {
 
     /* Add entity */
     document.getElementById('cdf-add-entity')?.addEventListener('click', () => {
-      _formEntities.push({ id: null, name: '', platforms: [], services: [] })
+      _formEntities.push({ id: null, name: '', linkedin_url: '', platforms: [], services: [] })
       _renderFormEntities()
     })
 
@@ -1102,6 +1103,13 @@ const ClientDirectory = (() => {
                   style="margin-left:8px;flex-shrink:0;">${ICONS.close}</button>
         </div>
         <div style="margin-bottom:10px;">
+          <label class="cd-entity-sub-label" style="display:block;margin-bottom:6px;">
+            LinkedIn Profile URL <span style="font-weight:400;">(for personal-profile entities — used to fetch post engagement via Apify)</span>
+          </label>
+          <input class="form-input" type="url" placeholder="https://linkedin.com/in/theirprofile"
+                 value="${Utils.escapeHtml(e.linkedin_url || '')}" data-eli="${idx}">
+        </div>
+        <div style="margin-bottom:10px;">
           <label class="cd-entity-sub-label" style="display:block;margin-bottom:6px;">Platforms</label>
           <div class="pill-select">
             ${PLATFORMS.map(p => `
@@ -1124,6 +1132,14 @@ const ClientDirectory = (() => {
       inp.addEventListener('input', () => {
         const idx = parseInt(inp.dataset.ename)
         _formEntities[idx].name = inp.value
+      })
+    )
+
+    /* LinkedIn URL inputs */
+    list.querySelectorAll('[data-eli]').forEach(inp =>
+      inp.addEventListener('input', () => {
+        const idx = parseInt(inp.dataset.eli)
+        _formEntities[idx].linkedin_url = inp.value
       })
     )
 
@@ -1277,7 +1293,7 @@ const ClientDirectory = (() => {
         for (const entity of _formEntities) {
           if (entity.id) {
             await Config.supabase.from('client_entities')
-              .update({ entity_name: entity.name.trim() }).eq('id', entity.id)
+              .update({ entity_name: entity.name.trim(), linkedin_url: entity.linkedin_url?.trim() || null }).eq('id', entity.id)
             await Config.supabase.from('entity_platforms').delete().eq('entity_id', entity.id)
             await Config.supabase.from('entity_services').delete().eq('entity_id', entity.id)
           }
@@ -1306,7 +1322,7 @@ const ClientDirectory = (() => {
         if (!eid) {
           const { data: entRow, error: entErr } = await Config.supabase
             .from('client_entities')
-            .insert({ client_id: clientId, entity_name: entity.name.trim() })
+            .insert({ client_id: clientId, entity_name: entity.name.trim(), linkedin_url: entity.linkedin_url?.trim() || null })
             .select('id').single()
           if (entErr) throw entErr
           eid = entRow.id

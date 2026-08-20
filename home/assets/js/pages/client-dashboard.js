@@ -45,12 +45,14 @@ const ClientDashboard = (() => {
   let _trendChart = null, _pubChart = null, _followersChart = null, _visitorsChart = null
   let _activeMetrics = ['impressions', 'clicks']
   let _isPersonalProfile = false
+  let _currentEntityLinkedinUrl = null
   let _tcSort = { col: 'impressions', dir: 'desc' }, _tcPosts = []
   // Cached from the last successful _loadDashboard() run — read by _exportReport()
   // so Export never has to re-fetch or recompute anything the dashboard already has.
   let _lastKpis = [], _lastPostCount = 0, _lastFollowerCount = 0
   let _lastDemoFollowers = [], _lastDemoVisitors = []
   let _reportBusy = false
+  let _apifyBusy = false
 
   /* ── render ─────────────────────────────────────────────── */
   function render(user) {
@@ -105,6 +107,10 @@ const ClientDashboard = (() => {
             </div>
           </div>
           <div class="db-filter-actions">
+            <button class="btn btn--ghost btn--sm" id="db-apify-btn" style="display:none;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v4l3 3"></path></svg>
+              Apify
+            </button>
             <button class="btn btn--ghost btn--sm" id="db-fetch-report-btn">
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
               Fetch Report
@@ -146,8 +152,10 @@ const ClientDashboard = (() => {
     }
     if (_p.can_generate) {
       document.getElementById('db-fetch-report-btn')?.addEventListener('click', _exportReport)
+      document.getElementById('db-apify-btn')?.addEventListener('click', _fetchLinkedInEngagement)
     } else {
       document.getElementById('db-fetch-report-btn')?.remove()
+      document.getElementById('db-apify-btn')?.remove()
     }
   }
 
@@ -278,6 +286,13 @@ const ClientDashboard = (() => {
     // Reset active metrics whenever entity/platform changes
     _activeMetrics = _getDefaultActiveMetrics()
 
+    // Apify button only makes sense for a personal profile that has its own
+    // LinkedIn URL on file (the client's own person — e.g. Akhilesh Srivastava
+    // — not a Growthic employee, so this lives on the entity, not `employees`).
+    _currentEntityLinkedinUrl = _currentEntityData?.linkedin_url || null
+    const apifyBtn = document.getElementById('db-apify-btn')
+    if (apifyBtn) apifyBtn.style.display = (_isPersonalProfile && _currentEntityLinkedinUrl) ? '' : 'none'
+
     if (!metrics.length && !posts.length) { _renderEmptyState(body); return }
 
     if (_trendChart)      { _trendChart.destroy();      _trendChart = null }
@@ -370,6 +385,49 @@ const ClientDashboard = (() => {
     _initTrendChart(metrics); _initPubChart(posts)
     _initFollowersChart(followers); _initVisitorsChart(visitors)
     _bindContextBar(); _bindTrendPills(metrics); _bindDemoTabs(); _bindTopContent(); _bindTopContent()
+  }
+
+  /* ── Fetch LinkedIn engagement (personal profiles) ───────────
+     LinkedIn's own personal-profile analytics export only gives one
+     lumped "Engagements" number per post, not a likes/comments/reposts
+     breakdown. This calls fetch-linkedin-engagement, which scrapes this
+     entity's own LinkedIn URL via Apify and stores the real per-post
+     breakdown, keyed by post_url, ahead of "Fetch Report" reading it.
+  ── ────────────────────────────────────────────────────────── */
+  async function _fetchLinkedInEngagement() {
+    if (_apifyBusy) return
+    if (!_currentEntity || !_currentEntityLinkedinUrl) { Utils.showToast('This entity has no LinkedIn URL on file.', 'error'); return }
+
+    const btn = document.getElementById('db-apify-btn')
+    _apifyBusy = true
+    if (btn) { btn.disabled = true; btn.innerHTML = 'Fetching…' }
+
+    try {
+      const { data: { session } } = await Config.supabase.auth.getSession()
+      if (!session) { Utils.showToast('Session expired — please log in again.', 'error'); return }
+
+      const res = await fetch(`${Config.SUPABASE_URL}/functions/v1/fetch-linkedin-engagement`, {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey':        Config.SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ entity_id: _currentEntity }),
+      })
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error || 'Apify fetch failed.')
+
+      Utils.showToast(`Fetched engagement for ${result.posts_written} post(s).`, 'success')
+    } catch (err) {
+      Utils.showToast(err.message || 'Apify fetch failed. Please try again.', 'error')
+    } finally {
+      _apifyBusy = false
+      if (btn) {
+        btn.disabled = false
+        btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v4l3 3"></path></svg> Apify`
+      }
+    }
   }
 
   /* ── Export report ──────────────────────────────────────────
