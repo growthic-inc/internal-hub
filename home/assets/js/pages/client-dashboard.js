@@ -287,12 +287,15 @@ const ClientDashboard = (() => {
     // Reset active metrics whenever entity/platform changes
     _activeMetrics = _getDefaultActiveMetrics()
 
-    // Apify button only makes sense for a personal profile that has its own
-    // LinkedIn URL on file (the client's own person — e.g. Akhilesh Srivastava
-    // — not a Growthic employee, so this lives on the entity, not `employees`).
+    // Apify button depends only on the selected entity having its own LinkedIn
+    // URL on file — true whether that's a Personal Profile client (the client
+    // IS the person, e.g. Akhilesh Srivastava) or a spokesperson entity under
+    // a Company client (e.g. Shweta Gurnani under a company's dashboard).
+    // Not gated on _isPersonalProfile — that flag doesn't get set for
+    // spokesperson entities and isn't what Apify actually needs to know.
     _currentEntityLinkedinUrl = _currentEntityData?.linkedin_url || null
     const apifyBtn = document.getElementById('db-apify-btn')
-    if (apifyBtn) apifyBtn.style.display = (_isPersonalProfile && _currentEntityLinkedinUrl) ? '' : 'none'
+    if (apifyBtn) apifyBtn.style.display = _currentEntityLinkedinUrl ? '' : 'none'
 
     if (!metrics.length && !posts.length) { _renderEmptyState(body); return }
 
