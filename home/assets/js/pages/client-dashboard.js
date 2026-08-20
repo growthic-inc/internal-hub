@@ -477,39 +477,46 @@ const ClientDashboard = (() => {
 
       // Personal Profile's own LinkedIn export never breaks out likes/comments/
       // reposts per post (a single lumped "Engagements" number) — the Apify
-      // fetch (via the "Apify" button) fills that in. Matched by the slug
-      // before -share-/-activity- rather than the full post_url: LinkedIn
-      // hands out two different URL formats for the same post (the manual
-      // export's "...-share-<id>" vs this actor's "...-activity-<id>", each
-      // with a different, unrelated numeric id), so an exact-string match
-      // would silently miss posts Apify actually captured correctly.
-      // Gated on the entity actually having a LinkedIn URL on file (same
-      // as the Apify button's own visibility check) — not on _isPersonalProfile,
-      // which never gets set for a spokesperson entity under a Company client
-      // (e.g. Shweta Gurnani), even though Apify data exists for that entity.
-      // LinkedIn uses several different URN suffixes for the same post
-      // depending on post type/context (share, activity, ugcPost, and
-      // possibly others not yet seen) — each with a different, unrelated
-      // numeric id. Rather than hardcode every known suffix word, match the
-      // *shape* instead: a word immediately followed by a long numeric id.
-      // That covers any future suffix LinkedIn adds without another fix.
+      // fetch (via the "Apify" button) fills that in. Fetched by entity_id
+      // (not by guessing an author handle from a post URL — verified that
+      // Apify returns a post_url with NO handle in it at all for roughly
+      // half of any profile's posts, which silently excluded those rows
+      // whenever retrieval depended on the handle being present).
+      //
+      // Matching a specific uploaded post to its Apify row happens in two
+      // passes, since neither alone covers every case:
+      //  1. Slug match — strip LinkedIn's URN suffix (-share-/-activity-/
+      //     -ugcPost-/etc., matched by shape: word + long numeric id, since
+      //     different data sources use different suffixes for the same
+      //     post) and compare what's left. Fast, exact, but only works when
+      //     Apify's URL actually contains the author handle + slug.
+      //  2. Content match — for rows the slug pass can't place (the
+      //     handle-less ones), check whether the uploaded post's own slug
+      //     words appear as a phrase inside Apify's captured caption text.
+      //     Doesn't depend on the URL at all, so it covers what pass 1 can't.
       const postSlug = url => url?.match(/\/posts\/(.+?)-[A-Za-z]+-\d{10,}/)?.[1] || null
+      const normalizeForMatch = s => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
       let _engagementBySlug = {}
-      if (_currentEntityLinkedinUrl) {
-        // Derived from the entity's own stored LinkedIn URL — the same one
-        // Apify was told to scrape — not from any individual post's URL.
-        // A post's own URL can carry a typo'd/legacy handle spelling from
-        // the manual export (verified: one anomalous row used a different
-        // handle than every other post from the same person), which would
-        // silently poison the whole lookup if trusted as the source of truth.
-        const handle = _currentEntityLinkedinUrl?.match(/\/in\/([^/?]+)/)?.[1]
-        if (handle) {
-          const { data: engRows } = await API.getPersonalPostEngagement(handle)
-          ;(engRows || []).forEach(r => {
-            const slug = postSlug(r.post_url)
-            if (slug) _engagementBySlug[slug] = r
-          })
-        }
+      let _engagementRows = []
+      if (_currentEntityLinkedinUrl && _currentEntity) {
+        const { data: engRows } = await API.getPersonalPostEngagement(_currentEntity)
+        _engagementRows = engRows || []
+        _engagementRows.forEach(r => {
+          const slug = postSlug(r.post_url)
+          if (slug) _engagementBySlug[slug] = r
+        })
+      }
+      const findEngagement = (postUrl) => {
+        const slug = postSlug(postUrl)
+        if (slug && _engagementBySlug[slug]) return _engagementBySlug[slug]
+        // Fallback: does this post's caption-slug phrase appear in any
+        // scraped post's own content text? Only the words after the
+        // handle (the caption part) are meaningful here — the handle
+        // itself tells us nothing about which specific post this is.
+        const captionSlug = slug?.replace(/^[^_]+_/, '')
+        const captionPhrase = normalizeForMatch(captionSlug?.replace(/-/g, ' '))
+        if (!captionPhrase) return null
+        return _engagementRows.find(r => normalizeForMatch(r.content).includes(captionPhrase)) || null
       }
       // Personal Profile's native LinkedIn export ("Top posts" sheet) never
       // includes a caption/title — only the post URL, date, engagements and
@@ -522,7 +529,7 @@ const ClientDashboard = (() => {
       const titleShortOf = p => { const t = cardTitleOf(p); const m = t.match(/^[^.?!]*[.?!]/); return (m ? m[0] : t).trim() || t }
       const postCard = (p) => {
         if (!p) return { TITLE:'', DESCRIPTION:'', IMPRESSIONS:'0', LIKES:'0', COMMENTS:'0', REPOSTS:'0' }
-        const eng = _engagementBySlug[postSlug(p.post_url)]
+        const eng = findEngagement(p.post_url)
         return {
           TITLE:       titleShortOf(p),
           // No separate caption/body field exists in the post data today.
@@ -601,7 +608,7 @@ const ClientDashboard = (() => {
         tokens[`POST_${n}_POSTED_BY`]   = p?.posted_by || ''
         tokens[`POST_${n}_IMPRESSIONS`] = p ? _num(p.impressions).toLocaleString('en-IN') : '0'
         tokens[`POST_${n}_CLICKS`]      = p ? _num(p.clicks).toLocaleString('en-IN') : '0'
-        tokens[`POST_${n}_REACTIONS`]   = p ? _num(_engagementBySlug[postSlug(p.post_url)]?.likes ?? p.likes).toLocaleString('en-IN') : '0'
+        tokens[`POST_${n}_REACTIONS`]   = p ? _num(findEngagement(p.post_url)?.likes ?? p.likes).toLocaleString('en-IN') : '0'
         tokens[`POST_${n}_ENG_RATE`]    = p ? pct(p.engagement_rate) : '0.00%'
         if (p?.post_url) links[`POST_${n}`] = p.post_url
       })
