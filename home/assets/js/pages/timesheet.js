@@ -142,20 +142,22 @@ const Timesheet = (() => {
     }
   }
 
-  // Approve/Reject rights are scoped to the real reporting chain, not just
-  // broad view access — an admin can see everyone's timesheet but can only
-  // act on entries belonging to their own subordinates. super_admin can act on any.
+  // Approve/Reject rights: super_admin can act on anyone but themselves.
+  // admin has that same broad reach, minus super_admin's own timesheet
+  // (People & Culture handles that one instead — see below). Everyone
+  // else is scoped to their real reporting chain.
   function _canApproveEmployee(employeeId) {
     if (employeeId === _user.id) return false
     if (_user.role === 'super_admin') return true
     if (_subordinateIds.has(employeeId)) return true
+    // _directReports is every employee when can_approve is true (see init),
+    // so this lookup works for admins even outside their own reporting line.
+    const target = _directReports.find(e => e.id === employeeId)
+    if (_user.role === 'admin' && target?.role !== 'super_admin') return true
     // super_admin has no manager, so their own timesheet can't route
     // through the normal chain — HR approves it instead, same idea as
     // leave/WFH falling back to the HR queue when there's no manager.
-    if (_user.department === 'people_culture') {
-      const target = _directReports.find(e => e.id === employeeId)
-      if (target?.role === 'super_admin') return true
-    }
+    if (_user.department === 'people_culture' && target?.role === 'super_admin') return true
     return false
   }
 
