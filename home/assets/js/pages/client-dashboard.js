@@ -190,9 +190,10 @@ const ClientDashboard = (() => {
           _currentClient = full; _currentEntity = null
           const entities = full?.client_entities || []
           const entityGroup = document.getElementById('db-entity-group'), entitySel = document.getElementById('db-entity-select')
+          if (entities.length >= 1) _currentEntity = entities[0].id
           if (entities.length > 1) {
             entitySel.innerHTML = entities.map(e => `<option value="${e.id}">${Utils.escapeHtml(e.entity_name)}</option>`).join('')
-            _currentEntity = entities[0].id; entityGroup.style.display = 'flex'
+            entityGroup.style.display = 'flex'
             entitySel.addEventListener('change', () => { _currentEntity = entitySel.value; _loadDashboard() })
           } else { entityGroup.style.display = 'none' }
           _loadDashboard()
