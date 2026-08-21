@@ -58,7 +58,7 @@ Deno.serve(async (req: Request) => {
     )
     const { data: callerEmp } = await adminClient
       .from('employees')
-      .select('role, department')
+      .select('id, role, department')
       .eq('email', user.email)
       .single()
 
@@ -87,8 +87,12 @@ Deno.serve(async (req: Request) => {
       links?:             Record<string, string>   // token name -> URL; hyperlinks that token's replaced text (e.g. TOP_POST_TITLE) to the original post
       top_post_url?:      string                   // LinkedIn post URL; edge fn fetches og:image and inserts it into {{TOP_POST_IMAGE}} placeholder
       post_image_urls?:   string[]                 // Up to 3 post URLs; images inserted into {{POST_1_IMAGE}}, {{POST_2_IMAGE}}, {{POST_3_IMAGE}}
+      apify_fallback?:    Record<string, { imageUrl?: string | null; caption?: string | null }>
+                                                     // post_url -> Apify's own image/caption, used only when
+                                                     // the live fetch below comes back empty (LinkedIn serving
+                                                     // a blocked page instead of erroring outright)
     }
-    const { client_id, month, year, tokens, chart_images, links, top_post_url, post_image_urls } = body
+    const { client_id, month, year, tokens, chart_images, links, top_post_url, post_image_urls, apify_fallback } = body
     const reportType = body.report_type === 'personal' ? 'personal' : 'company'
     if (!client_id || !month || !year || !tokens) {
       return json({ error: 'client_id, month, year, and tokens are required.' }, 400)
@@ -148,7 +152,34 @@ Deno.serve(async (req: Request) => {
     const postDataMap = new Map<string, { caption: string; imageBytes: Uint8Array | null; mimeType: string }>()
     await Promise.allSettled(
       uniqueUrls.map(async url => {
-        const data = await fetchLinkedInPost(url)
+        let data = await fetchLinkedInPost(url)
+        // Fallback to Apify's own copy when the live fetch comes back empty —
+        // LinkedIn increasingly serves a blocked/consent page here instead of
+        // erroring, so fetchLinkedInPost sees a normal response with nothing
+        // usable in it. Apify already scraped the same post successfully
+        // (whenever "Apify" was last run), so use that instead of leaving
+        // the image/caption blank.
+        const fallback = apify_fallback?.[url]
+        if (fallback && (!data.imageBytes || !data.caption)) {
+          let imageBytes = data.imageBytes
+          let mimeType = data.mimeType
+          if (!imageBytes && fallback.imageUrl) {
+            try {
+              const imgRes = await fetch(fallback.imageUrl, { signal: AbortSignal.timeout(8_000) })
+              if (imgRes.ok) {
+                mimeType = imgRes.headers.get('content-type')?.split(';')[0] ?? 'image/jpeg'
+                imageBytes = new Uint8Array(await imgRes.arrayBuffer())
+              }
+            } catch (e) {
+              console.warn('[generate-client-report] Apify fallback image fetch failed:', e)
+            }
+          }
+          data = {
+            caption: data.caption || fallback.caption || '',
+            imageBytes,
+            mimeType,
+          }
+        }
         postDataMap.set(url, data)
       })
     )
@@ -240,6 +271,16 @@ Deno.serve(async (req: Request) => {
     for (const [linkToken, url] of Object.entries(links || {})) {
       await applyHyperlink(accessToken, newFileId, tokens[linkToken], url)
     }
+
+    // Log the generation — fire-and-forget (don't block the response)
+    adminClient.from('report_generation_log').insert({
+      client_id:    client_id,
+      report_type:  reportType,
+      month,
+      year,
+      file_id:      newFileId,
+      generated_by: callerEmp?.id || null,
+    }).then(() => {}).catch(() => {})
 
     return json({
       fileId: newFileId,

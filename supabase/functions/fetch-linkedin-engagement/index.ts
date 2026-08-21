@@ -42,6 +42,8 @@ type ApifyPost = {
   content?:      string        // full caption text — needed for the content-matching fallback
                                 // below, since Apify returns a bare "/posts/activity-<id>" URL
                                 // (no author handle at all) for roughly half of any profile's posts
+  postImages?:   { url?: string }[]   // fallback image source — generate-client-report's own
+                                       // live fetch has started coming back blocked/empty
   engagement?:   { likes?: number; comments?: number; shares?: number }
 }
 
@@ -140,6 +142,7 @@ Deno.serve(async (req: Request) => {
       comments:   p.engagement?.comments ?? 0,
       reposts:    p.engagement?.shares   ?? 0,
       content:    p.content ?? null,
+      image_url:  p.postImages?.[0]?.url ?? null,
       scraped_at: new Date().toISOString(),
     }))
 
