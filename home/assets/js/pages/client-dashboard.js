@@ -729,6 +729,18 @@ const ClientDashboard = (() => {
           chart_images: chartImages,
           ...(sorted[0]?.post_url ? { top_post_url: sorted[0].post_url } : {}),
           post_image_urls: [sorted[0], sorted[1], sorted[2]].filter(p => p?.post_url).map(p => p.post_url),
+          // Fallback image/caption source, used only when the live LinkedIn
+          // fetch below comes back empty (LinkedIn serving a blocked page
+          // instead of the real post). Apify already has this data from
+          // whenever "Apify" was last run — fresher-but-currently-blocked
+          // live fetch is still tried first, server-side.
+          apify_fallback: [sorted[0], sorted[1], sorted[2]].filter(p => p?.post_url).reduce((acc, p) => {
+            const eng = findEngagement(p.post_url)
+            if (eng?.image_url || eng?.content) {
+              acc[p.post_url] = { imageUrl: eng.image_url || null, caption: eng.content || null }
+            }
+            return acc
+          }, {}),
         }),
       })
       const data = await res.json().catch(() => ({}))

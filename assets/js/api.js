@@ -1002,7 +1002,7 @@ const API = (() => {
     if (!entityId) return { data: [] }
     return supabase
       .from('personal_post_engagement')
-      .select('post_url, likes, comments, reposts, content')
+      .select('post_url, likes, comments, reposts, content, image_url')
       .eq('entity_id', entityId)
   }
 
