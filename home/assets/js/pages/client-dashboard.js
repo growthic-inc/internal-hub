@@ -560,6 +560,9 @@ const ClientDashboard = (() => {
         IMPRESSIONS:      impressionsFmt,
         CLICKS:           fmtKpi('Clicks'),
         REACTIONS:        fmtKpi('Reactions'),
+        // Instagram's KPI card labels this "Likes", not "Reactions" — same
+        // underlying column (social_metrics_daily.reactions), different label.
+        TOTAL_LIKES:      kpiByLabel['Likes'] ? fmtKpi('Likes') : fmtKpi('Reactions'),
         ENGAGEMENTS:      engagementsTotal.toLocaleString('en-IN'),
         ENGAGEMENT_RATE:  fmtKpi('Engagement Rate'),
         FOLLOWERS_GAINED: fmtKpi('Followers Gained'),
