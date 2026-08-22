@@ -210,27 +210,6 @@ Deno.serve(async (req: Request) => {
       await batchUpdate(accessToken, newFileId, textRequests)
     }
 
-    // ── Enforce white text on the exec summary top-post title ───────────
-    // replaceAllText can reset text style to theme default (black). Force white
-    // so the title stays readable on the dark-blue card background.
-    // Company template uses the objectId 's2_post_title' (set during rebuild).
-    // Personal template uses the native objectId 'g3f637b59831_1_182'.
-    if (top_post_url) {
-      const titleOid = reportType === 'company' ? 's2_post_title' : 'g3f637b59831_1_182'
-      await batchUpdate(accessToken, newFileId, [{
-        updateTextStyle: {
-          objectId: titleOid,
-          style: {
-            foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 1, blue: 1 } } },
-            bold:     true,
-            fontSize: { magnitude: 14, unit: 'PT' },
-          },
-          textRange: { type: 'ALL' },
-          fields:    'foregroundColor,bold,fontSize',
-        },
-      }]).catch(() => {})
-    }
-
     // ── Drop in every chart image provided, one per named placeholder ──
     for (const [chartToken, base64] of Object.entries(chart_images || {})) {
       await insertChartImage(accessToken, newFileId, monthDir, `{{${chartToken}}}`, base64)
@@ -255,22 +234,14 @@ Deno.serve(async (req: Request) => {
     // ── Directly hyperlink the Top Performing Posts left card title ──────
     // Company template: objectId 'lc_title' (set during rebuild).
     // Personal template: objectId 'g3f637b59831_1_365'.
-    // Sets the link and the white color together in one request — applying
-    // a link on its own resets Slides' rendering to the default blue/
-    // underline link style, with nothing to override it back to white for
-    // readability on this card's dark-blue background.
     if (top_post_url) {
       const lcTitleOid = reportType === 'company' ? 'lc_title' : 'g3f637b59831_1_365'
       await batchUpdate(accessToken, newFileId, [{
         updateTextStyle: {
-          objectId: lcTitleOid,
-          style: {
-            link: { url: top_post_url },
-            foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 1, blue: 1 } } },
-            bold: true,
-          },
+          objectId:  lcTitleOid,
+          style:     { link: { url: top_post_url } },
           textRange: { type: 'ALL' },
-          fields:    'link,foregroundColor,bold',
+          fields:    'link',
         },
       }]).catch(() => {})
     }
@@ -278,6 +249,33 @@ Deno.serve(async (req: Request) => {
     // ── Turn post titles into real hyperlinks back to the original post ──
     for (const [linkToken, url] of Object.entries(links || {})) {
       await applyHyperlink(accessToken, newFileId, tokens[linkToken], url)
+    }
+
+    // ── Enforce white text on the exec summary top-post title ───────────
+    // Runs AFTER hyperlinking, not before: applying a link resets Slides'
+    // rendering to its default blue/underline style, so forcing white
+    // earlier in the function got silently overwritten the moment
+    // applyHyperlink() found this shape (findShapeByText matches
+    // TOP_POST_TITLE_SHORT here first, since Executive Summary precedes
+    // the Highlights slide) and touched it. Only white needs to run last —
+    // the Highlights slide's own title (g3f637b59831_1_365) is a separate,
+    // unrelated shape and is intentionally left alone here.
+    // Company template uses the objectId 's2_post_title' (set during rebuild).
+    // Personal template uses the native objectId 'g3f637b59831_1_182'.
+    if (top_post_url) {
+      const titleOid = reportType === 'company' ? 's2_post_title' : 'g3f637b59831_1_182'
+      await batchUpdate(accessToken, newFileId, [{
+        updateTextStyle: {
+          objectId: titleOid,
+          style: {
+            foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 1, blue: 1 } } },
+            bold:     true,
+            fontSize: { magnitude: 14, unit: 'PT' },
+          },
+          textRange: { type: 'ALL' },
+          fields:    'foregroundColor,bold,fontSize',
+        },
+      }]).catch(() => {})
     }
 
     // Log the generation — fire-and-forget (don't block the response)
