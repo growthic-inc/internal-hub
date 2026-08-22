@@ -19,6 +19,21 @@ const Utils = (() => {
     return formatDate(dateStr, { day: 'numeric', month: 'short' })
   }
 
+  // "01st August 2026" — zero-padded ordinal day + full month name, for the
+  // report cover slide's period line (e.g. "01st August 2026 - 31st August 2026").
+  function formatDateOrdinal(dateStr) {
+    if (!dateStr) return '—'
+    const d = new Date(dateStr)
+    if (isNaN(d)) return '—'
+    const day = d.getDate()
+    const suffix = (day % 10 === 1 && day !== 11) ? 'st'
+      : (day % 10 === 2 && day !== 12) ? 'nd'
+      : (day % 10 === 3 && day !== 13) ? 'rd'
+      : 'th'
+    const month = d.toLocaleDateString('en-IN', { month: 'long' })
+    return `${String(day).padStart(2, '0')}${suffix} ${month} ${d.getFullYear()}`
+  }
+
   function formatDateTime(dateStr) {
     if (!dateStr) return '—'
     const d = new Date(dateStr)
@@ -277,6 +292,7 @@ const Utils = (() => {
   return {
     formatDate,
     formatDateShort,
+    formatDateOrdinal,
     formatDateTime,
     formatMonth,
     formatCurrency,

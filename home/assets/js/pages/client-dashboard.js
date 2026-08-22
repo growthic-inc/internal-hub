@@ -470,7 +470,7 @@ const ClientDashboard = (() => {
       const year  = parseInt(yearStr, 10)
       const month = parseInt(monthStr, 10)
       const { dateFrom, dateTo } = _getDateRange()
-      const dateRangeLabel = `${Utils.formatDate(dateFrom)} – ${Utils.formatDate(dateTo)}`
+      const dateRangeLabel = `${Utils.formatDateOrdinal(dateFrom)} - ${Utils.formatDateOrdinal(dateTo)}`
 
       const sorted = [..._tcPosts].sort((a, b) => _num(b.impressions) - _num(a.impressions))
       const pct = v => (_num(v) * 100).toFixed(2) + '%'
