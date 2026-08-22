@@ -543,6 +543,13 @@ const ClientDashboard = (() => {
       }
 
       const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+      // Instagram's KPI card is labeled "Views", not "Impressions" — the
+      // underlying number is the same column (social_metrics_daily.impressions),
+      // just a different label per platform. Try both so this token works
+      // for either platform instead of silently resolving to 0 on Instagram.
+      const impressionsRaw = kpiByLabel['Impressions'] ? rawKpi('Impressions') : rawKpi('Views')
+      const impressionsFmt = kpiByLabel['Impressions'] ? fmtKpi('Impressions') : fmtKpi('Views')
+
       const tokens = {
         CLIENT_NAME:      (_isPersonalProfile && _reportEntityData?.entity_name) ? _reportEntityData.entity_name : _currentClient.client_name,
         DATE_RANGE:       dateRangeLabel,
@@ -550,20 +557,30 @@ const ClientDashboard = (() => {
         MONTH_YEAR:       `${MONTH_SHORT[month - 1] || ''}'${String(year).slice(2)}`,
         FOLLOWER_COUNT:   _lastFollowerCount.toLocaleString('en-IN'),
         POST_COUNT:       String(_lastPostCount),
-        IMPRESSIONS:      fmtKpi('Impressions'),
+        IMPRESSIONS:      impressionsFmt,
         CLICKS:           fmtKpi('Clicks'),
         REACTIONS:        fmtKpi('Reactions'),
         ENGAGEMENTS:      engagementsTotal.toLocaleString('en-IN'),
         ENGAGEMENT_RATE:  fmtKpi('Engagement Rate'),
         FOLLOWERS_GAINED: fmtKpi('Followers Gained'),
+        PROFILE_VISITS:   fmtKpi('Profile Visits'),
+        TOTAL_COMMENTS:   fmtKpi('Comments'),
+        TOTAL_SHARES:     fmtKpi('Shares'),
+        AVG_LIKES_PER_POST: (() => {
+          const likes = rawKpi('Likes') || rawKpi('Reactions')
+          return _lastPostCount > 0 ? (likes / _lastPostCount).toLocaleString('en-IN', {maximumFractionDigits: 1}) : '0'
+        })(),
+        AVG_COMMENTS_PER_POST: (() => {
+          const comments = rawKpi('Comments')
+          return _lastPostCount > 0 ? (comments / _lastPostCount).toLocaleString('en-IN', {maximumFractionDigits: 1}) : '0'
+        })(),
         FOLLOWER_GROWTH_RATE: (() => {
           const gained = rawKpi('Followers Gained')
           const prev   = _lastFollowerCount - gained
           return prev > 0 ? (gained / prev * 100).toFixed(2) : '0.00'
         })(),
         AVG_IMPRESSIONS_PER_POST: (() => {
-          const imp = rawKpi('Impressions')
-          return _lastPostCount > 0 ? (imp / _lastPostCount).toLocaleString('en-IN', {maximumFractionDigits: 1}) : '0'
+          return _lastPostCount > 0 ? (impressionsRaw / _lastPostCount).toLocaleString('en-IN', {maximumFractionDigits: 1}) : '0'
         })(),
       }
 
@@ -725,7 +742,7 @@ const ClientDashboard = (() => {
         body: JSON.stringify({
           client_id: _currentClient.id,
           month, year, tokens, links,
-          report_type: _isPersonalProfile ? 'personal' : 'company',
+          report_type: _currentPlatform === 'Instagram' ? 'instagram' : _isPersonalProfile ? 'personal' : 'company',
           chart_images: chartImages,
           ...(sorted[0]?.post_url ? { top_post_url: sorted[0].post_url } : {}),
           post_image_urls: [sorted[0], sorted[1], sorted[2]].filter(p => p?.post_url).map(p => p.post_url),
@@ -911,6 +928,7 @@ const ClientDashboard = (() => {
       const totalSaves    = sum(posts,   'saves')        // saves live on post rows
       const totalComments = sum(metrics, 'comments')
       const totalShares   = sum(metrics, 'reposts_shares')
+      const totalVisits   = sum(metrics, 'profile_visits')
       const avgEng        = metrics.length ? (sum(metrics, 'engagement_rate') / metrics.length) * 100 : 0
 
       const pViews    = sum(prevMetrics, 'impressions')
@@ -918,6 +936,7 @@ const ClientDashboard = (() => {
       const pSaves    = sum(prevPosts,   'saves')
       const pComments = sum(prevMetrics, 'comments')
       const pShares   = sum(prevMetrics, 'reposts_shares')
+      const pVisits   = sum(prevMetrics, 'profile_visits')
       const pAvgEng   = prevMetrics.length ? (sum(prevMetrics, 'engagement_rate') / prevMetrics.length) * 100 : 0
 
       return [
@@ -926,6 +945,7 @@ const ClientDashboard = (() => {
         { label: 'Saves',           rawValue: totalSaves,    value: loc(totalSaves),          growth: growthPct(totalSaves,    pSaves)           },
         { label: 'Comments',        rawValue: totalComments, value: loc(totalComments),       growth: growthPct(totalComments, pComments)        },
         { label: 'Shares',          rawValue: totalShares,   value: loc(totalShares),         growth: growthPct(totalShares,   pShares)          },
+        { label: 'Profile Visits',  rawValue: totalVisits,   value: loc(totalVisits),         growth: growthPct(totalVisits,   pVisits)          },
         { label: 'Followers Gained',rawValue: totalFollowers,value: loc(totalFollowers),      growth: growthPct(totalFollowers,prevTotalFollowers) },
       ]
     }
