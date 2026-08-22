@@ -532,7 +532,7 @@ const ClientDashboard = (() => {
       const cardTitleOf  = p => _isPersonalProfile ? (p.post_title || '') : titleOf(p)
       const titleShortOf = p => { const t = cardTitleOf(p); const m = t.match(/^[^.?!]*[.?!]/); return (m ? m[0] : t).trim() || t }
       const postCard = (p) => {
-        if (!p) return { TITLE:'', DESCRIPTION:'', IMPRESSIONS:'0', LIKES:'0', COMMENTS:'0', REPOSTS:'0' }
+        if (!p) return { TITLE:'', DESCRIPTION:'', IMPRESSIONS:'0', LIKES:'0', COMMENTS:'0', REPOSTS:'0', SAVES:'0' }
         const eng = findEngagement(p.post_url)
         return {
           TITLE:       titleShortOf(p),
@@ -543,6 +543,7 @@ const ClientDashboard = (() => {
           LIKES:       _num(eng?.likes    ?? p.likes).toLocaleString('en-IN'),
           COMMENTS:    _num(eng?.comments ?? p.comments).toLocaleString('en-IN'),
           REPOSTS:     _num(eng?.reposts  ?? p.reposts_shares).toLocaleString('en-IN'),
+          SAVES:       _num(p.saves).toLocaleString('en-IN'),
         }
       }
 
@@ -621,6 +622,7 @@ const ClientDashboard = (() => {
         tokens[`POST_${n}_LIKES`]       = c.LIKES
         tokens[`POST_${n}_COMMENTS`]    = c.COMMENTS
         tokens[`POST_${n}_REPOSTS`]     = c.REPOSTS
+        tokens[`POST_${n}_SAVES`]       = c.SAVES
         if (p?.post_url) links[`POST_${n}_TITLE`] = p.post_url
       })
 
