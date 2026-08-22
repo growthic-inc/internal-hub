@@ -636,6 +636,7 @@ const ClientDashboard = (() => {
         tokens[`POST_${n}_CLICKS`]      = p ? _num(p.clicks).toLocaleString('en-IN') : '0'
         tokens[`POST_${n}_REACTIONS`]   = p ? _num(findEngagement(p.post_url)?.likes ?? p.likes).toLocaleString('en-IN') : '0'
         tokens[`POST_${n}_ENG_RATE`]    = p ? pct(p.engagement_rate) : '0.00%'
+        tokens[`POST_${n}_SAVES`]       = p ? _num(p.saves).toLocaleString('en-IN') : '0'
         if (p?.post_url) links[`POST_${n}`] = p.post_url
       })
 
