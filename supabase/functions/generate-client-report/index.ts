@@ -255,14 +255,22 @@ Deno.serve(async (req: Request) => {
     // ── Directly hyperlink the Top Performing Posts left card title ──────
     // Company template: objectId 'lc_title' (set during rebuild).
     // Personal template: objectId 'g3f637b59831_1_365'.
+    // Sets the link and the white color together in one request — applying
+    // a link on its own resets Slides' rendering to the default blue/
+    // underline link style, with nothing to override it back to white for
+    // readability on this card's dark-blue background.
     if (top_post_url) {
       const lcTitleOid = reportType === 'company' ? 'lc_title' : 'g3f637b59831_1_365'
       await batchUpdate(accessToken, newFileId, [{
         updateTextStyle: {
-          objectId:  lcTitleOid,
-          style:     { link: { url: top_post_url } },
+          objectId: lcTitleOid,
+          style: {
+            link: { url: top_post_url },
+            foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 1, blue: 1 } } },
+            bold: true,
+          },
           textRange: { type: 'ALL' },
-          fields:    'link',
+          fields:    'link,foregroundColor,bold',
         },
       }]).catch(() => {})
     }
