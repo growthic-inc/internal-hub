@@ -26,6 +26,7 @@ const corsHeaders = {
 
 const TEMPLATE_SETTING_KEY          = 'reports.company_page_template_id'
 const PERSONAL_TEMPLATE_SETTING_KEY = 'reports.personal_profile_template_id'
+const INSTAGRAM_TEMPLATE_SETTING_KEY = 'reports.instagram_template_id'
 const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December']
 
@@ -81,7 +82,7 @@ Deno.serve(async (req: Request) => {
       client_id:          string
       month:              number   // 1-12
       year:               number
-      report_type?:       'company' | 'personal'   // defaults to 'company'
+      report_type?:       'company' | 'personal' | 'instagram'   // defaults to 'company'
       tokens:             Record<string, string>   // e.g. { CLIENT_NAME: 'Acme Co', FOLLOWER_COUNT: '1,234', ... }
       chart_images?:      Record<string, string>   // token name (no braces) -> raw base64, e.g. { PERFORMANCE_CHART: '...', PUBLISHING_CHART: '...' }
       links?:             Record<string, string>   // token name -> URL; hyperlinks that token's replaced text (e.g. TOP_POST_TITLE) to the original post
@@ -93,7 +94,8 @@ Deno.serve(async (req: Request) => {
                                                      // a blocked page instead of erroring outright)
     }
     const { client_id, month, year, tokens, chart_images, links, top_post_url, post_image_urls, apify_fallback } = body
-    const reportType = body.report_type === 'personal' ? 'personal' : 'company'
+    const reportType = body.report_type === 'personal' ? 'personal'
+      : body.report_type === 'instagram' ? 'instagram' : 'company'
     if (!client_id || !month || !year || !tokens) {
       return json({ error: 'client_id, month, year, and tokens are required.' }, 400)
     }
@@ -107,7 +109,8 @@ Deno.serve(async (req: Request) => {
     if (clientErr || !client) return json({ error: 'Client not found.' }, 404)
 
     // ── Look up the right template's Slides file ID ────────────
-    const settingKey = reportType === 'personal' ? PERSONAL_TEMPLATE_SETTING_KEY : TEMPLATE_SETTING_KEY
+    const settingKey = reportType === 'personal' ? PERSONAL_TEMPLATE_SETTING_KEY
+      : reportType === 'instagram' ? INSTAGRAM_TEMPLATE_SETTING_KEY : TEMPLATE_SETTING_KEY
     const { data: setting, error: settingErr } = await anonClient
       .from('app_settings')
       .select('value')
@@ -234,8 +237,10 @@ Deno.serve(async (req: Request) => {
     // ── Directly hyperlink the Top Performing Posts left card title ──────
     // Company template: objectId 'lc_title' (set during rebuild).
     // Personal template: objectId 'g3f637b59831_1_365'.
+    // Instagram template: objectId 'g3fac7a366b7_0_426'.
     if (top_post_url) {
-      const lcTitleOid = reportType === 'company' ? 'lc_title' : 'g3f637b59831_1_365'
+      const lcTitleOid = reportType === 'company' ? 'lc_title'
+        : reportType === 'instagram' ? 'g3fac7a366b7_0_426' : 'g3f637b59831_1_365'
       await batchUpdate(accessToken, newFileId, [{
         updateTextStyle: {
           objectId:  lcTitleOid,
@@ -262,8 +267,10 @@ Deno.serve(async (req: Request) => {
     // unrelated shape and is intentionally left alone here.
     // Company template uses the objectId 's2_post_title' (set during rebuild).
     // Personal template uses the native objectId 'g3f637b59831_1_182'.
+    // Instagram template uses the native objectId 'g3fac7a366b7_0_177'.
     if (top_post_url) {
-      const titleOid = reportType === 'company' ? 's2_post_title' : 'g3f637b59831_1_182'
+      const titleOid = reportType === 'company' ? 's2_post_title'
+        : reportType === 'instagram' ? 'g3fac7a366b7_0_177' : 'g3f637b59831_1_182'
       await batchUpdate(accessToken, newFileId, [{
         updateTextStyle: {
           objectId: titleOid,
