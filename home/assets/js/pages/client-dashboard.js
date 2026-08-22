@@ -739,6 +739,77 @@ const ClientDashboard = (() => {
         }
       }
 
+      // Interactions By Content Type (Instagram only): Posts vs Reels, as a
+      // % of total interactions. Stories is intentionally left out — our
+      // schema has never captured Instagram Stories metrics (no upload has
+      // ever included them), so showing a "Stories" bucket would mean
+      // fabricating a number rather than reporting real data.
+      if (_currentPlatform === 'Instagram' && typeof html2canvas !== 'undefined' && _tcPosts.length) {
+        const bucketOf = p => {
+          const t = (p.content_type || p.post_type || '').toLowerCase().trim()
+          if (t === 'ig reel' || t === 'ig video') return 'Reels'
+          if (t === 'ig image' || t === 'ig carousel' || t === 'ig album') return 'Posts'
+          return null
+        }
+        const totals = {}
+        for (const p of _tcPosts) {
+          const bucket = bucketOf(p)
+          if (!bucket) continue
+          const interactions = _num(p.likes) + _num(p.comments) + _num(p.reposts_shares) + _num(p.saves)
+          totals[bucket] = (totals[bucket] || 0) + interactions
+        }
+        const grand = Object.values(totals).reduce((a, b) => a + b, 0)
+        if (grand > 0) {
+          const rows = Object.entries(totals)
+            .map(([label, val]) => ({ label, pct: val / grand * 100 }))
+            .sort((a, b) => b.pct - a.pct)
+          const CT_PALETTE = ['#0B1D4D', '#2C4FA6', '#5BB8F0']
+          const scaleMax  = Math.max(Math.ceil(rows[0].pct / 10) * 10, 10)
+          const tickStep  = Math.ceil(scaleMax / 5 / 10) * 10 || 10
+          const ticks     = Array.from({ length: Math.floor(scaleMax / tickStep) + 1 }, (_, i) => i * tickStep)
+
+          const barsHtml = rows.map((row, i) => {
+            const barPct = Math.max((row.pct / scaleMax) * 100, 2).toFixed(1)
+            const valStr = parseFloat(row.pct.toFixed(1)) + '%'
+            return `
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:13px;">
+                <div style="width:100px;min-width:100px;text-align:right;font-size:13px;color:#444;">${row.label}</div>
+                <div style="flex:1;height:36px;border-radius:4px;overflow:hidden;">
+                  <div style="width:${barPct}%;height:36px;background:${CT_PALETTE[i % CT_PALETTE.length]};border-radius:4px;display:flex;align-items:center;padding-left:10px;box-sizing:border-box;min-width:42px;">
+                    <span style="font-size:13px;font-weight:700;color:#fff;white-space:nowrap;">${valStr}</span>
+                  </div>
+                </div>
+              </div>`
+          }).join('')
+
+          const ticksHtml = `
+            <div style="position:relative;height:16px;margin-left:112px;margin-top:6px;">
+              ${ticks.map((t, idx) => {
+                const leftPct = (t / scaleMax) * 100
+                const translateX = idx === 0 ? '0%' : idx === ticks.length - 1 ? '-100%' : '-50%'
+                return `<div style="position:absolute;left:${leftPct}%;transform:translateX(${translateX});font-size:11px;color:#aaa;white-space:nowrap;">${t}</div>`
+              }).join('')}
+            </div>`
+
+          const chartHtml = `
+            <div style="background:#fff;padding:32px 36px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;width:920px;box-sizing:border-box;">
+              <div style="text-align:center;margin-bottom:22px;">
+                <span style="font-size:13px;font-weight:700;color:#2E3444;text-transform:uppercase;letter-spacing:.08em;">CONTENT TYPE</span>
+              </div>
+              ${barsHtml}
+              ${ticksHtml}
+            </div>`
+
+          const wrapper = document.createElement('div')
+          wrapper.style.cssText = 'position:fixed;left:-9999px;top:0;'
+          wrapper.innerHTML = chartHtml
+          document.body.appendChild(wrapper)
+          const canvas = await html2canvas(wrapper.firstElementChild, { backgroundColor: '#ffffff', scale: 2 })
+          document.body.removeChild(wrapper)
+          chartImages['INTERACTIONS_BY_CONTENT_TYPE_CHART'] = canvas.toDataURL('image/png').split(',')[1]
+        }
+      }
+
       const { data: { session } } = await Config.supabase.auth.getSession()
       if (!session) { Utils.showToast('Session expired — please log in again.', 'error'); return }
 
