@@ -466,11 +466,15 @@ const ClientDashboard = (() => {
         ? rawKpi('Engagements')
         : rawKpi('Clicks') + rawKpi('Reactions')
 
-      const [yearStr, monthStr] = (_currentMonth || _thisMonth()).split('-')
-      const year  = parseInt(yearStr, 10)
-      const month = parseInt(monthStr, 10)
       const { dateFrom, dateTo } = _getDateRange()
       const dateRangeLabel = `${Utils.formatDateOrdinal(dateFrom)} - ${Utils.formatDateOrdinal(dateTo)}`
+      // MONTH/MONTH_YEAR must reflect the period actually selected (dateTo),
+      // not _currentMonth — that variable is set once to "this month" and
+      // never updated by the custom date-range picker, so a custom range in
+      // a past month (e.g. all of July) was still labeled with today's month.
+      const [yearStr, monthStr] = dateTo.split('-')
+      const year  = parseInt(yearStr, 10)
+      const month = parseInt(monthStr, 10)
 
       const sorted = [..._tcPosts].sort((a, b) => _num(b.impressions) - _num(a.impressions))
       const pct = v => (_num(v) * 100).toFixed(2) + '%'
