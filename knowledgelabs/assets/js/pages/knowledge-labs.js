@@ -16,6 +16,7 @@ const KnowledgeLabsBrowse = (() => {
   let _activeDeptId     = null
   let _activeCategory   = null // null = All
   let _searchQuery      = ''
+  let _detailSearchQuery = ''
 
   /* ── Department icons (matches convention used for module icons elsewhere) ── */
   const DEPT_ICONS = {
@@ -95,8 +96,9 @@ const KnowledgeLabsBrowse = (() => {
     const hash  = window.location.hash.slice(1)
     const match = hash.match(/^\/dept\/(.+)$/)
     if (match) {
-      _activeDeptId   = match[1]
-      _activeCategory = null
+      _activeDeptId    = match[1]
+      _activeCategory  = null
+      _detailSearchQuery = ''
       _renderDetail()
     } else {
       _activeDeptId = null
@@ -194,6 +196,10 @@ const KnowledgeLabsBrowse = (() => {
         <div style="color:var(--primary);">${_deptIcon(group.department?.system_key)}</div>
         <h2 style="margin:0;font-size:18px;font-weight:700;">${Utils.escapeHtml(group.department?.name || '')}</h2>
       </div>
+      <div class="search-wrap" style="max-width:420px;margin-bottom:14px;">
+        <span class="search-icon">${ICON_SEARCH}</span>
+        <input class="form-input" id="kl-detail-search" type="search" placeholder="Search in ${Utils.escapeHtml(group.department?.name || 'this department')}…" value="${Utils.escapeHtml(_detailSearchQuery)}">
+      </div>
       <div class="tabs" id="kl-cat-tabs" style="margin-bottom:16px;">
         <button class="tab-btn tab-btn--active" data-cat="">All</button>
         <button class="tab-btn" data-cat="SOP">SOPs</button>
@@ -210,18 +216,28 @@ const KnowledgeLabsBrowse = (() => {
       })
     })
 
+    document.getElementById('kl-detail-search')?.addEventListener('input', Utils.debounce(e => {
+      _detailSearchQuery = e.target.value
+      _renderDetailList(group)
+    }, 200))
+
     _renderDetailList(group)
   }
 
   function _renderDetailList(group) {
     const el = document.getElementById('kl-detail-list')
     if (!el) return
-    const list = group.resources.filter(r => !_activeCategory || r.category === _activeCategory)
+    const q = _detailSearchQuery.trim().toLowerCase()
+    const list = group.resources.filter(r => {
+      if (_activeCategory && r.category !== _activeCategory) return false
+      if (q && !r.title.toLowerCase().includes(q) && !(r.description || '').toLowerCase().includes(q)) return false
+      return true
+    })
 
     if (!list.length) {
       el.innerHTML = group.resources.length === 0
         ? `<div class="empty-state"><h3>Nothing published yet</h3><p>Check back once this department's SOPs and templates are added.</p></div>`
-        : `<div class="empty-state"><h3>Nothing here</h3><p>Try a different category.</p></div>`
+        : `<div class="empty-state"><h3>Nothing here</h3><p>Try a different category or search term.</p></div>`
       return
     }
 
