@@ -1279,6 +1279,22 @@ const LeaveTracker = (() => {
         </div>
       </div>
 
+      <!-- ── Leave Policy (Auto-credit) ── -->
+      <div class="lt-settings-section section-card mb-4">
+        <div class="section-card-header" style="justify-content:space-between;align-items:center;">
+          <div>
+            <h3>Leave Policy — Auto-credit</h3>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">
+              Set once a year. Credits full-time employees automatically on the 1st of the month.
+            </div>
+          </div>
+          <button class="btn btn--primary btn--sm" id="lt-policy-save-btn">Save Policy</button>
+        </div>
+        <div class="section-card-body" style="padding:0;">
+          ${_renderLeavePolicyTable(allLeaveTypes)}
+        </div>
+      </div>
+
       <!-- ── WFH Quotas ── -->
       <div class="lt-settings-section section-card mb-4">
         <div class="section-card-header">
@@ -1479,6 +1495,83 @@ const LeaveTracker = (() => {
     `
   }
 
+  /* ── Leave Policy table ───────────────────────────────── */
+  function _renderLeavePolicyTable(types) {
+    const active = types.filter(t => t.is_active)
+    if (!active.length) return '<p class="empty-state">No active leave types.</p>'
+
+    const FREQ_LABELS = {
+      monthly:    'Monthly',
+      quarterly:  'Quarterly',
+      half_yearly:'Half Yearly',
+      yearly:     'Yearly',
+    }
+
+    function _creditSchedule(days, freq) {
+      if (!freq || !days || days <= 0) return '<span class="badge badge--muted">Not auto-credited</span>'
+      const d = parseFloat(days)
+      const f = n => Number.isInteger(n) ? n : parseFloat(n.toFixed(2))
+      if (freq === 'monthly')     return `<span class="badge badge--success">${f(d/12)} day${f(d/12)!==1?'s':''}/month</span>`
+      if (freq === 'quarterly')   return `<span class="badge badge--success">${f(d/4)} day${f(d/4)!==1?'s':''}/quarter</span>`
+      if (freq === 'half_yearly') return `<span class="badge badge--success">${f(d/2)} day${f(d/2)!==1?'s':''} on Apr & Oct</span>`
+      if (freq === 'yearly')      return `<span class="badge badge--warning">${d} day${d!==1?'s':''} on Apr 1</span>`
+      return '<span class="badge badge--muted">—</span>'
+    }
+
+    return `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Leave type</th>
+            <th style="width:110px;">Annual days</th>
+            <th style="width:160px;">Accrual frequency</th>
+            <th>Credit schedule</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${active.map(t => {
+            const isManual = !t.accrual_frequency
+            return `
+              <tr data-policy-row="${t.id}">
+                <td><strong>${Utils.escapeHtml(t.name)}</strong></td>
+                <td>
+                  ${isManual
+                    ? `<span style="font-size:12px;color:var(--text-muted);">—</span>`
+                    : `<input class="form-input lt-policy-days" type="number" min="0" max="365" step="0.5"
+                         value="${t.annual_days ?? ''}" placeholder="0"
+                         style="width:80px;padding:4px 8px;font-size:13px;"
+                         oninput="this.closest('tr').querySelector('.lt-policy-pill').innerHTML=_ltPolicyPill(this.value,this.closest('tr').querySelector('.lt-policy-freq').value)">`}
+                </td>
+                <td>
+                  <select class="form-select lt-policy-freq" style="font-size:13px;padding:4px 8px;"
+                    onchange="this.closest('tr').querySelector('.lt-policy-pill').innerHTML=_ltPolicyPill(this.closest('tr').querySelector('.lt-policy-days')?.value,this.value)">
+                    <option value="">— None —</option>
+                    <option value="monthly"     ${t.accrual_frequency==='monthly'    ?'selected':''}>Monthly</option>
+                    <option value="quarterly"   ${t.accrual_frequency==='quarterly'  ?'selected':''}>Quarterly</option>
+                    <option value="half_yearly" ${t.accrual_frequency==='half_yearly'?'selected':''}>Half Yearly</option>
+                    <option value="yearly"      ${t.accrual_frequency==='yearly'     ?'selected':''}>Yearly</option>
+                  </select>
+                </td>
+                <td class="lt-policy-pill">${_creditSchedule(t.annual_days, t.accrual_frequency)}</td>
+              </tr>`
+          }).join('')}
+        </tbody>
+      </table>
+    `
+  }
+
+  /* exposed helper called from inline oninput/onchange above */
+  window._ltPolicyPill = function(days, freq) {
+    if (!freq || !days || parseFloat(days) <= 0) return '<span class="badge badge--muted">Not auto-credited</span>'
+    const d = parseFloat(days)
+    const f = n => Number.isInteger(n) ? n : parseFloat(n.toFixed(2))
+    if (freq === 'monthly')     return `<span class="badge badge--success">${f(d/12)} day${f(d/12)!==1?'s':''}/month</span>`
+    if (freq === 'quarterly')   return `<span class="badge badge--success">${f(d/4)} day${f(d/4)!==1?'s':''}/quarter</span>`
+    if (freq === 'half_yearly') return `<span class="badge badge--success">${f(d/2)} day${f(d/2)!==1?'s':''} on Apr & Oct</span>`
+    if (freq === 'yearly')      return `<span class="badge badge--warning">${d} day${d!==1?'s':''} on Apr 1</span>`
+    return '<span class="badge badge--muted">—</span>'
+  }
+
   /* ── WFH Quotas table ─────────────────────────────────── */
   function _renderWfhQuotasTable(quotas, month, year) {
     const filtered = quotas.filter(q => q.month === month && q.year === year)
@@ -1617,6 +1710,38 @@ const LeaveTracker = (() => {
 
   /* ── Settings event binding ───────────────────────────── */
   function _bindSettingsActions(allLeaveTypes, allQuotas, allHolidays, allEvents, allCredits, curMonth, curYear) {
+
+    /* ── Leave Policy (Auto-credit) ── */
+    document.getElementById('lt-policy-save-btn')?.addEventListener('click', async () => {
+      const rows = document.querySelectorAll('[data-policy-row]')
+      if (!rows.length) return
+
+      const btn = document.getElementById('lt-policy-save-btn')
+      btn.disabled = true; btn.textContent = 'Saving…'
+
+      const updates = Array.from(rows).map(row => {
+        const id   = row.dataset.policyRow
+        const daysEl = row.querySelector('.lt-policy-days')
+        const freqEl = row.querySelector('.lt-policy-freq')
+        const days = daysEl ? (parseFloat(daysEl.value) || null) : null
+        const freq = freqEl?.value || null
+        return API.updateLeaveType(id, {
+          annual_days:       days,
+          accrual_frequency: freq || null,
+        })
+      })
+
+      const results = await Promise.all(updates)
+      const failed  = results.filter(r => r.error)
+
+      btn.disabled = false; btn.textContent = 'Save Policy'
+
+      if (failed.length) {
+        Utils.showToast('Some updates failed — please try again.', 'error')
+      } else {
+        Utils.showToast('Leave policy saved.', 'success')
+      }
+    })
 
     /* ── Attendance Settings ── */
     document.getElementById('att-settings-edit-btn')?.addEventListener('click', () => {
