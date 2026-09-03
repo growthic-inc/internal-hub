@@ -327,7 +327,7 @@ const ClientDashboard = (() => {
           <div class="chart-canvas-wrap" style="height:260px;"><canvas id="trend-chart"></canvas></div>
         </div>
         <div class="chart-card mb-4">
-          <div class="chart-card-header"><span class="chart-card-title">Weekly Publishing Activity</span></div>
+          <div class="chart-card-header"><span class="chart-card-title" id="pub-chart-title">Weekly Publishing Activity</span></div>
           <div class="chart-canvas-wrap"><canvas id="pub-chart"></canvas></div>
         </div>
         <div class="section-card mb-4">
@@ -337,7 +337,7 @@ const ClientDashboard = (() => {
         ${_renderAudienceSection(followers, visitors, demoFollowers, demoVisitors)}
       `
       _initTrendChart(metrics)
-      _initPubChart(posts)
+      _initPubChart(posts, dateFrom, dateTo)
       _initFollowersChart(followers)
       _bindContextBar(); _bindTrendPills(metrics); _bindDemoTabs(); _bindTopContent()
       return
@@ -367,12 +367,12 @@ const ClientDashboard = (() => {
         ? `<div class="db-pub-row mb-4">
              ${_wwHtml}
              <div class="chart-card db-pub-chart-panel">
-               <div class="chart-card-header"><span class="chart-card-title">Weekly Publishing Activity</span></div>
+               <div class="chart-card-header"><span class="chart-card-title" id="pub-chart-title">Weekly Publishing Activity</span></div>
                <div class="chart-canvas-wrap"><canvas id="pub-chart"></canvas></div>
              </div>
            </div>`
         : `<div class="chart-card mb-4">
-             <div class="chart-card-header"><span class="chart-card-title">Weekly Publishing Activity</span></div>
+             <div class="chart-card-header"><span class="chart-card-title" id="pub-chart-title">Weekly Publishing Activity</span></div>
              <div class="chart-canvas-wrap"><canvas id="pub-chart"></canvas></div>
            </div>`
       }
@@ -386,7 +386,7 @@ const ClientDashboard = (() => {
 
     body.innerHTML = analyticsHtml
 
-    _initTrendChart(metrics); _initPubChart(posts)
+    _initTrendChart(metrics); _initPubChart(posts, dateFrom, dateTo)
     _initFollowersChart(followers); _initVisitorsChart(visitors)
     _bindContextBar(); _bindTrendPills(metrics); _bindDemoTabs(); _bindTopContent(); _bindTopContent()
   }
@@ -1111,22 +1111,45 @@ const ClientDashboard = (() => {
   }
 
   /* ── Publishing chart ───────────────────────────────────── */
-  function _initPubChart(posts) {
+  // Weeks (Mon-Sun) don't line up with calendar months, so a week bucket
+  // straddling a month boundary (e.g. "27 Jul – 2 Aug") makes it look like
+  // a post is missing when eyeballing a single month's total from the
+  // chart — the post is counted, just under a bar that reads as the wrong
+  // month. For date ranges long enough to plausibly span multiple months
+  // (>45 days), group by calendar month instead, where each bar's total
+  // matches that month's real post count exactly.
+  function _initPubChart(posts, dateFrom, dateTo) {
     if (_pubChart) { _pubChart.destroy(); _pubChart = null }
     const canvas = document.getElementById('pub-chart')
     if (!canvas || typeof Chart === 'undefined') return
-    const weekMap = {}
+
+    const spanDays = (dateFrom && dateTo)
+      ? Math.round((new Date(dateTo) - new Date(dateFrom)) / 86400000)
+      : 0
+    const byMonth = spanDays > 45
+    const titleEl = document.getElementById('pub-chart-title')
+    if (titleEl) titleEl.textContent = byMonth ? 'Monthly Publishing Activity' : 'Weekly Publishing Activity'
+
+    const bucketMap = {}
     posts.forEach(p => {
       if (!p.created_date) return
-      const d = new Date(p.created_date), day = d.getDay()
-      const mon = new Date(d); mon.setDate(d.getDate() + (day === 0 ? -6 : 1 - day))
-      const key = mon.toISOString().split('T')[0]
-      weekMap[key] = (weekMap[key] || 0) + 1
+      const d = new Date(p.created_date)
+      let key
+      if (byMonth) {
+        key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+      } else {
+        const day = d.getDay()
+        const mon = new Date(d); mon.setDate(d.getDate() + (day === 0 ? -6 : 1 - day))
+        key = mon.toISOString().split('T')[0]
+      }
+      bucketMap[key] = (bucketMap[key] || 0) + 1
     })
-    const weeks = Object.keys(weekMap).sort()
-    const labels = weeks.map(w => { const m = new Date(w), s = new Date(m); s.setDate(m.getDate() + 6); return _shortDate(m.toISOString()) + '–' + _shortDate(s.toISOString()) })
+    const buckets = Object.keys(bucketMap).sort()
+    const labels = byMonth
+      ? buckets.map(b => new Date(b).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }))
+      : buckets.map(w => { const m = new Date(w), s = new Date(m); s.setDate(m.getDate() + 6); return _shortDate(m.toISOString()) + '–' + _shortDate(s.toISOString()) })
     _pubChart = new Chart(canvas, {
-      type: 'bar', data: { labels, datasets: [{ label: 'Posts Published', data: weeks.map(w => weekMap[w]), backgroundColor: '#0F4799', borderRadius: 4, borderSkipped: false }] },
+      type: 'bar', data: { labels, datasets: [{ label: 'Posts Published', data: buckets.map(b => bucketMap[b]), backgroundColor: '#0F4799', borderRadius: 4, borderSkipped: false }] },
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y} posts` } } }, scales: { x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#94A3B8' } }, y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 11 }, color: '#94A3B8', stepSize: 1 }, beginAtZero: true } } },
     })
   }
