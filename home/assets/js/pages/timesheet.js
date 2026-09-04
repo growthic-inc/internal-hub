@@ -408,6 +408,15 @@ const Timesheet = (() => {
     const approved  = dayEntries.filter(e => e.status === 'approved').length
     const rejected  = dayEntries.filter(e => e.status === 'rejected').length
 
+    // A day with an unresolved rejection stays fully editable regardless of
+    // the lock window — same principle _openEntryModal already applies to a
+    // single entry, extended to the whole day so the "Submit Draft" action
+    // actually shows once a rejected entry gets edited back into 'draft'.
+    // Editing doesn't clear rejection_comment, so it's still the signal to
+    // check even after status has already moved off 'rejected'.
+    const hasUnresolvedRejection = dayEntries.some(e => e.status === 'rejected' || (e.status === 'draft' && e.rejection_comment))
+    const effectiveLocked = isLocked && !hasUnresolvedRejection
+
     let headerIcon = ''
     if (isPastNoEntry) {
       headerIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" title="No hours logged"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`
@@ -420,11 +429,11 @@ const Timesheet = (() => {
     }
 
     let footerHtml = ''
-    if (isLocked && (isSunday || isHoliday) && dayEntries.length === 0) {
+    if (effectiveLocked && (isSunday || isHoliday) && dayEntries.length === 0) {
       footerHtml = isSunday
         ? `<div class="ts-day-action ts-day-action--locked">Day Off</div>`
         : `<div class="ts-day-action" style="background:#F0FDF4;color:#059669;border:none;cursor:default;">Holiday</div>`
-    } else if (isLocked) {
+    } else if (effectiveLocked) {
       footerHtml = `<div class="ts-day-action ts-day-action--locked">Locked</div>`
     } else if (isSunday && dayEntries.length === 0) {
       footerHtml = `<div class="ts-day-action" style="background:var(--surface-2,#F9FAFB);color:var(--text-muted);border:none;cursor:default;">Day Off</div>`
@@ -443,7 +452,7 @@ const Timesheet = (() => {
     }
 
     return `
-      <div class="ts-col${isToday ? ' ts-col--today' : ''}${isLocked ? ' ts-col--locked' : ''}${isFullLeaveDay ? ' ts-col--leave' : ''}${isHoliday ? ' ts-col--holiday' : ''}${isSunday ? ' ts-col--off' : ''}">
+      <div class="ts-col${isToday ? ' ts-col--today' : ''}${effectiveLocked ? ' ts-col--locked' : ''}${isFullLeaveDay ? ' ts-col--leave' : ''}${isHoliday ? ' ts-col--holiday' : ''}${isSunday ? ' ts-col--off' : ''}">
         <div class="ts-col-header">
           <div class="ts-col-top">
             <span class="ts-col-weekday">${day.toLocaleDateString('en-IN', { weekday:'short' }).toUpperCase()}</span>
@@ -475,7 +484,7 @@ const Timesheet = (() => {
           ` : ''}
           ${cvHalf ? _cvContextBanner(cvDay) : ''}
           ${(!isFullLeaveDay && !isHoliday && !isSunday) || dayEntries.length > 0 ? dayEntries.map(e => _renderCard(e)).join('') : ''}
-          ${_p.can_create && !isLocked && !isFuture && !isFullLeaveDay && !isHoliday && !isSunday ? `
+          ${_p.can_create && !effectiveLocked && !isFuture && !isFullLeaveDay && !isHoliday && !isSunday ? `
             <button class="ts-add-btn" data-date="${iso}">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Entry
