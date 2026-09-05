@@ -1499,7 +1499,21 @@ const LeaveTracker = (() => {
       if (!isHalf && end < start) { errEl.textContent = 'End date cannot be before start date.'; errEl.style.display = 'block'; return }
       if (!reason) { errEl.textContent = 'Please provide a reason.';          errEl.style.display = 'block'; return }
 
-      const days       = _calcLeaveDays(start, isHalf ? start : end, isHalf)
+      const days      = _calcLeaveDays(start, isHalf ? start : end, isHalf)
+      const leaveType = _leaveTypes.find(t => t.id === typeId)
+
+      // Balance is enforced for every paid leave type — unpaid leave has no
+      // balance concept and is exempt. The database has the same check as a
+      // backstop; this is just the friendly, immediate version.
+      if (!leaveType?.is_unpaid) {
+        const balance = _getBalance(typeId, currentYear)
+        if (days > balance) {
+          errEl.textContent = `You only have ${balance} day${Math.abs(balance) === 1 ? '' : 's'} of ${leaveType?.name || 'this leave type'} remaining — cannot request ${days}.`
+          errEl.style.display = 'block'
+          return
+        }
+      }
+
       const approverId = await _resolveApproverWithFallback(start, isHalf ? start : end)
 
       btn.disabled    = true
