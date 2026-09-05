@@ -1068,12 +1068,24 @@ const LeaveTracker = (() => {
             ${allTypes.map(t => {
               const b        = empBal[t.id]
               const taken    = empFiltered[t.id] || 0
-              if (!b || b.credited === 0) return `<td class="lt-vis-cell lt-vis-cell--na">—</td><td class="lt-vis-cell lt-vis-cell--na">—</td>`
-              const remaining = b.credited - b.annualTaken
-              const remCls    = remaining < 0 ? 'lt-vis-neg' : remaining === 0 ? 'lt-vis-zero' : 'lt-vis-pos'
               const takenHtml = taken > 0
                 ? `<span class="lt-vis-taken-link" data-emp-id="${emp.id}" data-emp-name="${Utils.escapeHtml(emp.name)}" data-type-id="${t.id}" data-type-name="${Utils.escapeHtml(t.name)}" title="Click to see dates">${taken}</span>`
                 : `<span style="color:var(--text-muted);">0</span>`
+
+              // Unpaid Leave isn't credited by HR and has no ceiling — it's
+              // deducted from pay instead, so "Remaining" doesn't apply.
+              // Always show what was actually taken, never gate on credited
+              // days like the paid types below (which have none to check).
+              if (t.is_unpaid) {
+                return `
+                  <td class="lt-vis-cell">${takenHtml}</td>
+                  <td class="lt-vis-cell lt-vis-cell--na" title="Unpaid leave has no balance — always available">—</td>
+                `
+              }
+
+              if (!b || b.credited === 0) return `<td class="lt-vis-cell lt-vis-cell--na">—</td><td class="lt-vis-cell lt-vis-cell--na">—</td>`
+              const remaining = b.credited - b.annualTaken
+              const remCls    = remaining < 0 ? 'lt-vis-neg' : remaining === 0 ? 'lt-vis-zero' : 'lt-vis-pos'
               return `
                 <td class="lt-vis-cell">${takenHtml}</td>
                 <td class="lt-vis-cell ${remCls}">${remaining}</td>
