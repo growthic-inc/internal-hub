@@ -7,7 +7,7 @@
    - Supabase API + external: always network (no caching)
    ============================================================ */
 
-const CACHE = 'growthic-knowledgelabs-v3'
+const CACHE = 'growthic-knowledgelabs-v4'
 
 self.addEventListener('install', e => {
   e.waitUntil(

@@ -1789,7 +1789,7 @@ const API = (() => {
   async function getKnowledgeAccessGrants() {
     return supabase
       .from('knowledge_access_grants')
-      .select('*, employee:employees!employee_id(name, department:departments(name)), resource:knowledge_resources(title, category, department:departments(name)), granter:employees!granted_by(name), revoker:employees!revoked_by(name)')
+      .select('*, employee:employees!employee_id(name, department:departments(name)), resource:knowledge_resources(title, category, department_id, department:departments(name)), granter:employees!granted_by(name), revoker:employees!revoked_by(name)')
       .order('created_at', { ascending: false })
   }
 

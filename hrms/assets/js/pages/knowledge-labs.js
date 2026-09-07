@@ -32,6 +32,22 @@ const KnowledgeLabsModule = (() => {
   const ICON_EXT    = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`
   const ICON_CLOSE  = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
 
+  // "Growthic" — company-wide, not a real departments row. A resource with
+  // department_id = NULL applies to everyone. This sentinel is only ever
+  // used inside <select> values to represent that choice in the UI; it
+  // never gets written to the database directly (see _saveResource /
+  // _saveGrant, which translate it back to null before saving).
+  const GROWTHIC_DEPT_VALUE = '__growthic__'
+
+  function _deptLabel(departmentId) {
+    return departmentId ? null : 'Growthic'
+  }
+
+  const CATEGORY_BADGE_CLASS = { SOP: 'badge badge--blue', Template: 'badge badge--success', Guide: 'badge badge--warning' }
+  function _catBadge(category) {
+    return `<span class="${CATEGORY_BADGE_CLASS[category] || 'badge'}">${Utils.escapeHtml(category)}</span>`
+  }
+
   /* ── render ────────────────────────────────────────────────── */
   function render(user) {
     _user = user
@@ -124,12 +140,14 @@ const KnowledgeLabsModule = (() => {
         </div>
         <select class="form-select" id="kl-filter-dept" style="flex:0 0 180px;">
           <option value="">All departments</option>
+          <option value="${GROWTHIC_DEPT_VALUE}" ${_activeDept === GROWTHIC_DEPT_VALUE ? 'selected' : ''}>Growthic</option>
           ${_departments.map(d => `<option value="${d.id}" ${_activeDept === d.id ? 'selected' : ''}>${Utils.escapeHtml(d.name)}</option>`).join('')}
         </select>
         <select class="form-select" id="kl-filter-cat" style="flex:0 0 150px;">
           <option value="">All categories</option>
           <option value="SOP" ${_activeCategory === 'SOP' ? 'selected' : ''}>SOP</option>
           <option value="Template" ${_activeCategory === 'Template' ? 'selected' : ''}>Template</option>
+          <option value="Guide" ${_activeCategory === 'Guide' ? 'selected' : ''}>Guide</option>
         </select>
       </div>
       <div class="table-wrap">
@@ -149,7 +167,11 @@ const KnowledgeLabsModule = (() => {
   function _filteredResources() {
     const q = _searchQuery.toLowerCase()
     return _resources.filter(r => {
-      if (_activeDept && r.department_id !== _activeDept) return false
+      if (_activeDept === GROWTHIC_DEPT_VALUE) {
+        if (r.department_id) return false
+      } else if (_activeDept && r.department_id !== _activeDept) {
+        return false
+      }
       if (_activeCategory && r.category !== _activeCategory) return false
       if (q && !r.title.toLowerCase().includes(q)) return false
       return true
@@ -165,15 +187,14 @@ const KnowledgeLabsModule = (() => {
   }
 
   function _rowHTML(r) {
-    const catBadgeClass = r.category === 'SOP' ? 'badge badge--blue' : 'badge badge--success'
     return `
       <tr>
-        <td>${Utils.escapeHtml(r.department?.name || '—')}</td>
+        <td>${Utils.escapeHtml(_deptLabel(r.department_id) || r.department?.name || '—')}</td>
         <td>
           <div style="font-weight:500;">${Utils.escapeHtml(r.title)}</div>
           ${r.description ? `<div style="font-size:12px;color:var(--text-muted);">${Utils.escapeHtml(r.description)}</div>` : ''}
         </td>
-        <td><span class="${catBadgeClass}">${Utils.escapeHtml(r.category)}</span></td>
+        <td>${_catBadge(r.category)}</td>
         <td>${Utils.escapeHtml(r.owner?.name || '—')}</td>
         <td style="font-size:13px;color:var(--text-muted);">${Utils.formatDate(r.updated_at || r.created_at)}</td>
         <td>${r.published
@@ -236,6 +257,7 @@ const KnowledgeLabsModule = (() => {
     const deptOptions = _departments.map(d =>
       `<option value="${d.id}" ${resource?.department_id === d.id ? 'selected' : ''}>${Utils.escapeHtml(d.name)}</option>`
     ).join('')
+    const isGrowthicWide = isEdit && !resource.department_id
 
     _selectedOwnerId = resource?.owner_id || null
 
@@ -253,6 +275,7 @@ const KnowledgeLabsModule = (() => {
             <label class="form-label">Department <span style="color:var(--danger)">*</span></label>
             <select class="form-select" id="kl-f-dept">
               <option value="">— Select department —</option>
+              <option value="${GROWTHIC_DEPT_VALUE}" ${isGrowthicWide ? 'selected' : ''}>Growthic (company-wide)</option>
               ${deptOptions}
             </select>
           </div>
@@ -261,6 +284,7 @@ const KnowledgeLabsModule = (() => {
             <select class="form-select" id="kl-f-cat">
               <option value="SOP" ${resource?.category === 'SOP' ? 'selected' : ''}>SOP</option>
               <option value="Template" ${resource?.category === 'Template' ? 'selected' : ''}>Template</option>
+              <option value="Guide" ${resource?.category === 'Guide' ? 'selected' : ''}>Guide</option>
             </select>
           </div>
         </div>
@@ -331,7 +355,7 @@ const KnowledgeLabsModule = (() => {
 
     try {
       const record = {
-        department_id: deptId,
+        department_id: deptId === GROWTHIC_DEPT_VALUE ? null : deptId,
         category,
         title,
         description: description || null,
@@ -409,6 +433,7 @@ const KnowledgeLabsModule = (() => {
             <label class="form-label">Department</label>
             <select class="form-select" id="kl-grant-dept">
               <option value="">— Select department —</option>
+              <option value="${GROWTHIC_DEPT_VALUE}">Growthic (company-wide)</option>
               ${deptOptions}
             </select>
           </div>
@@ -418,6 +443,7 @@ const KnowledgeLabsModule = (() => {
               <option value="">All categories</option>
               <option value="SOP">SOP</option>
               <option value="Template">Template</option>
+              <option value="Guide">Guide</option>
             </select>
           </div>
         </div>
@@ -545,7 +571,12 @@ const KnowledgeLabsModule = (() => {
     const deptId = document.getElementById('kl-grant-dept')?.value || ''
     const cat    = document.getElementById('kl-grant-cat')?.value  || ''
     if (!deptId) return []
-    return _resources.filter(r => r.published && r.department_id === deptId && (!cat || r.category === cat))
+    return _resources.filter(r => {
+      if (!r.published) return false
+      const matchesDept = deptId === GROWTHIC_DEPT_VALUE ? !r.department_id : r.department_id === deptId
+      if (!matchesDept) return false
+      return !cat || r.category === cat
+    })
   }
 
   function _refreshResourceChecklist() {
@@ -570,7 +601,7 @@ const KnowledgeLabsModule = (() => {
       <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;${i < items.length - 1 ? 'border-bottom:0.5px solid var(--border);' : ''}cursor:pointer;">
         <input type="checkbox" class="kl-res-check" data-id="${r.id}" style="width:16px;height:16px;cursor:pointer;flex-shrink:0;">
         <span style="flex:1;font-size:13px;">${Utils.escapeHtml(r.title)}</span>
-        <span class="badge ${r.category === 'SOP' ? 'badge--blue' : 'badge--success'}">${Utils.escapeHtml(r.category)}</span>
+        ${_catBadge(r.category)}
       </label>`).join('')
 
     box.querySelectorAll('.kl-res-check').forEach(cb => {
@@ -603,7 +634,7 @@ const KnowledgeLabsModule = (() => {
         </td>
         <td>
           <div style="font-weight:500;">${Utils.escapeHtml(g.resource?.title || '—')}</div>
-          <div style="font-size:12px;color:var(--text-muted);">${Utils.escapeHtml(g.resource?.department?.name || '—')} · ${Utils.escapeHtml(g.resource?.category || '—')}</div>
+          <div style="font-size:12px;color:var(--text-muted);">${Utils.escapeHtml(_deptLabel(g.resource?.department_id) || g.resource?.department?.name || '—')} · ${Utils.escapeHtml(g.resource?.category || '—')}</div>
         </td>
         <td>
           <div style="font-size:13px;">${Utils.formatDate(g.created_at)}</div>

@@ -30,10 +30,19 @@ const KnowledgeLabsBrowse = (() => {
     management:            `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>`,
   }
   const DEPT_ICON_DEFAULT = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`
+  const ICON_GROWTHIC = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>`
   const ICON_DOC = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`
   const ICON_SEARCH = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`
 
+  // "Growthic" — company-wide resources (department_id = NULL). Not a real
+  // department, so it needs its own URL/grouping key that isn't a UUID.
+  const GROWTHIC_KEY = 'growthic'
+
+  const CATEGORY_BADGE_CLASS = { SOP: 'badge--blue', Template: 'badge--success', Guide: 'badge--warning' }
+
   function _deptIcon(systemKey) { return DEPT_ICONS[systemKey] || DEPT_ICON_DEFAULT }
+  function _groupIcon(g) { return g.department_id ? _deptIcon(g.department?.system_key) : ICON_GROWTHIC }
+  function _groupKey(g) { return g.department_id || GROWTHIC_KEY }
 
   /* ── render ────────────────────────────────────────────────── */
   function render(user) {
@@ -59,36 +68,53 @@ const KnowledgeLabsBrowse = (() => {
   }
 
   function _buildGroups() {
-    const byDept = {}
+    const byKey = {}
     _resources.forEach(r => {
-      if (!byDept[r.department_id]) {
-        byDept[r.department_id] = { department_id: r.department_id, department: r.department, resources: [] }
+      const key = r.department_id || GROWTHIC_KEY
+      if (!byKey[key]) {
+        byKey[key] = {
+          department_id: r.department_id,
+          department:    r.department_id ? r.department : { name: 'Growthic', system_key: null },
+          resources:     [],
+        }
       }
-      byDept[r.department_id].resources.push(r)
+      byKey[key].resources.push(r)
     })
+
+    // Growthic (company-wide) always shows, even with nothing published
+    // yet — it's a standing destination, not something that only appears
+    // once someone adds the first company-wide resource.
+    if (!byKey[GROWTHIC_KEY]) {
+      byKey[GROWTHIC_KEY] = { department_id: null, department: { name: 'Growthic', system_key: null }, resources: [] }
+    }
 
     // Own department always shows, even with zero resources yet — so it
     // reads as "not filled in yet" rather than the app looking broken.
-    if (_user?.department_id && !byDept[_user.department_id]) {
+    if (_user?.department_id && !byKey[_user.department_id]) {
       const dept = _allDepartments.find(d => d.id === _user.department_id)
-      byDept[_user.department_id] = {
+      byKey[_user.department_id] = {
         department_id: _user.department_id,
         department:    dept ? { name: dept.name, system_key: dept.system_key } : null,
         resources:     [],
       }
     }
 
-    _grouped = Object.values(byDept).sort((a, b) =>
+    _grouped = Object.values(byKey).sort((a, b) =>
       (a.department?.name || '').localeCompare(b.department?.name || '')
     )
 
-    if (_user?.department_id) {
-      _grouped.sort((a, b) => {
-        if (a.department_id === _user.department_id) return -1
-        if (b.department_id === _user.department_id) return 1
-        return 0
-      })
-    }
+    // Pin order: Growthic first (applies to everyone), then your own
+    // department, then the rest in the alphabetical order set above.
+    _grouped.sort((a, b) => {
+      const aGrowthic = !a.department_id, bGrowthic = !b.department_id
+      if (aGrowthic !== bGrowthic) return aGrowthic ? -1 : 1
+      if (_user?.department_id) {
+        const aOwn = a.department_id === _user.department_id
+        const bOwn = b.department_id === _user.department_id
+        if (aOwn !== bOwn) return aOwn ? -1 : 1
+      }
+      return 0
+    })
   }
 
   /* ── Hash routing: '' = directory, '/dept/<id>' = detail ─────── */
@@ -166,15 +192,16 @@ const KnowledgeLabsBrowse = (() => {
   }
 
   function _deptCardHTML(g) {
-    const isOwn = g.department_id === _user?.department_id
-    const empty = g.resources.length === 0
+    const isOwn      = g.department_id === _user?.department_id
+    const isGrowthic = !g.department_id
+    const empty      = g.resources.length === 0
     return `
-      <div class="card kl-dept-card" data-id="${g.department_id}"
-           style="cursor:pointer;border:${isOwn ? '2px solid var(--primary)' : '1px solid var(--border)'};">
-        <div style="color:var(--primary);margin-bottom:10px;">${_deptIcon(g.department?.system_key)}</div>
+      <div class="card kl-dept-card" data-id="${_groupKey(g)}"
+           style="cursor:pointer;border:${(isOwn || isGrowthic) ? '2px solid var(--primary)' : '1px solid var(--border)'};">
+        <div style="color:var(--primary);margin-bottom:10px;">${_groupIcon(g)}</div>
         <p style="font-weight:600;font-size:14px;margin:0 0 4px;">${Utils.escapeHtml(g.department?.name || 'Unknown')}</p>
         <p style="font-size:12px;color:var(--text-muted);margin:0;">
-          ${empty ? 'Nothing published yet' : `${g.resources.length} resource${g.resources.length !== 1 ? 's' : ''}`}${isOwn ? ' · your department' : ''}
+          ${empty ? 'Nothing published yet' : `${g.resources.length} resource${g.resources.length !== 1 ? 's' : ''}`}${isOwn ? ' · your department' : ''}${isGrowthic ? ' · applies to everyone' : ''}
         </p>
       </div>`
   }
@@ -183,7 +210,7 @@ const KnowledgeLabsBrowse = (() => {
   function _renderDetail() {
     const root  = document.getElementById('kl-browse-root')
     if (!root) return
-    const group = _grouped.find(g => g.department_id === _activeDeptId)
+    const group = _grouped.find(g => _groupKey(g) === _activeDeptId)
 
     if (!group) {
       root.innerHTML = `<div class="empty-state-full"><p>That department isn't available to you.</p></div>`
@@ -193,7 +220,7 @@ const KnowledgeLabsBrowse = (() => {
     root.innerHTML = `
       <a href="#" style="font-size:13px;color:var(--primary);text-decoration:none;display:inline-block;margin-bottom:14px;">&larr; All departments</a>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
-        <div style="color:var(--primary);">${_deptIcon(group.department?.system_key)}</div>
+        <div style="color:var(--primary);">${_groupIcon(group)}</div>
         <h2 style="margin:0;font-size:18px;font-weight:700;">${Utils.escapeHtml(group.department?.name || '')}</h2>
       </div>
       <div class="search-wrap" style="max-width:420px;margin-bottom:14px;">
@@ -204,6 +231,7 @@ const KnowledgeLabsBrowse = (() => {
         <button class="tab-btn tab-btn--active" data-cat="">All</button>
         <button class="tab-btn" data-cat="SOP">SOPs</button>
         <button class="tab-btn" data-cat="Template">Templates</button>
+        <button class="tab-btn" data-cat="Guide">Guides</button>
       </div>
       <div id="kl-detail-list"></div>`
 
@@ -253,10 +281,10 @@ const KnowledgeLabsBrowse = (() => {
           <p style="font-weight:500;font-size:14px;margin:0 0 3px;">${Utils.escapeHtml(r.title)}</p>
           ${r.description ? `<p style="font-size:12px;color:var(--text-muted);margin:0;">${Utils.escapeHtml(r.description)}</p>` : ''}
           <p style="font-size:11px;color:var(--text-muted);margin:4px 0 0;">
-            ${showDept ? `${Utils.escapeHtml(r.department?.name || '')} · ` : ''}${r.owner?.name ? `Owner: ${Utils.escapeHtml(r.owner.name)}` : ''}
+            ${showDept ? `${Utils.escapeHtml(r.department?.name || 'Growthic')} · ` : ''}${r.owner?.name ? `Owner: ${Utils.escapeHtml(r.owner.name)}` : ''}
           </p>
         </div>
-        <span class="badge ${r.category === 'SOP' ? 'badge--blue' : 'badge--success'}" style="flex-shrink:0;">${Utils.escapeHtml(r.category)}</span>
+        <span class="badge ${CATEGORY_BADGE_CLASS[r.category] || ''}" style="flex-shrink:0;">${Utils.escapeHtml(r.category)}</span>
       </a>`
   }
 
