@@ -18,21 +18,33 @@ const Auth = (() => {
     return session
   }
 
-  /* Called from app/home/index.html — redirects to login */
+  /* Called from app/home/index.html — redirects to login. Preserves the
+     page the user was actually trying to reach (path + hash, e.g. a
+     deep link from an email/push notification like /home#reimbursements)
+     as a ?redirect= param, so signing in lands back where they meant to
+     go instead of always dropping them on the generic home page. */
   async function requireAuth() {
     const session = await getSession()
     if (!session) {
-      window.location.href = '/'
+      const dest = window.location.pathname + window.location.hash
+      window.location.href = `/?redirect=${encodeURIComponent(dest)}`
       return null
     }
     return session
   }
 
-  /* Called from app/index.html — redirects to app shell if already signed in */
+  /* Called from app/index.html — redirects to app shell if already signed in.
+     Honors ?redirect= (set by requireAuth above) so a deep link clicked
+     while already logged in goes straight to the right module. */
+  function _safeRedirect(fallback) {
+    const redirect = new URLSearchParams(window.location.search).get('redirect')
+    return (redirect && redirect.startsWith('/')) ? redirect : fallback
+  }
+
   async function requireGuest(redirectTo = '/home') {
     const session = await getSession()
     if (session) {
-      window.location.href = redirectTo
+      window.location.href = _safeRedirect(redirectTo)
     }
   }
 

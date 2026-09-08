@@ -166,7 +166,8 @@
         btn.disabled    = false
         btn.textContent = 'Sign In'
       } else {
-        window.location.href = '/home'
+        const redirect = new URLSearchParams(window.location.search).get('redirect')
+        window.location.href = (redirect && redirect.startsWith('/')) ? redirect : '/home'
       }
     })
 
