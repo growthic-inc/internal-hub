@@ -46,6 +46,10 @@
   .kpi-grid     { grid-template-columns: repeat(3, 1fr); }
   .info-grid-4  { grid-template-columns: repeat(2, 1fr); }
 
+  /* Asset cards: rigid 3-col is too rich (name, badge, meta grid, action
+     buttons) to survive a third of the width once the viewport narrows */
+  .ast-cards-grid { grid-template-columns: repeat(2, 1fr); }
+
   /* Reduce page padding a bit */
   .page-content { padding: 20px; }
 
@@ -112,6 +116,7 @@
   .form-row    { grid-template-columns: 1fr; }
   .charts-row  { grid-template-columns: 1fr; }
   .folder-cards-grid { grid-template-columns: 1fr; }
+  .ast-cards-grid     { grid-template-columns: 1fr; }
 
   /* ── Tables → horizontal scroll ────────────────────────────── */
   .table-wrap  { overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -139,6 +144,15 @@
   .filter-bar { flex-wrap: wrap; gap: 8px; }
   .filter-bar .form-select,
   .filter-bar .form-input { flex: 1; min-width: 120px; }
+
+  /* Assets' own filter bar — same shape, different class, same fix.
+     Search + 2 selects carry inline min-widths summing past a phone's
+     width with no wrap, forcing the whole row (and page) to overflow.
+     !important needed — those min-widths are set inline in assets.js,
+     which beats a plain class rule regardless of specificity. */
+  .ast-filter-bar { flex-wrap: wrap; gap: 8px; }
+  .ast-filter-bar .form-select,
+  .ast-filter-bar .form-input { flex: 1 1 auto !important; min-width: 45% !important; }
 
   .search-wrap             { width: 100%; }
   .search-wrap .form-input { width: 100%; }
