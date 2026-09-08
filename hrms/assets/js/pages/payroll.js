@@ -1626,7 +1626,7 @@ const Payroll = (() => {
       return `
         <div class="hrms-section-label" style="margin-bottom:10px;">${title}</div>
         <div class="section-card mb-4">
-          <div class="section-card-body" style="padding:0;">
+          <div class="section-card-body" style="padding:0;overflow-x:auto;">
             <table class="data-table">
               <thead>
                 <tr>
