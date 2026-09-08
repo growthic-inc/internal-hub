@@ -643,6 +643,7 @@ const Announcements = (() => {
               message: `New announcement: "${title}"`,
               module: 'announcements',
               record_id: annData?.id || null,
+              notify_email: true,
             })))
           }
         }

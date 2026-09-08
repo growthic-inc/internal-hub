@@ -1547,6 +1547,7 @@ const LeaveTracker = (() => {
           type: 'info',
           message: `${_user.name} submitted a leave request.`,
           module: 'leave_tracker',
+          notify_email: true,
         })
       } else {
         _employees
@@ -1556,6 +1557,7 @@ const LeaveTracker = (() => {
             type: 'info',
             message: `${_user.name} submitted a leave request (no manager assigned).`,
             module: 'leave_tracker',
+            notify_email: true,
           }))
       }
       Utils.closeModal()
@@ -1814,6 +1816,7 @@ const LeaveTracker = (() => {
           type: 'info',
           message: `${_user.name} submitted a WFH request.`,
           module: 'leave_tracker',
+          notify_email: true,
         })
       } else {
         _employees
@@ -1823,6 +1826,7 @@ const LeaveTracker = (() => {
             type: 'info',
             message: `${_user.name} submitted a WFH request (no manager assigned).`,
             module: 'leave_tracker',
+            notify_email: true,
           }))
       }
       Utils.closeModal()
@@ -2157,6 +2161,7 @@ const LeaveTracker = (() => {
           type: 'info',
           message: `${_user.name} submitted a Client Visit request.`,
           module: 'leave_tracker',
+          notify_email: true,
         })
       } else {
         _employees
@@ -2166,6 +2171,7 @@ const LeaveTracker = (() => {
             type: 'info',
             message: `${_user.name} submitted a Client Visit request (no manager assigned).`,
             module: 'leave_tracker',
+            notify_email: true,
           }))
       }
       Utils.closeModal()
@@ -2532,6 +2538,7 @@ const LeaveTracker = (() => {
           message: `Your ${label} request has been approved.`,
           module: 'leave_tracker',
           record_id: id,
+          notify_email: true,
         })
       }
 
@@ -2612,6 +2619,7 @@ const LeaveTracker = (() => {
           message: `Your ${label} request was rejected${comment ? ': ' + comment : '.'}`,
           module: 'leave_tracker',
           record_id: id,
+          notify_email: true,
         })
       }
       Utils.closeModal()
@@ -2641,6 +2649,7 @@ const LeaveTracker = (() => {
           message: `Your ${label} cancellation request has been approved.`,
           module: 'leave_tracker',
           record_id: id,
+          notify_email: true,
         })
       }
       Utils.showToast('Cancellation approved.', 'success')
@@ -2666,6 +2675,7 @@ const LeaveTracker = (() => {
           message: `Your ${label} cancellation request was denied. The original request remains approved.`,
           module: 'leave_tracker',
           record_id: id,
+          notify_email: true,
         })
       }
       Utils.showToast('Cancellation denied. Request restored to approved.', 'success')

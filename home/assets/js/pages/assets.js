@@ -690,6 +690,7 @@ const Assets = (() => {
         message:   `Your request for "${assetName}" has been approved and assigned to you!`,
         module:    'assets',
         record_id: req.asset_id,
+        notify_email: true,
       })
 
       await _refreshAll()
@@ -745,6 +746,7 @@ const Assets = (() => {
         message:   `Your request for "${assetName}" was not approved.${note ? ' Note: ' + note : ''}`,
         module:    'assets',
         record_id: reqId,
+        notify_email: true,
       })
 
       await _refreshAll()
@@ -805,6 +807,7 @@ const Assets = (() => {
         type:    'success',
         message: `Your return request for "${assetName}" has been approved. The asset has been successfully returned.`,
         module:  'assets',
+        notify_email: true,
       })
 
       await _refreshAll()
@@ -867,6 +870,7 @@ const Assets = (() => {
           type:    'warning',
           message: `Your return request for "${assetName}" was not approved.${note ? ' HR note: ' + note : ''}`,
           module:  'assets',
+          notify_email: true,
         })
       }
 
@@ -1595,6 +1599,17 @@ const Assets = (() => {
             asset_id: res.data.id, action: 'created',
             notes: 'Added to inventory', performed_by: _user.id,
           })
+
+          // Notify every active employee — a new asset is available to request.
+          const targets = _employees.filter(e => e.status === 'active' && e.id !== _user.id)
+          targets.forEach(e => API.createNotification({
+            recipient_employee_id: e.id,
+            type:      'info',
+            message:   `A new asset is now available: "${payload.name}". Request it from Assets if you need it.`,
+            module:    'assets',
+            record_id: res.data.id,
+            notify_email: true,
+          }))
         }
       }
 
@@ -1798,6 +1813,7 @@ const Assets = (() => {
             message: `${_user.name} has submitted a return request for "${asset.name}". Please review in Requests → Returns.`,
             module:  'assets',
             record_id: rr?.id || null,
+            notify_email: true,
           })))
         }
 
@@ -2065,6 +2081,7 @@ const Assets = (() => {
             type:    'warning',
             message: `${_user.name} reported a ${type} on "${asset.name}": ${Utils.truncate(desc, 80)}`,
             module:  'assets',
+            notify_email: true,
           })))
         }
       }
@@ -2180,6 +2197,7 @@ const Assets = (() => {
         type:    status === 'resolved' ? 'success' : 'info',
         message: notifMsg,
         module:  'assets',
+        notify_email: true,
       })
 
       // Also notify the reporter's manager
@@ -2294,6 +2312,7 @@ const Assets = (() => {
             message: `${_user.name} has requested asset "${assetName}". Awaiting your approval.`,
             module:  'assets',
             record_id: req?.id || null,
+            notify_email: true,
           })))
         }
 

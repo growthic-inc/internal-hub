@@ -545,6 +545,7 @@ const Reimbursements = (() => {
           : `Your ${label} was rejected${remarks ? ': ' + remarks : '.'}`,
         module: 'reimbursements',
         record_id: record.id,
+        notify_email: true,
       })
     }
 
@@ -569,6 +570,7 @@ const Reimbursements = (() => {
           message: `A reimbursement claim by ${record.submitter?.name || 'an employee'} has been approved (${Utils.formatCurrency(updates.hr_approved_amount || record.amount)}) and is ready for payment processing.`,
           module:  'reimbursements',
           record_id: record.id,
+          notify_email: true,
         })
       })
     }
@@ -623,6 +625,7 @@ const Reimbursements = (() => {
           message: `Your reimbursement of ${Utils.formatCurrency(amount)} has been paid.`,
           module: 'reimbursements',
           record_id: claimId,
+          notify_email: true,
         })
       }
       Utils.closeModal()

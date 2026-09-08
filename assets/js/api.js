@@ -466,7 +466,7 @@ const API = (() => {
       .eq('read', false)
   }
 
-  async function createNotification({ recipient_employee_id, type, message, module, record_id = null }) {
+  async function createNotification({ recipient_employee_id, type, message, module, record_id = null, notify_email = false }) {
     const result = await supabase.from('notifications').insert({
       recipient_employee_id, type, message, module, record_id,
     })
@@ -496,6 +496,35 @@ const API = (() => {
         console.warn('[Push] send-push error:', err)
       }
     })()
+
+    // Fire email — only for the specific events opted in via notify_email,
+    // non-blocking, best-effort, same pattern as push above.
+    if (notify_email) {
+      ;(async () => {
+        try {
+          const { data: { session } } = await Config.supabase.auth.getSession()
+          if (!session) { console.warn('[Email] no session, skipping email'); return }
+          const res  = await fetch(`${Config.SUPABASE_URL}/functions/v1/send-email`, {
+            method:  'POST',
+            headers: {
+              'Content-Type':  'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+              'apikey':        Config.SUPABASE_ANON_KEY,
+            },
+            body: JSON.stringify({
+              employee_id: recipient_employee_id,
+              subject:     _pushTitle(type, module),
+              body:        message,
+              url:         _pushUrl(module),
+            }),
+          })
+          const json = await res.json().catch(() => ({}))
+          console.log(`[Email] send-email → ${res.status}`, json)
+        } catch (err) {
+          console.warn('[Email] send-email error:', err)
+        }
+      })()
+    }
 
     return result
   }

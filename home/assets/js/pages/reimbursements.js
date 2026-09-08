@@ -360,18 +360,17 @@ const Reimbursements = (() => {
       return
     }
 
-    // Notify reporting manager and HR only — Super Admin doesn't need to
-    // know until HR has actually approved it (see the approval handler).
+    // Notify HR + Super Admin — not the reporting manager, pre-approval is
+    // an HR/finance decision, not a people-management one.
     const _notifMsg = `${_user.name} has submitted a pre-approval request (${Utils.getExpenseLabel(expenseType)}, est. ${Utils.formatCurrency(amount)}) — please review.`
-    const _notifPayload = { type: 'submitted', message: _notifMsg, module: 'reimbursements', record_id: inserted?.id || null }
+    const _notifPayload = { type: 'submitted', message: _notifMsg, module: 'reimbursements', record_id: inserted?.id || null, notify_email: true }
     const _notified = new Set([_user.id])  // never notify the submitter themselves
 
-    if (_user.manager_id && !_notified.has(_user.manager_id)) {
-      _notified.add(_user.manager_id)
-      API.createNotification({ recipient_employee_id: _user.manager_id, ..._notifPayload })
-    }
-    const { data: hrTeam } = await API.getEmployeesByDepartment('people_culture')
-    ;(hrTeam || []).forEach(emp => {
+    const [{ data: hrTeam }, { data: superAdmins }] = await Promise.all([
+      API.getEmployeesByDepartment('people_culture'),
+      API.getEmployeesByRole('super_admin'),
+    ])
+    ;[...(hrTeam || []), ...(superAdmins || [])].forEach(emp => {
       if (!_notified.has(emp.id)) {
         _notified.add(emp.id)
         API.createNotification({ recipient_employee_id: emp.id, ..._notifPayload })
@@ -829,18 +828,17 @@ const Reimbursements = (() => {
       return
     }
 
-    // Notify reporting manager and HR only — Super Admin doesn't need to
-    // know until HR has actually approved it (see the approval handler).
+    // Notify HR + Super Admin — not the reporting manager, same reasoning
+    // as the pre-approval submit above.
     const _notifMsg = `${_user.name} has filed an expense claim (${Utils.getExpenseLabel(expenseType)}, ${Utils.formatCurrency(amount)}) — please review.`
-    const _notifPayload = { type: 'submitted', message: _notifMsg, module: 'reimbursements', record_id: inserted?.id || null }
+    const _notifPayload = { type: 'submitted', message: _notifMsg, module: 'reimbursements', record_id: inserted?.id || null, notify_email: true }
     const _notified = new Set([_user.id])
 
-    if (_user.manager_id && !_notified.has(_user.manager_id)) {
-      _notified.add(_user.manager_id)
-      API.createNotification({ recipient_employee_id: _user.manager_id, ..._notifPayload })
-    }
-    const { data: hrTeam } = await API.getEmployeesByDepartment('people_culture')
-    ;(hrTeam || []).forEach(emp => {
+    const [{ data: hrTeam }, { data: superAdmins }] = await Promise.all([
+      API.getEmployeesByDepartment('people_culture'),
+      API.getEmployeesByRole('super_admin'),
+    ])
+    ;[...(hrTeam || []), ...(superAdmins || [])].forEach(emp => {
       if (!_notified.has(emp.id)) {
         _notified.add(emp.id)
         API.createNotification({ recipient_employee_id: emp.id, ..._notifPayload })
