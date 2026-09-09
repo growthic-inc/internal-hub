@@ -1370,13 +1370,13 @@ const API = (() => {
   }
 
   async function getPendingLeaveApprovals(approverId) {
-    // Returns requests where this manager is the approver (pending + cancellation_pending)
-    // Also returns NULL-approver requests for HR
+    // Returns requests where this manager is the approver.
+    // Cancellations route to People & Culture, not the manager — see getHRLeaveQueue.
     return supabase
       .from('leave_requests')
       .select('*, leave_types(name), employee:employees!employee_id(id, name, department, profile_image_url)')
       .eq('approver_id', approverId)
-      .in('status', ['pending', 'cancellation_pending'])
+      .eq('status', 'pending')
       .order('created_at', { ascending: true })
   }
 
@@ -1403,12 +1403,13 @@ const API = (() => {
   }
 
   async function getHRLeaveQueue() {
-    // Requests with no approver (top-level employees) — for HR
+    // Pending requests with no approver (top-level employees), plus every
+    // cancellation request regardless of who the original approver was —
+    // cancellations always route to People & Culture.
     return supabase
       .from('leave_requests')
       .select('*, leave_types(name), employee:employees!employee_id(id, name, department, profile_image_url)')
-      .is('approver_id', null)
-      .in('status', ['pending', 'cancellation_pending'])
+      .or('and(approver_id.is.null,status.eq.pending),status.eq.cancellation_pending')
       .order('created_at', { ascending: true })
   }
 
@@ -1464,11 +1465,12 @@ const API = (() => {
   }
 
   async function getPendingWfhApprovals(approverId) {
+    // Cancellations route to People & Culture, not the manager — see getHRWfhQueue.
     return supabase
       .from('wfh_requests')
       .select('*, employee:employees!employee_id(id, name, department, profile_image_url)')
       .eq('approver_id', approverId)
-      .in('status', ['pending', 'cancellation_pending'])
+      .eq('status', 'pending')
       .order('created_at', { ascending: true })
   }
 
@@ -1476,8 +1478,7 @@ const API = (() => {
     return supabase
       .from('wfh_requests')
       .select('*, employee:employees!employee_id(id, name, department, profile_image_url)')
-      .is('approver_id', null)
-      .in('status', ['pending', 'cancellation_pending'])
+      .or('and(approver_id.is.null,status.eq.pending),status.eq.cancellation_pending')
       .order('created_at', { ascending: true })
   }
 
@@ -1510,11 +1511,12 @@ const API = (() => {
   }
 
   async function getPendingClientVisitApprovals(approverId) {
+    // Cancellations route to People & Culture, not the manager — see getHRClientVisitQueue.
     return supabase
       .from('client_visit_requests')
       .select(`${CV_SEL}, employee:employees!employee_id(id, name, department, profile_image_url)`)
       .eq('approver_id', approverId)
-      .in('status', ['pending', 'cancellation_pending'])
+      .eq('status', 'pending')
       .order('created_at', { ascending: true })
   }
 
@@ -1522,8 +1524,7 @@ const API = (() => {
     return supabase
       .from('client_visit_requests')
       .select(`${CV_SEL}, employee:employees!employee_id(id, name, department, profile_image_url)`)
-      .is('approver_id', null)
-      .in('status', ['pending', 'cancellation_pending'])
+      .or('and(approver_id.is.null,status.eq.pending),status.eq.cancellation_pending')
       .order('created_at', { ascending: true })
   }
 

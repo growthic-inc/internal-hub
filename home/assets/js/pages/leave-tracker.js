@@ -1320,6 +1320,7 @@ const LeaveTracker = (() => {
   async function _requestCancellation(id) {
     const reason = prompt('Reason for cancellation request (optional):')
     if (reason === null) return // user clicked Cancel
+    const req = _leaveRequests.find(r => r.id === id)
     const { error } = await API.updateLeaveRequest(id, {
       status:              'cancellation_pending',
       cancellation_reason: reason || null,
@@ -1327,9 +1328,37 @@ const LeaveTracker = (() => {
     if (error) {
       Utils.showToast('Failed: ' + error.message, 'error')
     } else {
+      _notifyCancellationFiled(req, 'leave')
       Utils.showToast('Cancellation request sent.', 'success')
       await _refreshMyLeaveData()
       _loadTab(_activeTab)
+    }
+  }
+
+  // Cancellation requests route to People & Culture, not the manager — notify
+  // P&C so they know to act, and give the manager a passive FYI since they're
+  // no longer the one approving it.
+  function _notifyCancellationFiled(req, type) {
+    const label = _reqLabel(type)
+    _employees
+      .filter(e => (e.role === 'super_admin' || Utils.getDeptSystemKey(e.department) === 'people_culture') && e.id !== _user.id)
+      .forEach(hr => API.createNotification({
+        recipient_employee_id: hr.id,
+        type: 'info',
+        message: `${_user.name} requested to cancel their ${label} request.`,
+        module: 'leave_tracker',
+        record_id: req?.id,
+        notify_email: true,
+      }))
+    if (req?.approver_id) {
+      API.createNotification({
+        recipient_employee_id: req.approver_id,
+        type: 'info',
+        message: `${_user.name}'s ${label} cancellation is now with People & Culture.`,
+        module: 'leave_tracker',
+        record_id: req?.id,
+        notify_email: true,
+      })
     }
   }
 
@@ -1659,6 +1688,7 @@ const LeaveTracker = (() => {
   async function _requestWfhCancellation(id) {
     const reason = prompt('Reason for cancellation request (optional):')
     if (reason === null) return
+    const req = _wfhRequests.find(r => r.id === id)
     const { error } = await API.updateWfhRequest(id, {
       status:              'cancellation_pending',
       cancellation_reason: reason || null,
@@ -1666,6 +1696,7 @@ const LeaveTracker = (() => {
     if (error) {
       Utils.showToast('Failed: ' + error.message, 'error')
     } else {
+      _notifyCancellationFiled(req, 'wfh')
       Utils.showToast('Cancellation request sent.', 'success')
       await _refreshMyLeaveData()
       _loadTab(_activeTab)
@@ -1916,11 +1947,13 @@ const LeaveTracker = (() => {
   async function _requestClientVisitCancellation(id) {
     const reason = prompt('Reason for cancellation request (optional):')
     if (reason === null) return
+    const req = _clientVisits.find(r => r.id === id)
     const { error } = await API.updateClientVisit(id, {
       status: 'cancellation_pending',
       cancellation_reason: reason || null,
     })
     if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
+    _notifyCancellationFiled(req, 'client-visit')
     Utils.showToast('Cancellation request sent.', 'success')
     await _refreshMyLeaveData()
     _loadTab(_activeTab)
@@ -2635,18 +2668,29 @@ const LeaveTracker = (() => {
 
     const updateFn = _reqUpdateFn(type)
     const { error } = await updateFn(id, {
-      status:   'cancelled',
-      acted_at: new Date().toISOString(),
+      status:                'cancelled',
+      acted_at:              new Date().toISOString(),
+      cancellation_actor_id: _user.id,
     })
     if (error) {
       Utils.showToast('Failed: ' + error.message, 'error')
     } else {
+      const label = _reqLabel(type)
       if (req?.employee?.id) {
-        const label = _reqLabel(type)
         API.createNotification({
           recipient_employee_id: req.employee.id,
           type: 'approval',
           message: `Your ${label} cancellation request has been approved.`,
+          module: 'leave_tracker',
+          record_id: id,
+          notify_email: true,
+        })
+      }
+      if (req?.approver_id) {
+        API.createNotification({
+          recipient_employee_id: req.approver_id,
+          type: 'info',
+          message: `${req.employee?.name || 'An employee'}'s ${label} cancellation was approved by People & Culture.`,
           module: 'leave_tracker',
           record_id: id,
           notify_email: true,
@@ -2663,16 +2707,29 @@ const LeaveTracker = (() => {
     const req = arr.find(r => r.id === id)
 
     const updateFn = _reqUpdateFn(type)
-    const { error } = await updateFn(id, { status: 'approved' })
+    const { error } = await updateFn(id, {
+      status:                'approved',
+      cancellation_actor_id: _user.id,
+    })
     if (error) {
       Utils.showToast('Failed: ' + error.message, 'error')
     } else {
+      const label = _reqLabel(type)
       if (req?.employee?.id) {
-        const label = _reqLabel(type)
         API.createNotification({
           recipient_employee_id: req.employee.id,
           type: 'rejection',
           message: `Your ${label} cancellation request was denied. The original request remains approved.`,
+          module: 'leave_tracker',
+          record_id: id,
+          notify_email: true,
+        })
+      }
+      if (req?.approver_id) {
+        API.createNotification({
+          recipient_employee_id: req.approver_id,
+          type: 'info',
+          message: `${req.employee?.name || 'An employee'}'s ${label} cancellation was denied by People & Culture. The original request remains approved.`,
           module: 'leave_tracker',
           record_id: id,
           notify_email: true,
