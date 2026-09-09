@@ -202,7 +202,7 @@ const LeaveTracker = (() => {
           end_date:         iso,
           days:             0.5,
           is_half_day:      true,
-          half_day_period:  'first',
+          half_day_period:  'morning',
           reason:           `Auto-marked — arrived ${rec.late_minutes} min after the threshold`,
           status:           'approved',
           approver_id:      managerId,
