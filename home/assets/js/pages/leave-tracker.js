@@ -690,6 +690,12 @@ const LeaveTracker = (() => {
         </div>`
     }
 
+    const addSectionHtml = _isHR
+      ? `<div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px;">
+          <button class="btn btn--ghost btn--sm" id="att-day-add-btn">+ Add Holiday / Event</button>
+        </div>`
+      : ''
+
     Utils.openModal(`
       <div class="modal-header">
         <h3 class="modal-title">${Utils.formatDate(dateISO)}</h3>
@@ -698,8 +704,13 @@ const LeaveTracker = (() => {
       <div class="modal-body">
         <div style="display:flex;flex-direction:column;gap:8px;">${summaryHtml}</div>
         ${exemptSectionHtml}
+        ${addSectionHtml}
       </div>
     `)
+
+    if (_isHR) {
+      document.getElementById('att-day-add-btn')?.addEventListener('click', () => _openCalendarAddModal(dateISO))
+    }
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -1094,14 +1105,15 @@ const LeaveTracker = (() => {
 
       Utils.closeModal()
       Utils.showToast(`${addType === 'holiday' ? 'Holiday' : 'Event'} added.`, 'success')
-      // Refresh data and re-render
+      // Refresh data and re-render — opened from the Attendance tab, so
+      // refresh that month/tab, not the one this modal originally belonged to.
       const [holRes, evtRes] = await Promise.all([
-        API.getCompanyHolidays(_calMonth.getFullYear()),
-        API.getCompanyEvents(_calMonth.getFullYear()),
+        API.getCompanyHolidays(_attendanceMonth.getFullYear()),
+        API.getCompanyEvents(_attendanceMonth.getFullYear()),
       ])
       _holidays = holRes.data || []
       _events   = evtRes.data || []
-      _loadMyLeavesTab()
+      _loadAttendanceTab()
     })
   }
 
