@@ -1445,7 +1445,7 @@ const API = (() => {
   async function getApprovedLeaveForEmployee(employeeId) {
     const [leaveRes, wfhRes, cvRes] = await Promise.all([
       supabase.from('leave_requests')
-        .select('start_date, end_date, is_half_day, half_day_period, status, leave_types(name)')
+        .select('id, start_date, end_date, days, is_half_day, half_day_period, status, leave_type_id, leave_types(name)')
         .eq('employee_id', employeeId)
         .in('status', ['approved', 'pending']),
       supabase.from('wfh_requests')

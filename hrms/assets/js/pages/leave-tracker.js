@@ -568,7 +568,10 @@ const LeaveTracker = (() => {
       const end = new Date(r.end_date)
       while (d <= end) {
         const iso = _toISO(d)
-        leaveMap[iso] = { name: r.leave_types?.name || 'Leave', is_half_day: r.is_half_day, half_day_period: r.half_day_period, status: r.status }
+        leaveMap[iso] = {
+          id: r.id, leave_type_id: r.leave_type_id, start_date: r.start_date, end_date: r.end_date, days: r.days,
+          name: r.leave_types?.name || 'Leave', is_half_day: r.is_half_day, half_day_period: r.half_day_period, status: r.status,
+        }
         d.setDate(d.getDate() + 1)
       }
     })
@@ -763,6 +766,7 @@ const LeaveTracker = (() => {
     const dateLabel  = new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
     const canMark    = (state === 'absent' || state === 'no-data') && iso < _toISO(new Date())
     const canExempt  = (state === 'absent' || state === 'no-data' || state === 'late' || state === 'partial') && iso < _toISO(new Date()) && !att?.is_exempted
+    const canChangeType = state === 'leave' && (leave?.status === 'pending' || leave?.status === 'approved')
 
     // Attendance row
     let attRows = ''
@@ -873,6 +877,43 @@ const LeaveTracker = (() => {
       }
     }
 
+    // Change Leave Type — applies to the whole request (every date in it),
+    // not just the day clicked. Hard-blocks the save if the new type doesn't
+    // have enough balance to cover the request's day count.
+    let changeTypeSection = ''
+    let changeTypeBalMap  = {}
+    let changeTypeOptions = []
+    if (canChangeType) {
+      const year = new Date(leave.start_date).getFullYear()
+      const [creditsRes, takenRes] = await Promise.all([
+        API.getLeaveCredits(empId, year),
+        API.getAllLeaveRequests({ status: 'approved', employeeId: empId }),
+      ])
+      const credits = creditsRes.data || []
+      const taken   = (takenRes.data || []).filter(r => r.id !== leave.id && new Date(r.start_date).getFullYear() === year)
+      credits.forEach(c => { changeTypeBalMap[c.leave_type_id] = (changeTypeBalMap[c.leave_type_id] || 0) + Number(c.credited_days) })
+      taken.forEach(r => { changeTypeBalMap[r.leave_type_id] = (changeTypeBalMap[r.leave_type_id] || 0) - Number(r.days) })
+
+      changeTypeOptions = (leaveTypes || _leaveTypes).filter(t => t.is_active)
+      const rangeLabel = leave.start_date === leave.end_date
+        ? Utils.formatDate(leave.start_date)
+        : `${Utils.formatDate(leave.start_date)} – ${Utils.formatDate(leave.end_date)}`
+      const dayLabel = `${leave.days} day${Number(leave.days) === 1 ? '' : 's'}`
+      const opts = changeTypeOptions.map(t =>
+        `<option value="${t.id}"${t.id === leave.leave_type_id ? ' selected' : ''}>${Utils.escapeHtml(t.name)}${t.is_unpaid ? ' (Unpaid)' : ''}</option>`
+      ).join('')
+      changeTypeSection = `
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:6px;">Change Leave Type</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Updates the entire request: ${rangeLabel} (${dayLabel})</div>
+          <div id="lt-change-type-err" class="alert alert--danger" style="display:none;margin-bottom:8px;font-size:13px;"></div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <select id="lt-change-type-select" class="form-control" style="font-size:13px;">${opts}</select>
+            <button class="btn btn--ghost btn--sm" id="lt-change-type-confirm" style="align-self:flex-start;">Save</button>
+          </div>
+        </div>`
+    }
+
     const overlay = document.createElement('div')
     overlay.id        = 'lt-team-day-overlay'
     overlay.className = 'modal-overlay'
@@ -887,6 +928,7 @@ const LeaveTracker = (() => {
         </div>
         <div class="modal-body" style="padding:16px 0 4px;">
           ${attRows}
+          ${changeTypeSection}
           ${markSection}
         </div>
       </div>
@@ -928,6 +970,37 @@ const LeaveTracker = (() => {
         }
         overlay.remove()
         Utils.showToast('Correction granted.', 'success')
+        _loadTeamAttCal()
+      })
+    }
+
+    const changeTypeBtn = overlay.querySelector('#lt-change-type-confirm')
+    if (changeTypeBtn) {
+      changeTypeBtn.addEventListener('click', async () => {
+        const newTypeId = overlay.querySelector('#lt-change-type-select')?.value
+        const errEl     = overlay.querySelector('#lt-change-type-err')
+        if (!newTypeId) return
+
+        const newType = changeTypeOptions.find(t => t.id === newTypeId)
+        if (newType && !newType.is_unpaid) {
+          const bal = changeTypeBalMap[newTypeId] || 0
+          if (bal < Number(leave.days)) {
+            errEl.style.display = ''
+            errEl.textContent = `Insufficient ${newType.name} balance — ${bal} day${bal === 1 ? '' : 's'} remaining, ${leave.days} needed.`
+            return
+          }
+        }
+
+        errEl.style.display = 'none'
+        changeTypeBtn.disabled = true; changeTypeBtn.textContent = 'Saving…'
+        const { error } = await API.updateLeaveRequest(leave.id, { leave_type_id: newTypeId })
+        if (error) {
+          errEl.style.display = ''; errEl.textContent = error.message || 'Failed to save.'
+          changeTypeBtn.disabled = false; changeTypeBtn.textContent = 'Save'
+          return
+        }
+        overlay.remove()
+        Utils.showToast('Leave type updated.', 'success')
         _loadTeamAttCal()
       })
     }
