@@ -1615,12 +1615,16 @@ const LeaveTracker = (() => {
         }
       }
 
+      const reqPeriod = isHalf ? _normHalf(period) : 'full'
+      btn.disabled = true; btn.textContent = 'Checking…'
+      const canProceed = await _checkConflictsAndOverride('leave', start, isHalf ? start : end, reqPeriod)
+      if (!canProceed) { btn.disabled = false; btn.textContent = 'Submit'; return }
+
       const approverId = await _resolveApproverWithFallback(start, isHalf ? start : end)
 
-      btn.disabled    = true
       btn.textContent = 'Submitting…'
 
-      const { error } = await API.createLeaveRequest({
+      const { data: newLeave, error } = await API.createLeaveRequest({
         employee_id:      _user.id,
         leave_type_id:    typeId,
         start_date:       start,
@@ -1888,12 +1892,15 @@ const LeaveTracker = (() => {
         }
       }
 
+      btn.disabled = true; btn.textContent = 'Checking…'
+      const canProceed = await _checkConflictsAndOverride('wfh', start, end, 'full')
+      if (!canProceed) { btn.disabled = false; btn.textContent = 'Submit'; return }
+
       const approverId = await _resolveApproverWithFallback(start, end)
 
-      btn.disabled    = true
       btn.textContent = 'Submitting…'
 
-      const { error } = await API.createWfhRequest({
+      const { data: newWfh, error } = await API.createWfhRequest({
         employee_id:  _user.id,
         start_date:   start,
         end_date:     end,
@@ -2037,7 +2044,7 @@ const LeaveTracker = (() => {
     if (v === 'afternoon' || v === 'second_half' || v === 'second') return 'second'
     return 'full'
   }
-  // Expand an existing request into [{iso, period, label}] occupancy slots.
+  // Expand an existing request into [{iso, period, label, kind, rec}] occupancy slots.
   function _expandOccupancy(rec, kind) {
     let period = 'full', single = false, label = ''
     if (kind === 'leave') {
@@ -2054,15 +2061,25 @@ const LeaveTracker = (() => {
     const out = []
     const cur = _parseLocal(rec.start_date)
     const end = _parseLocal(single ? rec.start_date : rec.end_date)
-    while (cur <= end) { out.push({ iso: _toISO(cur), period, label }); cur.setDate(cur.getDate() + 1) }
+    while (cur <= end) { out.push({ iso: _toISO(cur), period, label, kind, rec }); cur.setDate(cur.getDate() + 1) }
     return out
   }
-  // Returns conflicting slots for a proposed client visit. Two slots on the
-  // same date clash if either is full-day or they share the same half.
-  async function _findClientVisitConflicts(start, end, durationType) {
-    const reqSingle = durationType !== 'full_day'
-    const reqPeriod = _normHalf(durationType)
-    const reqEnd    = reqSingle ? start : end
+
+  // Leave > Client Visit > WFH. A same-or-lower-ranked new request is
+  // blocked by an existing higher-or-equal-ranked one; a higher-ranked new
+  // request silently overrides (shrinks/splits) a lower-ranked existing one.
+  function _typeRank(kind) {
+    return kind === 'leave' ? 3 : kind === 'client' ? 2 : 1
+  }
+
+  // Checks a proposed Leave/WFH/Client-Visit request against everything the
+  // employee already has on file. Returns either { blocked: true, blockers }
+  // — show the conflict and refuse to submit — or { blocked: false, overrides }
+  // — a list of existing records that need shrinking/splitting/cancelling
+  // before the new request can be created.
+  async function _resolveConflicts(kind, start, end, period) {
+    const single = period !== 'full'
+    const reqEnd = single ? start : end
 
     const { leaves, wfhs, clientVisits } = await API.getAttendanceConflicts(_user.id, start, reqEnd)
     const existing = [
@@ -2075,15 +2092,102 @@ const LeaveTracker = (() => {
     { const c = _parseLocal(start), e = _parseLocal(reqEnd)
       while (c <= e) { reqDates.push(_toISO(c)); c.setDate(c.getDate() + 1) } }
 
-    const hits = []
+    const myRank      = _typeRank(kind)
+    const blockers     = []
+    const overrideHits = new Map() // rec.id -> { rec, kind, label, dates: Set }
+
     reqDates.forEach(iso => {
       existing.filter(o => o.iso === iso).forEach(o => {
-        if (reqPeriod === 'full' || o.period === 'full' || reqPeriod === o.period) {
-          hits.push({ iso, label: o.label })
+        const clash = (period === 'full' || o.period === 'full' || period === o.period)
+        if (!clash) return
+        if (myRank <= _typeRank(o.kind)) {
+          blockers.push({ iso, label: o.label })
+        } else {
+          if (!overrideHits.has(o.rec.id)) overrideHits.set(o.rec.id, { rec: o.rec, kind: o.kind, label: o.label, dates: new Set() })
+          overrideHits.get(o.rec.id).dates.add(iso)
         }
       })
     })
-    return hits
+
+    if (blockers.length) return { blocked: true, blockers }
+    return { blocked: false, overrides: [...overrideHits.values()] }
+  }
+
+  // Builds the insert payload for the portion of an overridden record that
+  // survives after the overlapping dates are removed — always a full-day
+  // range, since half-day records are single-day and never reach this path.
+  function _buildSplitPayload(rec, kind, startISO, endISO) {
+    const days = _calcLeaveDays(startISO, endISO, false)
+    const base = {
+      employee_id: rec.employee_id,
+      start_date:  startISO,
+      end_date:    endISO,
+      days,
+      reason:      rec.reason,
+      status:      rec.status,
+      approver_id: rec.approver_id,
+    }
+    if (kind === 'leave') return { ...base, leave_type_id: rec.leave_type_id, is_half_day: false, half_day_period: null, is_late_half_day: rec.is_late_half_day || false }
+    if (kind === 'wfh')   return { ...base, work_plan: rec.work_plan }
+    return { ...base, client_id: rec.client_id, entity_id: rec.entity_id, duration_type: 'full_day' }
+  }
+
+  // Shrinks, splits, or fully cancels an overridden existing record so only
+  // its non-overlapping days survive.
+  async function _applyOverride({ rec, kind, dates }) {
+    const allDates = []
+    { const c = _parseLocal(rec.start_date), e = _parseLocal(rec.end_date)
+      while (c <= e) { allDates.push(_toISO(c)); c.setDate(c.getDate() + 1) } }
+    const remaining = allDates.filter(d => !dates.has(d))
+
+    const updateFn = kind === 'leave' ? API.updateLeaveRequest : kind === 'wfh' ? API.updateWfhRequest : API.updateClientVisit
+    const createFn = kind === 'leave' ? API.createLeaveRequest : kind === 'wfh' ? API.createWfhRequest : API.createClientVisit
+
+    if (!remaining.length) {
+      await updateFn(rec.id, { status: 'cancelled' })
+      return
+    }
+
+    // Contiguous segments of what's left — one if the overlap was at an
+    // edge, two if it carved out the middle.
+    const segments = []
+    let segStart = remaining[0], prev = remaining[0]
+    for (let i = 1; i < remaining.length; i++) {
+      const cur  = remaining[i]
+      const next = _parseLocal(prev); next.setDate(next.getDate() + 1)
+      if (cur !== _toISO(next)) { segments.push([segStart, prev]); segStart = cur }
+      prev = cur
+    }
+    segments.push([segStart, prev])
+
+    const [firstStart, firstEnd] = segments[0]
+    await updateFn(rec.id, { start_date: firstStart, end_date: firstEnd, days: _calcLeaveDays(firstStart, firstEnd, false) })
+
+    for (let i = 1; i < segments.length; i++) {
+      await createFn(_buildSplitPayload(rec, kind, segments[i][0], segments[i][1]))
+    }
+  }
+
+  // Runs the full conflict check for a proposed Leave/WFH/Client-Visit
+  // request. Returns true if the caller should proceed with creating it —
+  // any needed overrides have already been applied — or false if it was
+  // blocked (conflict shown) or the user declined the override confirmation.
+  async function _checkConflictsAndOverride(kind, start, end, period) {
+    const { blocked, blockers, overrides } = await _resolveConflicts(kind, start, end, period)
+    if (blocked) {
+      _showConflictPopup(blockers)
+      return false
+    }
+    if (overrides.length) {
+      const rangeLabel = r => r.start_date === r.end_date
+        ? Utils.formatDate(r.start_date)
+        : `${Utils.formatDate(r.start_date)} – ${Utils.formatDate(r.end_date)}`
+      const lines = overrides.map(o => `${o.label} (${rangeLabel(o.rec)})`).join('\n')
+      const ok = confirm(`This will end or shrink the following existing request(s) to make room:\n\n${lines}\n\nContinue?`)
+      if (!ok) return false
+      for (const o of overrides) await _applyOverride(o)
+    }
+    return true
   }
 
   function _showConflictPopup(hits) {
@@ -2232,13 +2336,9 @@ const LeaveTracker = (() => {
 
       btn.disabled = true; btn.textContent = 'Checking…'
 
-      // Period-aware conflict check
-      const hits = await _findClientVisitConflicts(start, end, duration)
-      if (hits.length) {
-        btn.disabled = false; btn.textContent = 'Submit'
-        _showConflictPopup(hits)
-        return
-      }
+      const reqPeriod  = isHalf ? _normHalf(duration) : 'full'
+      const canProceed = await _checkConflictsAndOverride('client', start, end, reqPeriod)
+      if (!canProceed) { btn.disabled = false; btn.textContent = 'Submit'; return }
 
       const days = isHalf ? 0.5 : _calcLeaveDays(start, end, false)
       const approverId = await _resolveApproverWithFallback(start, end)

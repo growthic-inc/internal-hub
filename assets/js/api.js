@@ -1602,15 +1602,15 @@ const API = (() => {
     const live = ['pending', 'approved', 'cancellation_pending']
     const [lr, wfh, cv] = await Promise.all([
       supabase.from('leave_requests')
-        .select('id, start_date, end_date, is_half_day, half_day_period, status, leave_types(name)')
+        .select('id, employee_id, leave_type_id, start_date, end_date, is_half_day, half_day_period, reason, status, approver_id, is_late_half_day, leave_types(name)')
         .eq('employee_id', employeeId).in('status', live)
         .lte('start_date', endISO).gte('end_date', startISO),
       supabase.from('wfh_requests')
-        .select('id, start_date, end_date, status')
+        .select('id, employee_id, start_date, end_date, reason, work_plan, status, approver_id')
         .eq('employee_id', employeeId).in('status', live)
         .lte('start_date', endISO).gte('end_date', startISO),
       supabase.from('client_visit_requests')
-        .select('id, start_date, end_date, duration_type, status, clients(client_name)')
+        .select('id, employee_id, client_id, entity_id, start_date, end_date, duration_type, reason, status, approver_id, clients(client_name)')
         .eq('employee_id', employeeId).in('status', live)
         .lte('start_date', endISO).gte('end_date', startISO),
     ])
