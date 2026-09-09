@@ -27,6 +27,7 @@ const LeaveTracker = (() => {
   let _isManager          = false
   let _isHR               = false   // can manage settings/holidays/quotas
   let _canApproveLeave    = false   // can approve team leave/WFH requests
+  let _isSolePC           = false   // true if viewer is the only P&C-tagged person company-wide
   let _attendanceRecords  = []      // employee_attendance rows for current month
   let _attendanceMonth    = null    // Date: first day of displayed month
   let _lateThreshold        = '10:30'   // HH:MM from app_settings
@@ -257,6 +258,10 @@ const LeaveTracker = (() => {
     const empRes = await API.getAllEmployees()
     _employees = empRes.data || []
     _isManager = _employees.some(e => e.manager_id === _user.id)
+    // If the viewer is the only P&C-tagged person company-wide, there's nobody
+    // else to act on their own requests — let their own queue show them rather
+    // than leaving them permanently stuck.
+    _isSolePC = _employees.filter(e => e.role === 'super_admin' || Utils.getDeptSystemKey(e.department) === 'people_culture').length <= 1
 
     // Show/hide conditional tab — visible to direct managers AND anyone with approve_leave access
     const approvalTab = document.getElementById('lt-tab-pending-approvals')
@@ -306,10 +311,11 @@ const LeaveTracker = (() => {
           API.getHRWfhQueue(),
           API.getHRClientVisitQueue(),
         ])
-        // Merge HR queue — deduplicate by id
-        const hrLeaves = (hrLRes.data || []).filter(r => !_pendingApprovals.some(p => p.id === r.id))
-        const hrWfh    = (hrWRes.data || []).filter(r => !_pendingWfh.some(p => p.id === r.id))
-        const hrCv     = (hrCvRes.data || []).filter(r => !_pendingClientVisits.some(p => p.id === r.id))
+        // Merge HR queue — deduplicate by id, and never surface a P&C
+        // member's own request in the queue they'd act from.
+        const hrLeaves = (hrLRes.data || []).filter(r => !_pendingApprovals.some(p => p.id === r.id) && (_isSolePC || r.employee_id !== _user.id))
+        const hrWfh    = (hrWRes.data || []).filter(r => !_pendingWfh.some(p => p.id === r.id) && (_isSolePC || r.employee_id !== _user.id))
+        const hrCv     = (hrCvRes.data || []).filter(r => !_pendingClientVisits.some(p => p.id === r.id) && (_isSolePC || r.employee_id !== _user.id))
         _pendingApprovals    = [..._pendingApprovals, ...hrLeaves]
         _pendingWfh          = [..._pendingWfh, ...hrWfh]
         _pendingClientVisits = [..._pendingClientVisits, ...hrCv]
@@ -2763,9 +2769,10 @@ const LeaveTracker = (() => {
         API.getHRWfhQueue(),
         API.getHRClientVisitQueue(),
       ])
-      const hrLeaves = (hrLRes.data || []).filter(r => !_pendingApprovals.some(p => p.id === r.id))
-      const hrWfh    = (hrWRes.data || []).filter(r => !_pendingWfh.some(p => p.id === r.id))
-      const hrCv     = (hrCvRes.data || []).filter(r => !_pendingClientVisits.some(p => p.id === r.id))
+      // Never surface a P&C member's own request in the queue they'd act from.
+      const hrLeaves = (hrLRes.data || []).filter(r => !_pendingApprovals.some(p => p.id === r.id) && r.employee_id !== _user.id)
+      const hrWfh    = (hrWRes.data || []).filter(r => !_pendingWfh.some(p => p.id === r.id) && r.employee_id !== _user.id)
+      const hrCv     = (hrCvRes.data || []).filter(r => !_pendingClientVisits.some(p => p.id === r.id) && r.employee_id !== _user.id)
       _pendingApprovals    = [..._pendingApprovals, ...hrLeaves]
       _pendingWfh          = [..._pendingWfh, ...hrWfh]
       _pendingClientVisits = [..._pendingClientVisits, ...hrCv]
