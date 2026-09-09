@@ -1528,11 +1528,11 @@ const LeaveTracker = (() => {
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Start Date <span class="required">*</span></label>
-            <input class="form-input" type="date" id="lt-f-start" value="${todayISO}" />
+            <input class="form-input" type="date" id="lt-f-start" value="${todayISO}" min="${todayISO}" />
           </div>
           <div class="form-group">
             <label class="form-label">End Date <span class="required">*</span></label>
-            <input class="form-input" type="date" id="lt-f-end" value="${todayISO}" />
+            <input class="form-input" type="date" id="lt-f-end" value="${todayISO}" min="${todayISO}" />
           </div>
         </div>
 
@@ -1652,6 +1652,7 @@ const LeaveTracker = (() => {
       if (!typeId) { errEl.textContent = 'Please select a leave type.';      errEl.style.display = 'block'; return }
       if (!start)  { errEl.textContent = 'Please select a start date.';      errEl.style.display = 'block'; return }
       if (!end)    { errEl.textContent = 'Please select an end date.';        errEl.style.display = 'block'; return }
+      if (start < todayISO) { errEl.textContent = 'Backdated leave is not allowed — please contact HR.'; errEl.style.display = 'block'; return }
       if (!isHalf && end < start) { errEl.textContent = 'End date cannot be before start date.'; errEl.style.display = 'block'; return }
       if (!reason) { errEl.textContent = 'Please provide a reason.';          errEl.style.display = 'block'; return }
 
@@ -1707,6 +1708,7 @@ const LeaveTracker = (() => {
           type: 'info',
           message: `${_user.name} submitted a leave request.`,
           module: 'leave_tracker',
+          record_id: newLeave?.id,
           notify_email: true,
         })
       } else {
@@ -1717,6 +1719,7 @@ const LeaveTracker = (() => {
             type: 'info',
             message: `${_user.name} submitted a leave request (no manager assigned).`,
             module: 'leave_tracker',
+            record_id: newLeave?.id,
             notify_email: true,
           }))
       }
@@ -1865,11 +1868,11 @@ const LeaveTracker = (() => {
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Start Date <span class="required">*</span></label>
-            <input class="form-input" type="date" id="lt-f-wfh-start" value="${todayISO}" />
+            <input class="form-input" type="date" id="lt-f-wfh-start" value="${todayISO}" min="${todayISO}" />
           </div>
           <div class="form-group">
             <label class="form-label">End Date <span class="required">*</span></label>
-            <input class="form-input" type="date" id="lt-f-wfh-end" value="${todayISO}" />
+            <input class="form-input" type="date" id="lt-f-wfh-end" value="${todayISO}" min="${todayISO}" />
           </div>
         </div>
 
@@ -1930,6 +1933,7 @@ const LeaveTracker = (() => {
       errEl.style.display = 'none'
       if (!start) { errEl.textContent = 'Please select a start date.'; errEl.style.display = 'block'; return }
       if (!end)   { errEl.textContent = 'Please select an end date.';   errEl.style.display = 'block'; return }
+      if (start < todayISO) { errEl.textContent = 'Backdated WFH is not allowed — please contact HR.'; errEl.style.display = 'block'; return }
       if (end < start) { errEl.textContent = 'End date cannot be before start date.'; errEl.style.display = 'block'; return }
       if (!workPlan) { errEl.textContent = 'Please describe your work plan for the day.'; errEl.style.display = 'block'; return }
 
@@ -1981,6 +1985,7 @@ const LeaveTracker = (() => {
           type: 'info',
           message: `${_user.name} submitted a WFH request.`,
           module: 'leave_tracker',
+          record_id: newWfh?.id,
           notify_email: true,
         })
       } else {
@@ -1991,6 +1996,7 @@ const LeaveTracker = (() => {
             type: 'info',
             message: `${_user.name} submitted a WFH request (no manager assigned).`,
             module: 'leave_tracker',
+            record_id: newWfh?.id,
             notify_email: true,
           }))
       }
@@ -2331,11 +2337,11 @@ const LeaveTracker = (() => {
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Start Date <span class="required">*</span></label>
-            <input class="form-input" type="date" id="lt-f-cv-start" value="${todayISO}" />
+            <input class="form-input" type="date" id="lt-f-cv-start" value="${todayISO}" min="${todayISO}" />
           </div>
           <div class="form-group" id="lt-cv-end-wrap">
             <label class="form-label">End Date <span class="required">*</span></label>
-            <input class="form-input" type="date" id="lt-f-cv-end" value="${todayISO}" />
+            <input class="form-input" type="date" id="lt-f-cv-end" value="${todayISO}" min="${todayISO}" />
           </div>
         </div>
 
@@ -2402,6 +2408,7 @@ const LeaveTracker = (() => {
       if (!clientId)            return fail('Please select a client.')
       if (hasEnts && !entityId) return fail('Please select an entity.')
       if (!start)               return fail('Please select a start date.')
+      if (start < todayISO)     return fail('Backdated client visits are not allowed — please contact HR.')
       if (!isHalf && end < start) return fail('End date cannot be before start date.')
       if (!reason)              return fail('Please provide a reason.')
 
@@ -2415,7 +2422,7 @@ const LeaveTracker = (() => {
       const approverId = await _resolveApproverWithFallback(start, end)
 
       btn.textContent = 'Submitting…'
-      const { error } = await API.createClientVisit({
+      const { data: newVisit, error } = await API.createClientVisit({
         employee_id:   _user.id,
         client_id:     clientId,
         entity_id:     entityId,
@@ -2437,6 +2444,7 @@ const LeaveTracker = (() => {
           type: 'info',
           message: `${_user.name} submitted a Client Visit request.`,
           module: 'leave_tracker',
+          record_id: newVisit?.id,
           notify_email: true,
         })
       } else {
@@ -2447,6 +2455,7 @@ const LeaveTracker = (() => {
             type: 'info',
             message: `${_user.name} submitted a Client Visit request (no manager assigned).`,
             module: 'leave_tracker',
+            record_id: newVisit?.id,
             notify_email: true,
           }))
       }
