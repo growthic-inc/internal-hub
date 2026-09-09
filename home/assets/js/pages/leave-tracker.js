@@ -1323,13 +1323,26 @@ const LeaveTracker = (() => {
     }
   }
 
+  // Keeps prompting until a non-empty reason is given, or the user cancels.
+  function _promptCancellationReason() {
+    let reason = prompt('Reason for cancellation request:')
+    if (reason === null) return null
+    reason = reason.trim()
+    while (!reason) {
+      reason = prompt('A reason is required to request cancellation:')
+      if (reason === null) return null
+      reason = reason.trim()
+    }
+    return reason
+  }
+
   async function _requestCancellation(id) {
-    const reason = prompt('Reason for cancellation request (optional):')
+    const reason = _promptCancellationReason()
     if (reason === null) return // user clicked Cancel
     const req = _leaveRequests.find(r => r.id === id)
     const { error } = await API.updateLeaveRequest(id, {
       status:              'cancellation_pending',
-      cancellation_reason: reason || null,
+      cancellation_reason: reason,
     })
     if (error) {
       Utils.showToast('Failed: ' + error.message, 'error')
@@ -1692,12 +1705,12 @@ const LeaveTracker = (() => {
   }
 
   async function _requestWfhCancellation(id) {
-    const reason = prompt('Reason for cancellation request (optional):')
+    const reason = _promptCancellationReason()
     if (reason === null) return
     const req = _wfhRequests.find(r => r.id === id)
     const { error } = await API.updateWfhRequest(id, {
       status:              'cancellation_pending',
-      cancellation_reason: reason || null,
+      cancellation_reason: reason,
     })
     if (error) {
       Utils.showToast('Failed: ' + error.message, 'error')
@@ -1951,12 +1964,12 @@ const LeaveTracker = (() => {
   }
 
   async function _requestClientVisitCancellation(id) {
-    const reason = prompt('Reason for cancellation request (optional):')
+    const reason = _promptCancellationReason()
     if (reason === null) return
     const req = _clientVisits.find(r => r.id === id)
     const { error } = await API.updateClientVisit(id, {
       status: 'cancellation_pending',
-      cancellation_reason: reason || null,
+      cancellation_reason: reason,
     })
     if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
     _notifyCancellationFiled(req, 'client-visit')
