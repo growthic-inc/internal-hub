@@ -775,7 +775,7 @@ const LeaveTracker = (() => {
       }
 
       if (dayEvents.length) {
-        cellContent += `<span class="att-cal-event-dot" title="${dayEvents.map(e => Utils.escapeHtml(e.title)).join(', ')}"></span>`
+        cellContent += `<span class="att-cal-event-dot" title="${dayEvents.map(e => Utils.escapeHtml(e.title) + (_eventDurationLabel(e) ? ` (${_eventDurationLabel(e)})` : '')).join(', ')}"></span>`
       }
       if (att?.is_exempted) {
         cellContent += `<span class="att-cal-exempt-badge" title="${att.exemption_reason ? Utils.escapeHtml(att.exemption_reason) : 'Correction applied'}">✓</span>`
@@ -837,6 +837,7 @@ const LeaveTracker = (() => {
           isWfh:        !!wfhMap[iso],
           cv:           clientVisitMap[iso],
           holiday:      holidayMap[iso],
+          dayEvents:    eventMap[iso] || [],
           empId:        _teamAttEmpId,
           leaveTypes:   _leaveTypes,
         })
@@ -844,7 +845,7 @@ const LeaveTracker = (() => {
     })
   }
 
-  async function _openTeamDayModal({ iso, state, att, leave, isWfh, cv, holiday, empId, leaveTypes }) {
+  async function _openTeamDayModal({ iso, state, att, leave, isWfh, cv, holiday, dayEvents, empId, leaveTypes }) {
     const existing = document.getElementById('lt-team-day-overlay')
     if (existing) existing.remove()
 
@@ -1003,6 +1004,36 @@ const LeaveTracker = (() => {
         </div>`
     }
 
+    // Company Events — view what's on file for this date, and quick-create
+    // a new one right here instead of switching to Settings.
+    const eventsListHtml = (dayEvents && dayEvents.length)
+      ? dayEvents.map(ev => `<div style="font-size:12px;margin-bottom:4px;"><strong>${Utils.escapeHtml(ev.title)}</strong>${_eventDurationLabel(ev) ? ` (${_eventDurationLabel(ev)})` : ''}${ev.description ? ` — ${Utils.escapeHtml(ev.description)}` : ''}</div>`).join('')
+      : '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">No events on this date.</div>'
+    const eventSection = `
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:8px;">Company Events</div>
+        ${eventsListHtml}
+        <button class="btn btn--ghost btn--sm" id="lt-team-day-add-event-btn">+ Create Event</button>
+        <div id="lt-team-day-event-form" style="display:none;margin-top:10px;">
+          <div id="lt-team-evt-err" class="alert alert--danger" style="display:none;margin-bottom:8px;font-size:13px;"></div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <input class="form-input" type="text" id="lt-team-evt-title" placeholder="Event title" style="font-size:13px;">
+            <select class="form-input" id="lt-team-evt-duration" style="font-size:13px;">
+              <option value="full_day">Full Day</option>
+              <option value="first_half">First Half</option>
+              <option value="second_half">Second Half</option>
+              <option value="specific_time">Specific Time</option>
+            </select>
+            <div style="display:none;gap:8px;" id="lt-team-evt-time-wrap">
+              <input class="form-input" type="time" id="lt-team-evt-time-start" style="font-size:13px;">
+              <input class="form-input" type="time" id="lt-team-evt-time-end" style="font-size:13px;">
+            </div>
+            <textarea class="form-input" id="lt-team-evt-desc" placeholder="Description (optional)" rows="2" style="font-size:13px;resize:vertical;"></textarea>
+            <button class="btn btn--primary btn--sm" id="lt-team-evt-save-btn" style="align-self:flex-start;">Save Event</button>
+          </div>
+        </div>
+      </div>`
+
     const overlay = document.createElement('div')
     overlay.id        = 'lt-team-day-overlay'
     overlay.className = 'modal-overlay'
@@ -1019,6 +1050,7 @@ const LeaveTracker = (() => {
           ${attRows}
           ${changeTypeSection}
           ${markSection}
+          ${eventSection}
         </div>
       </div>
     `
@@ -1026,6 +1058,43 @@ const LeaveTracker = (() => {
     document.body.appendChild(overlay)
     overlay.querySelector('#lt-team-day-close').addEventListener('click', () => overlay.remove())
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+
+    overlay.querySelector('#lt-team-day-add-event-btn')?.addEventListener('click', () => {
+      const form = overlay.querySelector('#lt-team-day-event-form')
+      form.style.display = form.style.display === 'none' ? 'block' : 'none'
+    })
+    overlay.querySelector('#lt-team-evt-duration')?.addEventListener('change', () => {
+      const isTime = overlay.querySelector('#lt-team-evt-duration').value === 'specific_time'
+      overlay.querySelector('#lt-team-evt-time-wrap').style.display = isTime ? 'flex' : 'none'
+    })
+    overlay.querySelector('#lt-team-evt-save-btn')?.addEventListener('click', async () => {
+      const title      = overlay.querySelector('#lt-team-evt-title').value.trim()
+      const duration   = overlay.querySelector('#lt-team-evt-duration').value
+      const timeStart  = duration === 'specific_time' ? (overlay.querySelector('#lt-team-evt-time-start').value || null) : null
+      const timeEnd    = duration === 'specific_time' ? (overlay.querySelector('#lt-team-evt-time-end').value || null)   : null
+      const desc       = overlay.querySelector('#lt-team-evt-desc').value.trim()
+      const errEl      = overlay.querySelector('#lt-team-evt-err')
+      const saveBtn    = overlay.querySelector('#lt-team-evt-save-btn')
+      if (!title) { errEl.style.display = ''; errEl.textContent = 'Enter an event title.'; return }
+
+      errEl.style.display = 'none'
+      saveBtn.disabled = true; saveBtn.textContent = 'Saving…'
+      const { error } = await API.createCompanyEvent({
+        title, start_date: iso, end_date: iso, description: desc || null,
+        duration_type: duration, start_time: timeStart, end_time: timeEnd,
+        created_by: _user.id,
+      })
+      if (error) {
+        errEl.style.display = ''; errEl.textContent = error.message
+        saveBtn.disabled = false; saveBtn.textContent = 'Save Event'
+        return
+      }
+      overlay.remove()
+      Utils.showToast('Event created.', 'success')
+      const evtRes = await API.getCompanyEvents(new Date(iso).getFullYear())
+      _events = evtRes.data || []
+      _loadTeamAttCal()
+    })
 
     const exemptBtn = overlay.querySelector('#lt-exempt-confirm')
     if (exemptBtn) {
@@ -1625,6 +1694,25 @@ const LeaveTracker = (() => {
               <input class="form-input" type="date" id="lt-new-evt-end" />
             </div>
           </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Duration</label>
+              <select class="form-input" id="lt-new-evt-duration">
+                <option value="full_day">Full Day</option>
+                <option value="first_half">First Half</option>
+                <option value="second_half">Second Half</option>
+                <option value="specific_time">Specific Time</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;display:none;" id="lt-evt-time-start-wrap">
+              <label class="form-label">Start Time</label>
+              <input class="form-input" type="time" id="lt-new-evt-time-start" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;display:none;" id="lt-evt-time-end-wrap">
+              <label class="form-label">End Time</label>
+              <input class="form-input" type="time" id="lt-new-evt-time-end" />
+            </div>
+          </div>
           <div class="form-group" style="margin-bottom:10px;">
             <label class="form-label">Description</label>
             <textarea class="form-input" id="lt-new-evt-desc" rows="2" style="resize:vertical;"></textarea>
@@ -1796,11 +1884,28 @@ const LeaveTracker = (() => {
   }
 
   /* ── Events table ─────────────────────────────────────── */
+  // Human-friendly duration label for an event — blank for a plain full-day
+  // event, since that's the default and needs no extra callout.
+  function _eventDurationLabel(ev) {
+    if (!ev.duration_type || ev.duration_type === 'full_day') return ''
+    if (ev.duration_type === 'first_half')  return 'First Half'
+    if (ev.duration_type === 'second_half') return 'Second Half'
+    if (ev.duration_type === 'specific_time' && ev.start_time) {
+      const fmt = t => {
+        const [h, m] = t.split(':').map(Number)
+        const hh = ((h + 11) % 12) + 1
+        return `${hh}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+      }
+      return ev.end_time ? `${fmt(ev.start_time)} – ${fmt(ev.end_time)}` : fmt(ev.start_time)
+    }
+    return ''
+  }
+
   function _renderEventsTable(events) {
     if (!events.length) return '<p class="empty-state">No events added.</p>'
     return `
       <table class="data-table">
-        <thead><tr><th>Title</th><th>Dates</th><th>Description</th><th></th></tr></thead>
+        <thead><tr><th>Title</th><th>Dates</th><th>Duration</th><th>Description</th><th></th></tr></thead>
         <tbody>
           ${events.map(ev => `
             <tr data-event-id="${ev.id}">
@@ -1808,13 +1913,17 @@ const LeaveTracker = (() => {
               <td style="white-space:nowrap;font-size:12px;">
                 ${Utils.formatDate(ev.start_date)}${ev.end_date && ev.end_date !== ev.start_date ? ' – ' + Utils.formatDate(ev.end_date) : ''}
               </td>
+              <td style="white-space:nowrap;font-size:12px;">${_eventDurationLabel(ev) || 'Full Day'}</td>
               <td class="text-muted" style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-width:200px;">${Utils.escapeHtml(ev.description || '—')}</td>
               <td style="white-space:nowrap;">
                 <button class="btn btn--xs btn--ghost" data-edit-event="${ev.id}"
                   data-title="${Utils.escapeHtml(ev.title)}"
                   data-start="${ev.start_date}"
                   data-end="${ev.end_date || ''}"
-                  data-desc="${Utils.escapeHtml(ev.description || '')}">Edit</button>
+                  data-desc="${Utils.escapeHtml(ev.description || '')}"
+                  data-duration="${ev.duration_type || 'full_day'}"
+                  data-time-start="${ev.start_time || ''}"
+                  data-time-end="${ev.end_time || ''}">Edit</button>
                 <button class="btn btn--xs btn--ghost" data-delete-event="${ev.id}"
                   style="margin-left:4px;color:var(--danger);">Delete</button>
               </td>
@@ -2163,12 +2272,23 @@ const LeaveTracker = (() => {
     })
 
     /* ── Company Event actions ── */
+    const _toggleEvtTimeFields = () => {
+      const isTime = document.getElementById('lt-new-evt-duration')?.value === 'specific_time'
+      document.getElementById('lt-evt-time-start-wrap').style.display = isTime ? '' : 'none'
+      document.getElementById('lt-evt-time-end-wrap').style.display   = isTime ? '' : 'none'
+    }
+    document.getElementById('lt-new-evt-duration')?.addEventListener('change', _toggleEvtTimeFields)
+
     document.getElementById('lt-add-event-btn')?.addEventListener('click', () => {
       // Clear any existing editing state
       document.getElementById('lt-new-evt-title').value = ''
       document.getElementById('lt-new-evt-start').value = ''
       document.getElementById('lt-new-evt-end').value   = ''
       document.getElementById('lt-new-evt-desc').value  = ''
+      document.getElementById('lt-new-evt-duration').value = 'full_day'
+      document.getElementById('lt-new-evt-time-start').value = ''
+      document.getElementById('lt-new-evt-time-end').value   = ''
+      _toggleEvtTimeFields()
       document.getElementById('lt-save-event-btn').dataset.editEventId = ''
       document.getElementById('lt-add-event-form').style.display = 'block'
     })
@@ -2177,10 +2297,13 @@ const LeaveTracker = (() => {
       document.getElementById('lt-save-event-btn').dataset.editEventId = ''
     })
     document.getElementById('lt-save-event-btn')?.addEventListener('click', async () => {
-      const title   = document.getElementById('lt-new-evt-title').value.trim()
-      const start   = document.getElementById('lt-new-evt-start').value
-      const end     = document.getElementById('lt-new-evt-end').value
-      const desc    = document.getElementById('lt-new-evt-desc').value.trim()
+      const title    = document.getElementById('lt-new-evt-title').value.trim()
+      const start    = document.getElementById('lt-new-evt-start').value
+      const end      = document.getElementById('lt-new-evt-end').value
+      const desc     = document.getElementById('lt-new-evt-desc').value.trim()
+      const duration = document.getElementById('lt-new-evt-duration').value
+      const timeStart = duration === 'specific_time' ? (document.getElementById('lt-new-evt-time-start').value || null) : null
+      const timeEnd   = duration === 'specific_time' ? (document.getElementById('lt-new-evt-time-end').value || null)   : null
       const editId  = document.getElementById('lt-save-event-btn').dataset.editEventId
 
       if (!title) { Utils.showToast('Enter an event title.', 'error'); return }
@@ -2189,16 +2312,16 @@ const LeaveTracker = (() => {
       const btn = document.getElementById('lt-save-event-btn')
       btn.disabled = true
 
+      const payload = {
+        title, start_date: start, end_date: end || start, description: desc || null,
+        duration_type: duration, start_time: timeStart, end_time: timeEnd,
+      }
+
       let error
       if (editId) {
-        ;({ error } = await API.updateCompanyEvent(editId, {
-          title, start_date: start, end_date: end || start, description: desc || null,
-        }))
+        ;({ error } = await API.updateCompanyEvent(editId, payload))
       } else {
-        ;({ error } = await API.createCompanyEvent({
-          title, start_date: start, end_date: end || start, description: desc || null,
-          created_by: _user.id,
-        }))
+        ;({ error } = await API.createCompanyEvent({ ...payload, created_by: _user.id }))
       }
 
       btn.disabled = false
@@ -2215,6 +2338,10 @@ const LeaveTracker = (() => {
         document.getElementById('lt-new-evt-start').value = btn.dataset.start
         document.getElementById('lt-new-evt-end').value   = btn.dataset.end || ''
         document.getElementById('lt-new-evt-desc').value  = btn.dataset.desc || ''
+        document.getElementById('lt-new-evt-duration').value = btn.dataset.duration || 'full_day'
+        document.getElementById('lt-new-evt-time-start').value = btn.dataset.timeStart || ''
+        document.getElementById('lt-new-evt-time-end').value   = btn.dataset.timeEnd || ''
+        _toggleEvtTimeFields()
         document.getElementById('lt-save-event-btn').dataset.editEventId = btn.dataset.editEvent
         document.getElementById('lt-add-event-form').style.display = 'block'
         document.getElementById('lt-new-evt-title').focus()

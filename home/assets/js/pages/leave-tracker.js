@@ -174,6 +174,22 @@ const LeaveTracker = (() => {
     const e = r.entity?.entity_name
     return e ? `${c} — ${e}` : c
   }
+  // Human-friendly duration label for a company event — blank for a plain
+  // full-day event, since that's the default and needs no extra callout.
+  function _eventDurationLabel(ev) {
+    if (!ev.duration_type || ev.duration_type === 'full_day') return ''
+    if (ev.duration_type === 'first_half')  return 'First Half'
+    if (ev.duration_type === 'second_half') return 'Second Half'
+    if (ev.duration_type === 'specific_time' && ev.start_time) {
+      const fmt = t => {
+        const [h, m] = t.split(':').map(Number)
+        const hh = ((h + 11) % 12) + 1
+        return `${hh}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+      }
+      return ev.end_time ? `${fmt(ev.start_time)} – ${fmt(ev.end_time)}` : fmt(ev.start_time)
+    }
+    return ''
+  }
 
   // WFH days used for user in a given month/year
   function _wfhUsed(month, year) {
@@ -541,7 +557,7 @@ const LeaveTracker = (() => {
 
       // Event indicator dot (events can coexist with any day state)
       if (dayEvents.length) {
-        cellContent += `<span class="att-cal-event-dot" title="${dayEvents.map(e => Utils.escapeHtml(e.title)).join(', ')}"></span>`
+        cellContent += `<span class="att-cal-event-dot" title="${dayEvents.map(e => Utils.escapeHtml(e.title) + (_eventDurationLabel(e) ? ` (${_eventDurationLabel(e)})` : '')).join(', ')}"></span>`
       }
       if (att?.is_exempted) {
         cellContent += `<span class="att-cal-exempt-badge" title="${att.exemption_reason ? Utils.escapeHtml(att.exemption_reason) : 'Correction applied'}">✓</span>`
@@ -655,7 +671,8 @@ const LeaveTracker = (() => {
       items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--absent">Absent</span><span>No punch recorded</span></div>`)
     }
     dayEvents.forEach(ev => {
-      items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--event">Event</span><span>${Utils.escapeHtml(ev.title)}${ev.description ? ` — ${Utils.escapeHtml(ev.description)}` : ''}</span></div>`)
+      const durLabel = _eventDurationLabel(ev)
+      items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--event">Event</span><span>${Utils.escapeHtml(ev.title)}${durLabel ? ` (${durLabel})` : ''}${ev.description ? ` — ${Utils.escapeHtml(ev.description)}` : ''}</span></div>`)
     })
 
     const summaryHtml = items.length
@@ -1169,6 +1186,22 @@ const LeaveTracker = (() => {
             <input class="form-input" type="date" id="cal-evt-end" value="${dateISO}" min="${dateISO}" />
           </div>
           <div class="form-group">
+            <label class="form-label">Duration</label>
+            <select class="form-input" id="cal-evt-duration">
+              <option value="full_day">Full Day</option>
+              <option value="first_half">First Half</option>
+              <option value="second_half">Second Half</option>
+              <option value="specific_time">Specific Time</option>
+            </select>
+          </div>
+          <div class="form-group" id="cal-evt-time-wrap" style="display:none;">
+            <label class="form-label">Time</label>
+            <div style="display:flex;gap:8px;">
+              <input class="form-input" type="time" id="cal-evt-time-start" />
+              <input class="form-input" type="time" id="cal-evt-time-end" />
+            </div>
+          </div>
+          <div class="form-group">
             <label class="form-label">Description</label>
             <textarea class="form-input" id="cal-evt-desc" rows="2" style="resize:vertical;" placeholder="Optional details…"></textarea>
           </div>
@@ -1188,6 +1221,9 @@ const LeaveTracker = (() => {
         document.getElementById('cal-event-fields').style.display   = isHoliday ? 'none' : 'block'
       })
     })
+    document.getElementById('cal-evt-duration')?.addEventListener('change', (e) => {
+      document.getElementById('cal-evt-time-wrap').style.display = e.target.value === 'specific_time' ? 'block' : 'none'
+    })
 
     document.getElementById('cal-add-save-btn').addEventListener('click', async () => {
       const errEl    = document.getElementById('cal-add-err')
@@ -1204,11 +1240,18 @@ const LeaveTracker = (() => {
         if (!name) { errEl.textContent = 'Please enter a holiday name.'; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Add'; return }
         ;({ error } = await API.addCompanyHoliday({ date: dateISO, name }))
       } else {
-        const title = document.getElementById('cal-evt-title').value.trim()
-        const end   = document.getElementById('cal-evt-end').value || dateISO
-        const desc  = document.getElementById('cal-evt-desc').value.trim()
+        const title    = document.getElementById('cal-evt-title').value.trim()
+        const end      = document.getElementById('cal-evt-end').value || dateISO
+        const desc     = document.getElementById('cal-evt-desc').value.trim()
+        const duration = document.getElementById('cal-evt-duration').value
+        const timeStart = duration === 'specific_time' ? (document.getElementById('cal-evt-time-start').value || null) : null
+        const timeEnd   = duration === 'specific_time' ? (document.getElementById('cal-evt-time-end').value || null)   : null
         if (!title) { errEl.textContent = 'Please enter an event title.'; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Add'; return }
-        ;({ error } = await API.createCompanyEvent({ title, start_date: dateISO, end_date: end, description: desc || null, created_by: _user.id }))
+        ;({ error } = await API.createCompanyEvent({
+          title, start_date: dateISO, end_date: end, description: desc || null,
+          duration_type: duration, start_time: timeStart, end_time: timeEnd,
+          created_by: _user.id,
+        }))
       }
 
       btn.disabled    = false
