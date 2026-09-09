@@ -484,6 +484,18 @@ const LeaveTracker = (() => {
       } else if (holiday) {
         cellClass += ' att-cal-cell--holiday'
         cellContent += `<span class="att-cal-label">${Utils.escapeHtml(holiday)}</span>`
+      } else if (leave && leave.status === 'pending' && (isWfh || cv)) {
+        // A pending Leave doesn't override anything until it's approved —
+        // show both, don't let the pending request hide what's actually on file.
+        const lbl = leave.is_half_day ? `½ ${Utils.escapeHtml(leave.name)}` : Utils.escapeHtml(leave.name)
+        if (isWfh) {
+          cellClass += ' att-cal-cell--wfh'
+          cellContent += `<span class="att-cal-label">WFH / Pending ${lbl}</span>`
+        } else {
+          cellClass += ' att-cal-cell--client-visit'
+          const half = cv.duration_type !== 'full_day'
+          cellContent += `<span class="att-cal-label">${half ? '½ ' : ''}Client Visit / Pending ${lbl}</span>`
+        }
       } else if (leave) {
         cellClass += leave.status === 'pending' ? ' att-cal-cell--leave att-cal-cell--leave-pending' : ' att-cal-cell--leave'
         const lbl = leave.is_half_day ? `½ ${Utils.escapeHtml(leave.name)}` : Utils.escapeHtml(leave.name)
@@ -1617,7 +1629,7 @@ const LeaveTracker = (() => {
 
       const reqPeriod = isHalf ? _normHalf(period) : 'full'
       btn.disabled = true; btn.textContent = 'Checking…'
-      const canProceed = await _checkConflictsAndOverride('leave', start, isHalf ? start : end, reqPeriod)
+      const canProceed = await _checkConflictsBeforeSubmit('leave', start, isHalf ? start : end, reqPeriod)
       if (!canProceed) { btn.disabled = false; btn.textContent = 'Submit'; return }
 
       const approverId = await _resolveApproverWithFallback(start, isHalf ? start : end)
@@ -1893,7 +1905,7 @@ const LeaveTracker = (() => {
       }
 
       btn.disabled = true; btn.textContent = 'Checking…'
-      const canProceed = await _checkConflictsAndOverride('wfh', start, end, 'full')
+      const canProceed = await _checkConflictsBeforeSubmit('wfh', start, end, 'full')
       if (!canProceed) { btn.disabled = false; btn.textContent = 'Submit'; return }
 
       const approverId = await _resolveApproverWithFallback(start, end)
@@ -2075,9 +2087,12 @@ const LeaveTracker = (() => {
   // Checks a proposed Leave/WFH/Client-Visit request against everything the
   // employee already has on file. Returns either { blocked: true, blockers }
   // — show the conflict and refuse to submit — or { blocked: false, overrides }
-  // — a list of existing records that need shrinking/splitting/cancelling
-  // before the new request can be created.
-  async function _resolveConflicts(kind, start, end, period) {
+  // — existing records this request outranks, which only actually get
+  // shrunk/split/cancelled once THIS request is approved (see
+  // _applyOverridesOnApproval) — never at submission, so a later rejection
+  // never has to undo anything. excludeId skips a record against itself,
+  // for the approval-time re-check.
+  async function _resolveConflicts(kind, start, end, period, excludeId = null) {
     const single = period !== 'full'
     const reqEnd = single ? start : end
 
@@ -2086,7 +2101,7 @@ const LeaveTracker = (() => {
       ...leaves.flatMap(r => _expandOccupancy(r, 'leave')),
       ...wfhs.flatMap(r => _expandOccupancy(r, 'wfh')),
       ...clientVisits.flatMap(r => _expandOccupancy(r, 'client')),
-    ]
+    ].filter(o => o.rec.id !== excludeId)
 
     const reqDates = []
     { const c = _parseLocal(start), e = _parseLocal(reqEnd)
@@ -2111,6 +2126,14 @@ const LeaveTracker = (() => {
 
     if (blockers.length) return { blocked: true, blockers }
     return { blocked: false, overrides: [...overrideHits.values()] }
+  }
+
+  // The period an already-existing record occupies, in the same shape
+  // _resolveConflicts expects — used to re-check conflicts at approval time.
+  function _periodOf(rec, kind) {
+    if (kind === 'leave')  return rec.is_half_day ? _normHalf(rec.half_day_period) : 'full'
+    if (kind === 'client') return rec.duration_type !== 'full_day' ? _normHalf(rec.duration_type) : 'full'
+    return 'full' // WFH has no half-day concept
   }
 
   // Builds the insert payload for the portion of an overridden record that
@@ -2168,26 +2191,31 @@ const LeaveTracker = (() => {
     }
   }
 
-  // Runs the full conflict check for a proposed Leave/WFH/Client-Visit
-  // request. Returns true if the caller should proceed with creating it —
-  // any needed overrides have already been applied — or false if it was
-  // blocked (conflict shown) or the user declined the override confirmation.
-  async function _checkConflictsAndOverride(kind, start, end, period) {
-    const { blocked, blockers, overrides } = await _resolveConflicts(kind, start, end, period)
+  // Submission-time check — only ever blocks (refuses to create the
+  // request); it never applies an override here, since nothing should be
+  // touched before this request is even decided. Returns true if the
+  // caller should proceed with creating the request.
+  async function _checkConflictsBeforeSubmit(kind, start, end, period) {
+    const { blocked, blockers } = await _resolveConflicts(kind, start, end, period)
     if (blocked) {
       _showConflictPopup(blockers)
       return false
     }
-    if (overrides.length) {
-      const rangeLabel = r => r.start_date === r.end_date
-        ? Utils.formatDate(r.start_date)
-        : `${Utils.formatDate(r.start_date)} – ${Utils.formatDate(r.end_date)}`
-      const lines = overrides.map(o => `${o.label} (${rangeLabel(o.rec)})`).join('\n')
-      const ok = confirm(`This will end or shrink the following existing request(s) to make room:\n\n${lines}\n\nContinue?`)
-      if (!ok) return false
-      for (const o of overrides) await _applyOverride(o)
-    }
     return true
+  }
+
+  // Called right after a Leave/WFH/Client-Visit request is approved — this
+  // is the only point an override actually takes effect. Re-checks conflicts
+  // against what's on file right now (things may have changed since
+  // submission) and shrinks/splits/cancels whatever this request outranks.
+  async function _applyOverridesOnApproval(record, kind) {
+    const period = _periodOf(record, kind)
+    const result = await _resolveConflicts(kind, record.start_date, record.end_date, period, record.id)
+    // A same-or-higher-rank clash appearing between submission and approval
+    // is a rare edge case — the approval already happened, so there's
+    // nothing to safely undo here; just skip applying anything destructive.
+    if (result.blocked) return
+    for (const o of result.overrides) await _applyOverride(o)
   }
 
   function _showConflictPopup(hits) {
@@ -2337,7 +2365,7 @@ const LeaveTracker = (() => {
       btn.disabled = true; btn.textContent = 'Checking…'
 
       const reqPeriod  = isHalf ? _normHalf(duration) : 'full'
-      const canProceed = await _checkConflictsAndOverride('client', start, end, reqPeriod)
+      const canProceed = await _checkConflictsBeforeSubmit('client', start, end, reqPeriod)
       if (!canProceed) { btn.disabled = false; btn.textContent = 'Submit'; return }
 
       const days = isHalf ? 0.5 : _calcLeaveDays(start, end, false)
@@ -2835,6 +2863,17 @@ const LeaveTracker = (() => {
     if (error) {
       Utils.showToast('Failed to approve: ' + error.message, 'error')
     } else {
+      // Rank-based override only takes effect now that this request is
+      // actually approved — never at submission, so a later rejection never
+      // has to undo anything.
+      if (req) {
+        try {
+          await _applyOverridesOnApproval(req, type === 'client-visit' ? 'client' : type)
+        } catch (err) {
+          console.error('[Conflict Override]', err)
+        }
+      }
+
       const label     = _reqLabel(type)
       const empName   = req?.employee?.name || 'An employee'
 
