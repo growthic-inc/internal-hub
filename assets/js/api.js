@@ -1381,12 +1381,16 @@ const API = (() => {
   }
 
   async function getApprovalHistoryLeave(approverId) {
-    // All leave requests this manager has already acted on (approved / rejected)
+    // All leave requests this manager has already acted on (approved / rejected).
+    // Auto-created late half-days are excluded until their correction request
+    // is actually decided — otherwise every system-generated half-day would
+    // clutter this list as if the manager had approved something themselves.
     return supabase
       .from('leave_requests')
       .select('*, leave_types(name), employee:employees!employee_id(id, name, department, profile_image_url)')
       .eq('approver_id', approverId)
       .in('status', ['approved', 'rejected', 'cancelled'])
+      .or('is_late_half_day.eq.false,correction_status.in.(approved,rejected)')
       .order('acted_at', { ascending: false })
       .limit(100)
   }
@@ -1425,6 +1429,42 @@ const API = (() => {
 
   async function createLeaveRequest(data) {
     return supabase.from('leave_requests').insert(data).select().single()
+  }
+
+  async function createLeaveRequestsBulk(rows) {
+    return supabase.from('leave_requests').insert(rows).select()
+  }
+
+  // Existing Leave/WFH/Client-Visit occupancy for a set of employees over a
+  // date range, in 3 queries instead of one per employee — used when bulk
+  // processing attendance (e.g. deciding which late employees are eligible
+  // for an auto half-day, since one can't already have Leave/WFH/CV that day).
+  async function getBulkLeaveOccupancy(employeeIds, startISO, endISO) {
+    const live = ['pending', 'approved', 'cancellation_pending']
+    const [lr, wfh, cv] = await Promise.all([
+      supabase.from('leave_requests')
+        .select('employee_id, start_date, end_date')
+        .in('employee_id', employeeIds).in('status', live)
+        .lte('start_date', endISO).gte('end_date', startISO),
+      supabase.from('wfh_requests')
+        .select('employee_id, start_date, end_date')
+        .in('employee_id', employeeIds).in('status', live)
+        .lte('start_date', endISO).gte('end_date', startISO),
+      supabase.from('client_visit_requests')
+        .select('employee_id, start_date, end_date')
+        .in('employee_id', employeeIds).in('status', live)
+        .lte('start_date', endISO).gte('end_date', startISO),
+    ])
+    return { leaves: lr.data || [], wfhs: wfh.data || [], clientVisits: cv.data || [] }
+  }
+
+  async function getPendingCorrections(approverId) {
+    return supabase
+      .from('leave_requests')
+      .select('*, leave_types(name), employee:employees!employee_id(id, name, department, profile_image_url)')
+      .eq('approver_id', approverId)
+      .eq('correction_status', 'pending')
+      .order('created_at', { ascending: true })
   }
 
   async function updateLeaveRequest(id, data) {
@@ -2118,7 +2158,8 @@ const API = (() => {
     getLeaveCredits, getAllLeaveCredits, addLeaveCredit, deleteLeaveCredit,
     getMyLeaveRequests, getPendingLeaveApprovals, getHRLeaveQueue, getAllLeaveRequests,
     getApprovalHistoryLeave, getApprovalHistoryWfh,
-    createLeaveRequest, updateLeaveRequest,
+    createLeaveRequest, createLeaveRequestsBulk, updateLeaveRequest,
+    getBulkLeaveOccupancy, getPendingCorrections,
     getMyWfhRequests, getPendingWfhApprovals, getHRWfhQueue, getAllWfhRequests, getApprovedLeaveForEmployee,
     createWfhRequest, updateWfhRequest,
     getMyClientVisits, getPendingClientVisitApprovals, getHRClientVisitQueue,

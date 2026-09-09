@@ -137,6 +137,84 @@ const LeaveTracker = (() => {
     }
   }
 
+  // For every uploaded record that's late beyond attendance.late_threshold,
+  // auto-create an approved half-day leave request — unless the employee
+  // already has Leave/WFH/Client Visit/a holiday/Sunday that date. Type is
+  // picked by checking balance in order Casual -> Mental Health -> Earned,
+  // falling back to Unpaid (always accepted, uncapped) if all are exhausted.
+  async function _autoMarkLateHalfDays(records, dateFrom, dateTo) {
+    const lateRecords = records.filter(r => r.late_minutes > 0)
+    if (!lateRecords.length) return { created: 0 }
+
+    const empIds = [...new Set(lateRecords.map(r => r.employee_id))]
+    const { leaves, wfhs, clientVisits } = await API.getBulkLeaveOccupancy(empIds, dateFrom, dateTo)
+
+    const occupied = new Set()
+    const markOccupied = rows => rows.forEach(r => {
+      let d = new Date(r.start_date)
+      const end = new Date(r.end_date)
+      while (d <= end) { occupied.add(`${r.employee_id}|${_toISO(d)}`); d.setDate(d.getDate() + 1) }
+    })
+    markOccupied(leaves); markOccupied(wfhs); markOccupied(clientVisits)
+
+    const holidaySet = new Set((_holidays || []).map(h => h.date))
+
+    const byEmp = {}
+    lateRecords.forEach(r => { (byEmp[r.employee_id] = byEmp[r.employee_id] || []).push(r) })
+    Object.values(byEmp).forEach(list => list.sort((a, b) => a.date.localeCompare(b.date)))
+
+    const clType     = _leaveTypes.find(t => t.name.toLowerCase().includes('casual'))
+    const mhType      = _leaveTypes.find(t => t.name.toLowerCase().includes('mental health'))
+    const elType      = _leaveTypes.find(t => t.name.toLowerCase().includes('earned'))
+    const unpaidType  = _leaveTypes.find(t => t.is_unpaid)
+    const cascade     = [clType, mhType, elType].filter(Boolean)
+
+    const rowsToInsert = []
+    for (const [empId, list] of Object.entries(byEmp)) {
+      const year = new Date(list[0].date).getFullYear()
+      const [creditsRes, takenRes] = await Promise.all([
+        API.getLeaveCredits(empId, year),
+        API.getAllLeaveRequests({ status: 'approved', employeeId: empId }),
+      ])
+      const credits = creditsRes.data || []
+      const taken   = (takenRes.data || []).filter(r => new Date(r.start_date).getFullYear() === year)
+      const balMap  = {}
+      credits.forEach(c => { balMap[c.leave_type_id] = (balMap[c.leave_type_id] || 0) + Number(c.credited_days) })
+      taken.forEach(r => { balMap[r.leave_type_id] = (balMap[r.leave_type_id] || 0) - Number(r.days) })
+
+      const managerId = _employees.find(e => e.id === empId)?.manager_id || null
+
+      for (const rec of list) {
+        const iso = rec.date
+        if (new Date(iso + 'T00:00:00').getDay() === 0) continue // Sunday
+        if (holidaySet.has(iso)) continue
+        if (occupied.has(`${empId}|${iso}`)) continue
+
+        const chosen = cascade.find(t => (balMap[t.id] || 0) >= 0.5) || unpaidType
+        if (!chosen) continue // no leave types configured — skip safely
+
+        if (chosen !== unpaidType) balMap[chosen.id] = (balMap[chosen.id] || 0) - 0.5
+
+        rowsToInsert.push({
+          employee_id:      empId,
+          leave_type_id:    chosen.id,
+          start_date:       iso,
+          end_date:         iso,
+          days:             0.5,
+          is_half_day:      true,
+          half_day_period:  'first',
+          reason:           `Auto-marked — arrived ${rec.late_minutes} min after the threshold`,
+          status:           'approved',
+          approver_id:      managerId,
+          is_late_half_day: true,
+        })
+      }
+    }
+
+    if (rowsToInsert.length) await API.createLeaveRequestsBulk(rowsToInsert)
+    return { created: rowsToInsert.length }
+  }
+
   /* ══════════════════════════════════════════════════════════
      TAB: ATTENDANCE UPLOAD
   ══════════════════════════════════════════════════════════ */
@@ -352,6 +430,15 @@ const LeaveTracker = (() => {
         }
       }
 
+      // Auto half-day for anyone late beyond threshold — best-effort, doesn't
+      // block reporting the attendance upload itself as successful.
+      let halfDaysCreated = 0
+      try {
+        halfDaysCreated = (await _autoMarkLateHalfDays(records, dateFrom, dateTo)).created
+      } catch (err) {
+        console.error('[Late Half-Day]', err)
+      }
+
       // Log the upload
       await API.insertAttendanceUploadLog({
         uploaded_by:       _user.id,
@@ -368,7 +455,7 @@ const LeaveTracker = (() => {
       const logRes = await API.getAttendanceUploadLog()
       _uploadLog = logRes.data || []
 
-      const msg = `Upload complete — ${matched} day-records saved${skippedEmps > 0 ? `, ${skippedEmps} employee(s) skipped (Bio ID not mapped)` : ''}.`
+      const msg = `Upload complete — ${matched} day-records saved${halfDaysCreated ? `, ${halfDaysCreated} late half-day${halfDaysCreated === 1 ? '' : 's'} marked` : ''}${skippedEmps > 0 ? `, ${skippedEmps} employee(s) skipped (Bio ID not mapped)` : ''}.`
       Utils.showToast(msg, status === 'failed' ? 'error' : 'success')
       _loadAttendanceUploadTab()
 

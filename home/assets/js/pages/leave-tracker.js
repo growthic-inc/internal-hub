@@ -24,6 +24,7 @@ const LeaveTracker = (() => {
   let _clientVisits        = []   // my client-visit requests
   let _pendingClientVisits = []
   let _historyClientVisit  = []
+  let _pendingCorrections  = []   // late half-day correction requests awaiting my decision
   let _isManager          = false
   let _isHR               = false   // can manage settings/holidays/quotas
   let _canApproveLeave    = false   // can approve team leave/WFH requests
@@ -290,13 +291,14 @@ const LeaveTracker = (() => {
 
     // Fetch pending approvals + history if manager, HR, or has approve_leave access
     if (_isManager || _isHR || _canApproveLeave) {
-      const [paRes, pwRes, pcvRes, hlRes, hwRes, hcvRes] = await Promise.all([
+      const [paRes, pwRes, pcvRes, hlRes, hwRes, hcvRes, pcorRes] = await Promise.all([
         API.getPendingLeaveApprovals(_user.id),
         API.getPendingWfhApprovals(_user.id),
         API.getPendingClientVisitApprovals(_user.id),
         API.getApprovalHistoryLeave(_user.id),
         API.getApprovalHistoryWfh(_user.id),
         API.getApprovalHistoryClientVisit(_user.id),
+        API.getPendingCorrections(_user.id),
       ])
       _pendingApprovals    = paRes.data  || []
       _pendingWfh          = pwRes.data  || []
@@ -304,6 +306,7 @@ const LeaveTracker = (() => {
       _historyLeave        = hlRes.data  || []
       _historyWfh          = hwRes.data  || []
       _historyClientVisit  = hcvRes.data || []
+      _pendingCorrections   = pcorRes.data || []
 
       if (_isHR) {
         const [hrLRes, hrWRes, hrCvRes] = await Promise.all([
@@ -338,7 +341,7 @@ const LeaveTracker = (() => {
   function _updateApprovalBadge() {
     const badge = document.getElementById('lt-approval-badge')
     if (!badge) return
-    const count = _pendingApprovals.length + _pendingWfh.length + _pendingClientVisits.length + _pendingClientVisits.length
+    const count = _pendingApprovals.length + _pendingWfh.length + _pendingClientVisits.length + _pendingCorrections.length
     if (count > 0) {
       badge.textContent   = count > 99 ? '99+' : String(count)
       badge.style.display = 'inline-flex'
@@ -651,7 +654,9 @@ const LeaveTracker = (() => {
     const todayISO  = _toISO(new Date())
     const isPast    = dateISO < todayISO
     const isSunday  = new Date(dateISO + 'T00:00:00').getDay() === 0
-    const hasIssue  = att?.is_absent || att?.late_minutes > 0 || (att?.punch_in && !att?.punch_out) || (!att && !leave && !isWfh && !cv && !holiday)
+    // Late arrivals no longer go through self-service exemption — they're
+    // auto-marked as a half-day leave with its own manager-approved correction.
+    const hasIssue  = att?.is_absent || (att?.punch_in && !att?.punch_out) || (!att && !leave && !isWfh && !cv && !holiday)
     const isExemptEligible = isPast && !isSunday && !holiday && !leave && !isWfh && !cv && hasIssue
 
     let exemptSectionHtml = ''
@@ -1286,14 +1291,19 @@ const LeaveTracker = (() => {
               <td>${r.days}</td>
               <td>
                 ${STATUS_BADGE[r.status] || r.status}
+                ${r.is_late_half_day ? `<span class="badge badge--muted" style="font-size:10px;margin-left:4px;">Late Half-Day</span>` : ''}
                 ${r.approver_comment ? `<div class="text-sm text-muted" style="margin-top:2px;white-space:pre-wrap;word-break:break-word;">${Utils.escapeHtml(r.approver_comment)}</div>` : ''}
                 <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Submitted ${Utils.formatDateTime(r.created_at)}</div>
                 ${r.acted_at ? `<div style="font-size:11px;color:var(--text-muted);">Decided by ${Utils.escapeHtml(r.approver?.name || '—')} · ${Utils.formatDateTime(r.acted_at)}</div>` : ''}
+                ${r.correction_status === 'pending'  ? `<div style="font-size:11px;color:var(--warning);margin-top:4px;">Correction pending with manager</div>` : ''}
+                ${r.correction_status === 'approved' ? `<div style="font-size:11px;color:var(--success);margin-top:4px;">Correction approved — half-day reversed</div>` : ''}
+                ${r.correction_status === 'rejected' ? `<div style="font-size:11px;color:var(--danger);margin-top:4px;">Correction denied — half-day stands</div>` : ''}
               </td>
               <td class="text-muted" style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-width:220px;">${Utils.escapeHtml(r.reason || '—')}</td>
               <td style="white-space:nowrap;">
                 ${r.status === 'pending' ? `<button class="btn btn--xs btn--ghost" data-cancel-leave="${r.id}" style="color:var(--danger);">Cancel</button>` : ''}
-                ${r.status === 'approved' ? `<button class="btn btn--xs btn--ghost" data-cancel-request="${r.id}" style="color:var(--warning);">Request Cancel</button>` : ''}
+                ${r.status === 'approved' && !r.is_late_half_day ? `<button class="btn btn--xs btn--ghost" data-cancel-request="${r.id}" style="color:var(--warning);">Request Cancel</button>` : ''}
+                ${r.is_late_half_day && !r.correction_status ? `<button class="btn btn--xs btn--ghost" data-request-correction="${r.id}" style="color:var(--warning);">Request Correction</button>` : ''}
               </td>
             </tr>
           `).join('')}
@@ -1309,6 +1319,49 @@ const LeaveTracker = (() => {
     document.querySelectorAll('[data-cancel-request]').forEach(btn => {
       btn.addEventListener('click', () => _requestCancellation(btn.dataset.cancelRequest))
     })
+    document.querySelectorAll('[data-request-correction]').forEach(btn => {
+      btn.addEventListener('click', () => _requestCorrection(btn.dataset.requestCorrection))
+    })
+  }
+
+  // Keeps prompting until a non-empty reason is given, or the user cancels.
+  function _promptCorrectionReason() {
+    let reason = prompt('Reason for correction request:')
+    if (reason === null) return null
+    reason = reason.trim()
+    while (!reason) {
+      reason = prompt('A reason is required to request a correction:')
+      if (reason === null) return null
+      reason = reason.trim()
+    }
+    return reason
+  }
+
+  async function _requestCorrection(id) {
+    const reason = _promptCorrectionReason()
+    if (reason === null) return
+    const req = _leaveRequests.find(r => r.id === id)
+    const { error } = await API.updateLeaveRequest(id, {
+      correction_status: 'pending',
+      correction_reason: reason,
+    })
+    if (error) {
+      Utils.showToast('Failed: ' + error.message, 'error')
+      return
+    }
+    if (req?.approver_id) {
+      API.createNotification({
+        recipient_employee_id: req.approver_id,
+        type: 'info',
+        message: `${_user.name} requested a correction for their late half-day on ${Utils.formatDate(req.start_date)}.`,
+        module: 'leave_tracker',
+        record_id: id,
+        notify_email: true,
+      })
+    }
+    Utils.showToast('Correction request sent.', 'success')
+    await _refreshMyLeaveData()
+    _loadTab(_activeTab)
   }
 
   async function _cancelLeave(id) {
@@ -2271,6 +2324,16 @@ const LeaveTracker = (() => {
         </div>
       </div>
 
+      <div class="section-card mb-4">
+        <div class="section-card-header">
+          <h3>Attendance Corrections</h3>
+          <span class="badge badge--warning">${_pendingCorrections.length}</span>
+        </div>
+        <div class="section-card-body" id="lt-correction-approvals-body">
+          ${_renderCorrectionCards(_pendingCorrections)}
+        </div>
+      </div>
+
       <div class="section-card">
         <div class="section-card-header" style="cursor:pointer;user-select:none;" id="lt-history-header">
           <h3>Approval History</h3>
@@ -2286,6 +2349,7 @@ const LeaveTracker = (() => {
     `
 
     _bindApprovalCardActions()
+    _bindCorrectionCardActions()
 
     // Collapsible history section
     document.getElementById('lt-history-header')?.addEventListener('click', () => {
@@ -2357,6 +2421,98 @@ const LeaveTracker = (() => {
         </div>
       `
     }).join('')
+  }
+
+  function _renderCorrectionCards(requests) {
+    if (!requests.length) return '<p class="empty-state">No pending approvals.</p>'
+
+    return requests.map(r => {
+      const emp = r.employee || {}
+      return `
+        <div class="lt-approval-card section-card" style="margin-bottom:12px;" data-correction-id="${r.id}">
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:14px 16px;">
+            <div style="width:36px;height:36px;border-radius:50%;background:var(--primary-light,#e8f0fe);color:var(--primary);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">
+              ${emp.profile_image_url ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" alt="" style="width:100%;height:100%;object-fit:cover;">` : Utils.getInitials(emp.name || '?')}
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:600;font-size:14px;">${Utils.escapeHtml(emp.name || '—')}</div>
+              <div style="font-size:12px;color:var(--text-muted);">${Utils.escapeHtml(emp.department || '—')}</div>
+              <div style="margin-top:6px;font-size:13px;">
+                <strong>Late Half-Day</strong> · ${Utils.formatDate(r.start_date)} · ${Utils.escapeHtml(r.leave_types?.name || 'Leave')}
+              </div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:3px;">${Utils.escapeHtml(r.reason || '')}</div>
+              <div style="font-size:12px;margin-top:6px;"><strong>Correction reason:</strong> ${Utils.escapeHtml(r.correction_reason || '—')}</div>
+            </div>
+            <div style="display:flex;gap:6px;flex-shrink:0;align-items:flex-start;">
+              <button class="btn btn--xs btn--success" data-correction-action="approve" data-id="${r.id}">Approve</button>
+              <button class="btn btn--xs btn--danger"  data-correction-action="reject"  data-id="${r.id}">Reject</button>
+            </div>
+          </div>
+        </div>
+      `
+    }).join('')
+  }
+
+  function _bindCorrectionCardActions() {
+    document.querySelectorAll('[data-correction-action]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id     = btn.dataset.id
+        const action = btn.dataset.correctionAction
+        if (action === 'approve') _approveCorrection(id)
+        else _rejectCorrection(id)
+      })
+    })
+  }
+
+  async function _approveCorrection(id) {
+    const req = _pendingCorrections.find(r => r.id === id)
+    const now = new Date().toISOString()
+    const { error } = await API.updateLeaveRequest(id, {
+      status:                'cancelled',
+      acted_at:               now,
+      correction_status:      'approved',
+      correction_decided_by:  _user.id,
+      correction_decided_at:  now,
+    })
+    if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
+    if (req?.employee?.id) {
+      API.createNotification({
+        recipient_employee_id: req.employee.id,
+        type: 'approval',
+        message: `Your correction request for the late half-day on ${Utils.formatDate(req.start_date)} was approved — the half-day has been reversed.`,
+        module: 'leave_tracker',
+        record_id: id,
+        notify_email: true,
+      })
+    }
+    Utils.showToast('Correction approved. Half-day reversed.', 'success')
+    await _refreshApprovalData()
+    _loadTab('pending-approvals')
+  }
+
+  async function _rejectCorrection(id) {
+    const req = _pendingCorrections.find(r => r.id === id)
+    const now = new Date().toISOString()
+    const { error } = await API.updateLeaveRequest(id, {
+      acted_at:               now,
+      correction_status:      'rejected',
+      correction_decided_by:  _user.id,
+      correction_decided_at:  now,
+    })
+    if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
+    if (req?.employee?.id) {
+      API.createNotification({
+        recipient_employee_id: req.employee.id,
+        type: 'rejection',
+        message: `Your correction request for the late half-day on ${Utils.formatDate(req.start_date)} was denied. The half-day stands.`,
+        module: 'leave_tracker',
+        record_id: id,
+        notify_email: true,
+      })
+    }
+    Utils.showToast('Correction denied. Half-day stands.', 'success')
+    await _refreshApprovalData()
+    _loadTab('pending-approvals')
   }
 
   function _renderApprovalHistory() {
@@ -2761,13 +2917,14 @@ const LeaveTracker = (() => {
   }
 
   async function _refreshApprovalData() {
-    const [paRes, pwRes, pcvRes, hlRes, hwRes, hcvRes] = await Promise.all([
+    const [paRes, pwRes, pcvRes, hlRes, hwRes, hcvRes, pcorRes] = await Promise.all([
       API.getPendingLeaveApprovals(_user.id),
       API.getPendingWfhApprovals(_user.id),
       API.getPendingClientVisitApprovals(_user.id),
       API.getApprovalHistoryLeave(_user.id),
       API.getApprovalHistoryWfh(_user.id),
       API.getApprovalHistoryClientVisit(_user.id),
+      API.getPendingCorrections(_user.id),
     ])
     _pendingApprovals    = paRes.data  || []
     _pendingWfh          = pwRes.data  || []
@@ -2775,6 +2932,7 @@ const LeaveTracker = (() => {
     _historyLeave        = hlRes.data  || []
     _historyWfh          = hwRes.data  || []
     _historyClientVisit  = hcvRes.data || []
+    _pendingCorrections   = pcorRes.data || []
 
     if (_isHR) {
       const [hrLRes, hrWRes, hrCvRes] = await Promise.all([
@@ -2782,10 +2940,12 @@ const LeaveTracker = (() => {
         API.getHRWfhQueue(),
         API.getHRClientVisitQueue(),
       ])
-      // Never surface a P&C member's own request in the queue they'd act from.
-      const hrLeaves = (hrLRes.data || []).filter(r => !_pendingApprovals.some(p => p.id === r.id) && r.employee_id !== _user.id)
-      const hrWfh    = (hrWRes.data || []).filter(r => !_pendingWfh.some(p => p.id === r.id) && r.employee_id !== _user.id)
-      const hrCv     = (hrCvRes.data || []).filter(r => !_pendingClientVisits.some(p => p.id === r.id) && r.employee_id !== _user.id)
+      // Never surface a P&C member's own request in the queue they'd act from
+      // — unless they're the only P&C-tagged person, in which case there's
+      // nobody else to hand it to.
+      const hrLeaves = (hrLRes.data || []).filter(r => !_pendingApprovals.some(p => p.id === r.id) && (_isSolePC || r.employee_id !== _user.id))
+      const hrWfh    = (hrWRes.data || []).filter(r => !_pendingWfh.some(p => p.id === r.id) && (_isSolePC || r.employee_id !== _user.id))
+      const hrCv     = (hrCvRes.data || []).filter(r => !_pendingClientVisits.some(p => p.id === r.id) && (_isSolePC || r.employee_id !== _user.id))
       _pendingApprovals    = [..._pendingApprovals, ...hrLeaves]
       _pendingWfh          = [..._pendingWfh, ...hrWfh]
       _pendingClientVisits = [..._pendingClientVisits, ...hrCv]
