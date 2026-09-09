@@ -1741,8 +1741,8 @@ const LeaveTracker = (() => {
     const f = n => Number.isInteger(n) ? n : parseFloat(n.toFixed(2))
     if (freq === 'monthly')     return `<span class="badge badge--success">${f(d/12)} day${f(d/12)!==1?'s':''}/month</span>`
     if (freq === 'quarterly')   return `<span class="badge badge--success">${f(d/4)} day${f(d/4)!==1?'s':''}/quarter</span>`
-    if (freq === 'half_yearly') return `<span class="badge badge--success">${f(d/2)} day${f(d/2)!==1?'s':''} on Apr & Oct</span>`
-    if (freq === 'yearly')      return `<span class="badge badge--warning">${d} day${d!==1?'s':''} on Apr 1</span>`
+    if (freq === 'half_yearly') return `<span class="badge badge--success">${f(d/2)} day${f(d/2)!==1?'s':''} on Jan & Jul</span>`
+    if (freq === 'yearly')      return `<span class="badge badge--warning">${d} day${d!==1?'s':''} on Jan 1</span>`
     return '<span class="badge badge--muted">—</span>'
   }
 
