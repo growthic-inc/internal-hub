@@ -399,13 +399,8 @@ const LeaveTracker = (() => {
     // Fetch attendance for current month
     const mStart    = _toISO(_attendanceMonth)
     const mEnd      = _toISO(new Date(_attendanceMonth.getFullYear(), _attendanceMonth.getMonth() + 1, 0))
-    const yearMonth = _toISO(_attendanceMonth).slice(0, 7)
-    const [attRes, exemptRes] = await Promise.all([
-      API.getEmployeeAttendance(_user.id, mStart, mEnd),
-      API.getMonthlyExemptionCount(_user.id, yearMonth),
-    ])
+    const attRes = await API.getEmployeeAttendance(_user.id, mStart, mEnd)
     _attendanceRecords = attRes.data || []
-    const exemptCount = exemptRes.data?.length ?? 0
 
     const monthLabel = _attendanceMonth.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
     const today = _toISO(new Date())
@@ -420,7 +415,7 @@ const LeaveTracker = (() => {
       const end = new Date(r.end_date)
       while (d <= end) {
         const iso = _toISO(d)
-        leaveMap[iso] = { type: 'leave', name: r.leave_types?.name || 'Leave', is_half_day: r.is_half_day, half_day_period: r.half_day_period, status: r.status }
+        leaveMap[iso] = { type: 'leave', name: r.leave_types?.name || 'Leave', is_half_day: r.is_half_day, half_day_period: r.half_day_period, status: r.status, is_late_half_day: r.is_late_half_day }
         d.setDate(d.getDate() + 1)
       }
     })
@@ -514,7 +509,7 @@ const LeaveTracker = (() => {
         }
       } else if (leave) {
         cellClass += leave.status === 'pending' ? ' att-cal-cell--leave att-cal-cell--leave-pending' : ' att-cal-cell--leave'
-        const lbl = leave.is_half_day ? `½ ${Utils.escapeHtml(leave.name)}` : Utils.escapeHtml(leave.name)
+        const lbl = leave.is_half_day ? `½ ${Utils.escapeHtml(leave.name)}${leave.is_late_half_day ? ' (Late)' : ''}` : Utils.escapeHtml(leave.name)
         cellContent += `<span class="att-cal-label">${lbl}${leave.status === 'pending' ? ' <em style="font-size:10px;font-style:normal;opacity:0.7;">(Pending)</em>' : ''}</span>`
       } else if (isWfh) {
         cellClass += ' att-cal-cell--wfh'
@@ -578,7 +573,6 @@ const LeaveTracker = (() => {
         <span class="att-legend-item"><span class="att-legend-dot" style="background:#ECFDF5;border:1.5px solid #059669;border-radius:3px;"></span>WFH</span>
         <span class="att-legend-item"><span class="att-legend-dot" style="background:#E0F2FE;border:1.5px solid #0EA5E9;border-radius:3px;"></span>Client Visit</span>
         <span class="att-legend-item"><span class="att-legend-dot" style="background:#FEF3C7;border:1.5px solid #F59E0B;border-radius:3px;"></span>Holiday</span>
-        <span class="att-legend-item"><span class="att-legend-dot" style="background:var(--surface);border:1.5px solid var(--border);border-radius:3px;opacity:0.6;"></span>No Data</span>
         <span class="att-legend-item"><span class="att-legend-dot" style="background:#EC4899;"></span>Event</span>
       </div>`
 
@@ -591,7 +585,6 @@ const LeaveTracker = (() => {
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
                 <div>
                   <h3 style="margin:0;font-size:15px;font-weight:700;">Attendance — ${monthLabel}</h3>
-                  <div style="font-size:12px;color:${exemptCount >= 4 ? '#DC2626' : '#059669'};margin-top:3px;font-weight:500;">${exemptCount} of 4 corrections used this month</div>
                 </div>
                 <div style="display:flex;align-items:center;gap:6px;">
                   <button class="btn btn--ghost btn--sm" id="att-cal-prev">
@@ -636,13 +629,13 @@ const LeaveTracker = (() => {
     // Click any date to view what's marked / self-correct
     document.querySelectorAll('.att-cal-cell--clickable[data-att-date]').forEach(cell => {
       cell.addEventListener('click', async () => {
-        await _openAttendanceDateModal(cell.dataset.attDate, { holidayMap, leaveMap, wfhMap, clientVisitMap, attMap, eventMap }, exemptCount)
+        await _openAttendanceDateModal(cell.dataset.attDate, { holidayMap, leaveMap, wfhMap, clientVisitMap, attMap, eventMap })
       })
     })
   }
 
   /* View what's marked on a date, and self-correct via exemption if eligible */
-  async function _openAttendanceDateModal(dateISO, maps, exemptCount = 0) {
+  async function _openAttendanceDateModal(dateISO, maps) {
     const holiday   = maps.holidayMap[dateISO]
     const leave     = maps.leaveMap[dateISO]
     const isWfh     = maps.wfhMap[dateISO]
@@ -650,14 +643,10 @@ const LeaveTracker = (() => {
     const att       = maps.attMap[dateISO]
     const dayEvents = maps.eventMap[dateISO] || []
 
-    // Always fetch a fresh count so stale closures or external DB changes can't bypass the limit
-    const freshRes = await API.getMonthlyExemptionCount(_user.id, dateISO.slice(0, 7))
-    exemptCount = freshRes.data?.length ?? 0
-
     // Build the "what's on this day" summary
     const items = []
     if (holiday) items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--holiday">Holiday</span><span>${Utils.escapeHtml(holiday)}</span></div>`)
-    if (leave)   items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--leave">${leave.is_half_day ? 'Half-Day Leave' : 'Leave'}</span><span>${Utils.escapeHtml(leave.name)}</span></div>`)
+    if (leave)   items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--leave">${leave.is_half_day ? 'Half-Day Leave' : 'Leave'}${leave.is_late_half_day ? ' (Late)' : ''}</span><span>${Utils.escapeHtml(leave.name)}</span></div>`)
     if (isWfh)   items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--wfh">WFH</span><span>Work From Home</span></div>`)
     if (cv) {
       const dur = cv.duration_type === 'full_day' ? '' : ` (${_cvDurationLabel(cv.duration_type)})`
@@ -679,15 +668,11 @@ const LeaveTracker = (() => {
       ? items.join('')
       : `<p style="font-size:13px;color:var(--text-muted);margin:0;">Nothing marked on this day.</p>`
 
-    // Exemption section — employee can self-correct up to 4 times per month
-    const todayISO  = _toISO(new Date())
-    const isPast    = dateISO < todayISO
-    const isSunday  = new Date(dateISO + 'T00:00:00').getDay() === 0
-    // Late arrivals no longer go through self-service exemption — they're
-    // auto-marked as a half-day leave with its own manager-approved correction.
-    const hasIssue  = att?.is_absent || (att?.punch_in && !att?.punch_out) || (!att && !leave && !isWfh && !cv && !holiday)
-    const isExemptEligible = isPast && !isSunday && !holiday && !leave && !isWfh && !cv && hasIssue
-
+    // Absent/No-Data/Partial have no self-service action at all anymore — HR
+    // reviews manually and marks a real leave from balance if warranted
+    // (HRMS Team Overview). Late arrivals go through the separate auto
+    // half-day + manager-approved correction flow. Only show historical
+    // correction data from before this changed.
     let exemptSectionHtml = ''
     if (att?.is_exempted) {
       const origIn  = att.original_punch_in  ? att.original_punch_in.slice(0, 5)  : '—'
@@ -703,32 +688,6 @@ const LeaveTracker = (() => {
             ${att.exemption_reason ? `<div class="att-day-row"><span class="att-day-tag" style="background:var(--surface);color:var(--text-muted);">Reason</span><span style="font-size:13px;">${Utils.escapeHtml(att.exemption_reason)}</span></div>` : ''}
           </div>
         </div>`
-    } else if (isExemptEligible && exemptCount < 4) {
-      const preIn  = att?.punch_in  ? att.punch_in.slice(0, 5)  : ''
-      const preOut = att?.punch_out ? att.punch_out.slice(0, 5) : ''
-      exemptSectionHtml = `
-        <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px;">
-          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:8px;">Log Correction (${4 - exemptCount} of 4 remaining)</div>
-          <div id="att-exempt-err" class="alert alert--danger" style="display:none;margin-bottom:8px;"></div>
-          <div style="display:flex;flex-direction:column;gap:8px;">
-            <div>
-              <label style="font-size:12px;color:var(--text-muted);margin-bottom:4px;display:block;">Corrected Punch In</label>
-              <input type="time" id="att-exempt-in" class="form-input" value="${preIn}" style="font-size:13px;">
-            </div>
-            <div>
-              <label style="font-size:12px;color:var(--text-muted);margin-bottom:4px;display:block;">Corrected Punch Out</label>
-              <input type="time" id="att-exempt-out" class="form-input" value="${preOut}" style="font-size:13px;">
-            </div>
-            <input class="form-input" type="text" id="att-exempt-reason" placeholder="Reason *" style="font-size:13px;">
-            <button class="btn btn--primary btn--sm" id="att-exempt-submit" style="align-self:flex-start;">Apply Correction</button>
-          </div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">No approval needed · marks this day as corrected.</div>
-        </div>`
-    } else if (isExemptEligible && exemptCount >= 4) {
-      exemptSectionHtml = `
-        <div id="att-exempt-bal-wrap" style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px;">
-          <p style="font-size:13px;color:var(--text-muted);margin:0;">Loading leave balance…</p>
-        </div>`
     }
 
     Utils.openModal(`
@@ -741,132 +700,6 @@ const LeaveTracker = (() => {
         ${exemptSectionHtml}
       </div>
     `)
-
-    // Wire up exemption handler
-    if (isExemptEligible && !att?.is_exempted && exemptCount < 4) {
-      document.getElementById('att-exempt-submit')?.addEventListener('click', async () => {
-        const reason   = document.getElementById('att-exempt-reason')?.value?.trim() || ''
-        const errEl    = document.getElementById('att-exempt-err')
-        const btn      = document.getElementById('att-exempt-submit')
-        const punchIn  = document.getElementById('att-exempt-in')?.value
-        const punchOut = document.getElementById('att-exempt-out')?.value
-
-        if (!punchIn)  { errEl.style.display = ''; errEl.textContent = 'Please enter the corrected punch in time.'; return }
-        if (!punchOut) { errEl.style.display = ''; errEl.textContent = 'Please enter the corrected punch out time.'; return }
-        if (!reason)   { errEl.style.display = ''; errEl.textContent = 'Please enter a reason for the correction.'; return }
-
-        // Recalculate late_minutes if punch_in is being set
-        let lateMins = att?.late_minutes ?? 0
-        if (punchIn) {
-          const [th, tm] = (_lateThreshold || '10:30').split(':').map(Number)
-          const [ph, pm] = punchIn.split(':').map(Number)
-          lateMins = Math.max(0, (ph * 60 + pm) - (th * 60 + tm))
-        }
-
-        // Capture original biometric times before overwriting
-        const origIn  = att?.punch_in  || null
-        const origOut = att?.punch_out || null
-
-        errEl.style.display = 'none'
-        btn.disabled = true; btn.textContent = 'Saving…'
-        const { error } = await API.applyAttendanceExemption(_user.id, dateISO, reason, _user.id, punchIn || null, punchOut || null, lateMins, origIn, origOut)
-        if (error) {
-          errEl.style.display = ''; errEl.textContent = error.message
-          btn.disabled = false; btn.textContent = 'Apply Correction'
-          return
-        }
-        Utils.closeModal()
-        Utils.showToast('Correction applied.', 'success')
-        _loadAttendanceTab()
-      })
-    } else if (isExemptEligible && exemptCount >= 4) {
-      // Async-fill the leave balance section
-      const year = new Date(dateISO).getFullYear()
-      const [creditsRes, takenRes] = await Promise.all([
-        API.getLeaveCredits(_user.id, year),
-        API.getMyLeaveRequests(),
-      ])
-      const wrap = document.getElementById('att-exempt-bal-wrap')
-      if (wrap) {
-        // 1 day if fully absent, 0.5 if late or partial punch
-        const suggestedDays = (att?.is_absent || !att) ? 1 : 0.5
-        const isHalfDay     = suggestedDays === 0.5
-        const deductLabel   = isHalfDay ? '0.5 day (half-day)' : '1 day (full day)'
-
-        const credits = creditsRes.data || []
-        const taken   = (takenRes.data || []).filter(r => r.status === 'approved' && new Date(r.start_date).getFullYear() === year)
-        const balMap  = {}
-        credits.forEach(c => { balMap[c.leave_type_id] = (balMap[c.leave_type_id] || 0) + Number(c.credited_days) })
-        taken.forEach(r => { balMap[r.leave_type_id] = (balMap[r.leave_type_id] || 0) - Number(r.days) })
-        const eligibleTypes = _leaveTypes
-          .filter(t => t.is_active && !t.name.toLowerCase().includes('medical') && (t.is_unpaid || (balMap[t.id] || 0) > 0))
-          .sort((a, b) => {
-            const aC = a.name.toLowerCase().includes('casual')
-            const bC = b.name.toLowerCase().includes('casual')
-            if (aC && !bC) return -1
-            if (!aC && bC) return 1
-            if (a.is_unpaid && !b.is_unpaid) return 1
-            if (!a.is_unpaid && b.is_unpaid) return -1
-            return a.name.localeCompare(b.name)
-          })
-        if (!eligibleTypes.length) {
-          wrap.innerHTML = '<div style="font-size:13px;color:#DC2626;">All 4 corrections used. No leave balance available — contact HR.</div>'
-        } else {
-          const opts = eligibleTypes.map(t => {
-            const bal = t.is_unpaid ? null : (balMap[t.id] || 0)
-            return `<option value="${t.id}">${Utils.escapeHtml(t.name)}${bal !== null ? ' (' + bal + ' days remaining)' : ' (Unpaid)'}</option>`
-          }).join('')
-          wrap.innerHTML = `
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-              <span style="font-size:13px;font-weight:700;color:var(--text);">Apply Leave</span>
-              <span style="font-size:11px;font-weight:600;background:#FEE2E2;color:#B91C1C;padding:2px 8px;border-radius:20px;">4/4 corrections used</span>
-            </div>
-            <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
-              <span style="font-size:12px;color:var(--text-muted);">Priority: <strong style="color:var(--text);">CL → EL → Unpaid</strong></span>
-              <span style="font-size:12px;color:var(--text-muted);">Deduction: <strong style="color:${isHalfDay ? '#D97706' : '#DC2626'};">${deductLabel}</strong></span>
-            </div>
-            <div id="att-exempt-err" class="alert alert--danger" style="display:none;margin-bottom:10px;"></div>
-            <div style="display:flex;flex-direction:column;gap:10px;">
-              <select id="att-exempt-lt" class="form-control" style="font-size:13px;">${opts}</select>
-              <input class="form-input" type="text" id="att-exempt-reason" placeholder="Reason (optional)" style="font-size:13px;">
-              <div style="display:flex;align-items:center;gap:10px;">
-                <button class="btn btn--primary btn--sm" id="att-exempt-submit">Submit for Approval</button>
-                <span style="font-size:11px;color:var(--text-muted);">Goes to your manager</span>
-              </div>
-            </div>`
-          document.getElementById('att-exempt-submit')?.addEventListener('click', async () => {
-            const typeId = document.getElementById('att-exempt-lt')?.value
-            const reason = document.getElementById('att-exempt-reason')?.value?.trim() || ''
-            const errEl  = document.getElementById('att-exempt-err')
-            const btn    = document.getElementById('att-exempt-submit')
-            if (!typeId) return
-            btn.disabled = true; btn.textContent = 'Submitting…'
-            const me        = _employees.find(e => e.id === _user.id)
-            const managerId = me?.reports_to || null
-            const { error } = await API.createLeaveRequest({
-              employee_id:   _user.id,
-              leave_type_id: typeId,
-              start_date:    dateISO,
-              end_date:      dateISO,
-              days:          suggestedDays,
-              is_half_day:   isHalfDay,
-              reason:        reason || 'Attendance correction',
-              status:        'pending',
-              approver_id:   managerId,
-            })
-            if (error) {
-              errEl.style.display = ''; errEl.textContent = error.message
-              btn.disabled = false; btn.textContent = 'Submit for Approval'
-              return
-            }
-            Utils.closeModal()
-            Utils.showToast('Leave request submitted for approval.', 'success')
-            _loadAttendanceTab()
-          })
-        }
-      }
-    }
-
   }
 
   /* ══════════════════════════════════════════════════════════

@@ -1485,7 +1485,7 @@ const API = (() => {
   async function getApprovedLeaveForEmployee(employeeId) {
     const [leaveRes, wfhRes, cvRes] = await Promise.all([
       supabase.from('leave_requests')
-        .select('id, start_date, end_date, days, is_half_day, half_day_period, status, leave_type_id, leave_types(name)')
+        .select('id, start_date, end_date, days, is_half_day, half_day_period, status, leave_type_id, is_late_half_day, leave_types(name)')
         .eq('employee_id', employeeId)
         .in('status', ['approved', 'pending']),
       supabase.from('wfh_requests')
@@ -2059,59 +2059,6 @@ const API = (() => {
       .eq('status', 'active')
   }
 
-  async function getMonthlyExemptionCount(empId, yearMonth) {
-    const [y, m] = yearMonth.split('-').map(Number)
-    const nextMonth = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
-    return supabase
-      .from('employee_attendance')
-      .select('date')
-      .eq('employee_id', empId)
-      .gte('date', `${yearMonth}-01`)
-      .lt('date', `${nextMonth}-01`)
-      .not('exempted_by', 'is', null)
-  }
-
-  async function applyAttendanceExemption(empId, date, reason, exemptedBy, punchIn, punchOut, lateMinutes, originalPunchIn, originalPunchOut) {
-    const { data: existing } = await supabase
-      .from('employee_attendance')
-      .select('id')
-      .eq('employee_id', empId)
-      .eq('date', date)
-      .maybeSingle()
-
-    const updates = {
-      is_exempted: true,
-      exemption_reason: reason || null,
-      exempted_by: exemptedBy,
-      late_minutes: lateMinutes ?? 0,
-      original_punch_in:  originalPunchIn  || null,
-      original_punch_out: originalPunchOut || null,
-    }
-    if (punchIn  != null) { updates.punch_in  = punchIn;  updates.is_absent = false }
-    if (punchOut != null) { updates.punch_out = punchOut; updates.is_absent = false }
-
-    if (existing) {
-      return supabase.from('employee_attendance')
-        .update(updates)
-        .eq('employee_id', empId)
-        .eq('date', date)
-    }
-    return supabase.from('employee_attendance').insert({
-      employee_id: empId,
-      date,
-      punch_in: punchIn || null,
-      punch_out: punchOut || null,
-      late_minutes: lateMinutes ?? 0,
-      early_leave_minutes: 0,
-      is_absent: punchIn == null && punchOut == null,
-      is_exempted: true,
-      exemption_reason: reason || null,
-      exempted_by: exemptedBy,
-      original_punch_in:  originalPunchIn  || null,
-      original_punch_out: originalPunchOut || null,
-    })
-  }
-
   return {
     getClients, getClient, getClientByProjectCode, updateEntityProfileType,
     getClientTeam, setClientTeam,
@@ -2183,7 +2130,6 @@ const API = (() => {
     getEmployeeAttendance, upsertAttendanceRecords,
     getAttendanceUploadLog, insertAttendanceUploadLog,
     getEmployeesWithBioId,
-    getMonthlyExemptionCount, applyAttendanceExemption,
     // App Settings
     getAppSettings, upsertAppSetting,
     // Leave Credits
