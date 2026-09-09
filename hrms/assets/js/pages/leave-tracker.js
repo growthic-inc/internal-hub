@@ -852,7 +852,9 @@ const LeaveTracker = (() => {
     const empName    = emp?.name || '—'
     const dateLabel  = new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
     const canMark    = (state === 'absent' || state === 'no-data') && iso < _toISO(new Date())
-    const canExempt  = (state === 'absent' || state === 'no-data' || state === 'late' || state === 'partial') && iso < _toISO(new Date()) && !att?.is_exempted
+    // Late arrivals no longer go through Grant Correction — they're auto-marked
+    // as a half-day leave with its own manager-approved correction instead.
+    const canExempt  = (state === 'absent' || state === 'no-data' || state === 'partial') && iso < _toISO(new Date()) && !att?.is_exempted
     const canChangeType = state === 'leave' && (leave?.status === 'pending' || leave?.status === 'approved')
 
     // Attendance row
