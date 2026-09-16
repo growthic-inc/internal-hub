@@ -369,11 +369,26 @@ const Reimbursements = (() => {
 
     const all = data || []
 
+    const expenseTypeOptions = [
+      ['', 'All Types'],
+      ['travel',                  'Travel (Cab / Train / Flight)'],
+      ['food_meals',              'Food & Meals'],
+      ['printing_stationery',     'Printing & Stationery'],
+      ['internet_communication',  'Internet & Communication'],
+      ['photography_videography', 'Photography & Videography'],
+      ['event_venue',             'Event & Venue'],
+      ['software_tools',          'Software & Tools'],
+      ['courier_delivery',        'Courier & Delivery'],
+      ['marketing_materials',     'Marketing Materials'],
+      ['accommodation',           'Accommodation'],
+      ['other',                   'Other'],
+    ]
+
     content.innerHTML = `
       <div class="section-card">
         <div class="section-card-header"><h3>Approved Claims — Awaiting Payment</h3></div>
         <div class="section-card-body" style="padding-top:0;">
-          <div class="db-filter-bar" style="margin:14px 0 16px;">
+          <div class="db-filter-bar" style="margin:14px 0 8px;">
             <div class="db-filter-group" style="min-width:150px;">
               <span class="db-filter-label">Paid Between</span>
               <select class="db-filter-select" id="pay-range-select">
@@ -394,14 +409,70 @@ const Reimbursements = (() => {
               <button class="btn btn--sm btn--ghost" id="pay-export-btn">Export</button>
             </div>
           </div>
-          ${_renderClaimTable(all, true, false, true)}
+          <div class="db-filter-bar" style="margin:0 0 14px;flex-wrap:wrap;">
+            <div class="db-filter-group">
+              <span class="db-filter-label">Employee</span>
+              <input type="text" id="pay-f-employee" class="db-filter-select" placeholder="Search…" style="min-width:140px;">
+            </div>
+            <div class="db-filter-group">
+              <span class="db-filter-label">Expense Type</span>
+              <select id="pay-f-type" class="db-filter-select" style="min-width:160px;">
+                ${expenseTypeOptions.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
+              </select>
+            </div>
+            <div class="db-filter-group">
+              <span class="db-filter-label">Client</span>
+              <input type="text" id="pay-f-client" class="db-filter-select" placeholder="Search…" style="min-width:130px;">
+            </div>
+            <div class="db-filter-group">
+              <span class="db-filter-label">Status</span>
+              <select id="pay-f-status" class="db-filter-select">
+                <option value="">All</option>
+                <option value="approved">Approved</option>
+                <option value="paid">Paid</option>
+              </select>
+            </div>
+          </div>
+          <div id="pay-table-wrap">${_renderClaimTable(all, true, false, true)}</div>
         </div>
       </div>
     `
 
-    document.querySelectorAll('[data-pay]').forEach(btn => {
-      btn.addEventListener('click', () => _openMarkPaidModal(btn.dataset.pay, btn.dataset.name, btn.dataset.amount, btn.dataset.employee))
-    })
+    function _bindPayButtons() {
+      document.querySelectorAll('[data-pay]').forEach(btn => {
+        btn.addEventListener('click', () => _openMarkPaidModal(btn.dataset.pay, btn.dataset.name, btn.dataset.amount, btn.dataset.employee))
+      })
+    }
+    _bindPayButtons()
+
+    const fEmployee = document.getElementById('pay-f-employee')
+    const fType     = document.getElementById('pay-f-type')
+    const fClient   = document.getElementById('pay-f-client')
+    const fStatus   = document.getElementById('pay-f-status')
+    const tableWrap = document.getElementById('pay-table-wrap')
+
+    function _applyColFilters() {
+      const emp    = fEmployee.value.trim().toLowerCase()
+      const type   = fType.value
+      const client = fClient.value.trim().toLowerCase()
+      const status = fStatus.value
+
+      const filtered = all.filter(r => {
+        if (emp    && !(r.submitter?.name || '').toLowerCase().includes(emp))          return false
+        if (type   && r.expense_type !== type)                                         return false
+        if (client && !(r.clients?.client_name || '').toLowerCase().includes(client)) return false
+        if (status && r.status !== status)                                             return false
+        return true
+      })
+
+      tableWrap.innerHTML = _renderClaimTable(filtered, true, false, true)
+      _bindPayButtons()
+    }
+
+    fEmployee.addEventListener('input',  _applyColFilters)
+    fType.addEventListener('change',     _applyColFilters)
+    fClient.addEventListener('input',    _applyColFilters)
+    fStatus.addEventListener('change',   _applyColFilters)
 
     // Export is a pure client-side filter over the claims already loaded
     // above — no extra query. This is a reconciliation export (does what
