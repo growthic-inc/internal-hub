@@ -8,6 +8,13 @@ const HomeModule = (() => {
   let _user = null
   const currentYear = new Date().getFullYear()
 
+  // Attendance banner state
+  let _attWeekStart      = null   // Date, Monday of the displayed week
+  let _attWeekAttendance = []     // employee_attendance rows for the displayed week
+  let _attLeaveData      = { leaves: [], wfhs: [], clientVisits: [] }
+  let _attHolidayYear    = null
+  let _attHolidays       = []
+
   /* ── Helpers ─────────────────────────────────────────────── */
 
   function _greeting() {
@@ -47,6 +54,26 @@ const HomeModule = (() => {
 
   function _todayISO() {
     return Utils.todayIST()
+  }
+
+  function _toISO(date) {
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+
+  function _parseLocal(iso) {
+    const [y, m, d] = iso.split('-').map(Number)
+    return new Date(y, m - 1, d)
+  }
+
+  function _getMondayOf(date) {
+    const d = new Date(date)
+    const day = d.getDay()
+    d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day))
+    d.setHours(0, 0, 0, 0)
+    return d
   }
 
   function _avatarHtml(person) {
@@ -162,6 +189,163 @@ const HomeModule = (() => {
           ${actionHtml}
         </div>
       </div>`
+  }
+
+  /* ── Section: This week's attendance ──────────────────────── */
+
+  // Same priority order as the Leave Tracker's Attendance tab: Sunday >
+  // Holiday > Leave > WFH > Client Visit > punch-derived status. Kept in
+  // sync manually since home.js and leave-tracker.js are separate modules.
+  function _computeDayStatus(iso, holidayMap, leaveMap, wfhMap, cvMap, attMap, todayISO) {
+    const isSunday = _parseLocal(iso).getDay() === 0
+    if (isSunday)         return { state: 'off',     chip: 'Off',     title: 'Weekly Off' }
+    if (holidayMap[iso])  return { state: 'holiday', chip: 'Holiday', title: holidayMap[iso] }
+    const leave = leaveMap[iso]
+    if (leave)            return { state: leave.status === 'pending' ? 'leave-pending' : 'leave', chip: 'Leave', title: leave.name }
+    if (wfhMap[iso])      return { state: 'wfh',     chip: 'WFH',     title: 'Work From Home' }
+    if (cvMap[iso])       return { state: 'cv',      chip: 'Visit',   title: 'Client Visit' }
+    const att = attMap[iso]
+    if (att) {
+      if (att.is_absent)              return { state: 'absent',  chip: 'Absent',  title: 'Absent' }
+      if (att.punch_in && att.punch_out) {
+        const late = att.late_minutes > 0
+        return { state: late ? 'late' : 'present', chip: late ? 'Late' : 'Present', title: late ? `Late by ${att.late_minutes} min` : 'Present' }
+      }
+      if (att.punch_in)              return { state: 'partial', chip: 'Partial', title: 'Partial punch' }
+    }
+    if (iso > todayISO)  return { state: 'future',  chip: '',        title: '' }
+    return { state: 'pending', chip: '—', title: 'Not synced yet' }
+  }
+
+  const _ATT_STATE_STYLE = {
+    present:      { bg: 'var(--success-light,#D1FAE5)', color: '#1D9E75' },
+    late:         { bg: 'var(--danger-light,#FEE2E2)',  color: '#B91C1C' },
+    partial:      { bg: '#FEF3C7',                      color: '#B45309' },
+    absent:       { bg: '#FEE2E2',                      color: '#DC2626' },
+    leave:        { bg: '#EEF2FF',                       color: '#4F46E5' },
+    'leave-pending': { bg: '#EEF2FF',                    color: '#6366F1' },
+    wfh:          { bg: '#ECFDF5',                       color: '#059669' },
+    cv:           { bg: '#E0F2FE',                       color: '#0EA5E9' },
+    holiday:      { bg: '#FEF3C7',                       color: '#B45309' },
+    off:          { bg: 'var(--surface,#F3F4F6)',        color: 'var(--text-muted)' },
+    pending:      { bg: 'var(--surface,#F3F4F6)',        color: 'var(--text-muted)' },
+    future:       { bg: 'transparent',                   color: 'var(--text-muted)' },
+  }
+
+  function _renderAttendanceBanner() {
+    const weekStart = _attWeekStart
+    const weekEnd    = new Date(weekStart); weekEnd.setDate(weekEnd.getDate() + 6)
+    const todayISO   = _todayISO()
+
+    const holidayMap = {}
+    _attHolidays.forEach(h => { holidayMap[h.date] = h.name })
+
+    const leaveMap = {}
+    ;(_attLeaveData.leaves || []).filter(r => r.status === 'approved' || r.status === 'pending').forEach(r => {
+      let d = _parseLocal(r.start_date)
+      const end = _parseLocal(r.end_date)
+      while (d <= end) { leaveMap[_toISO(d)] = { name: r.leave_types?.name || 'Leave', status: r.status }; d.setDate(d.getDate() + 1) }
+    })
+    const wfhMap = {}
+    ;(_attLeaveData.wfhs || []).filter(r => r.status === 'approved').forEach(r => {
+      let d = _parseLocal(r.start_date)
+      const end = _parseLocal(r.end_date)
+      while (d <= end) { wfhMap[_toISO(d)] = true; d.setDate(d.getDate() + 1) }
+    })
+    const cvMap = {}
+    ;(_attLeaveData.clientVisits || []).filter(r => r.status === 'approved').forEach(r => {
+      let d = _parseLocal(r.start_date)
+      const end = _parseLocal(r.end_date)
+      while (d <= end) { cvMap[_toISO(d)] = true; d.setDate(d.getDate() + 1) }
+    })
+    const attMap = {}
+    ;(_attWeekAttendance || []).forEach(r => { attMap[r.date] = r })
+
+    const days = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(weekStart); d.setDate(d.getDate() + i)
+      const iso = _toISO(d)
+      days.push({ iso, dow: d.toLocaleDateString('en-IN', { weekday: 'short' }), ...(_computeDayStatus(iso, holidayMap, leaveMap, wfhMap, cvMap, attMap, todayISO)) })
+    }
+
+    const counts = { present: 0, late: 0, absent: 0, pending: 0 }
+    days.forEach(d => { if (counts[d.state] !== undefined) counts[d.state]++ })
+    const summaryParts = []
+    if (counts.present) summaryParts.push(`${counts.present} present`)
+    if (counts.late)    summaryParts.push(`${counts.late} late`)
+    if (counts.absent)  summaryParts.push(`${counts.absent} absent`)
+    if (counts.pending) summaryParts.push(`${counts.pending} pending`)
+    const summary = summaryParts.length ? summaryParts.join(', ') : 'Nothing to show yet this week'
+
+    const nextWeekStart = new Date(weekStart); nextWeekStart.setDate(nextWeekStart.getDate() + 7)
+    const canGoNext = _toISO(nextWeekStart) <= _toISO(_getMondayOf(new Date()))
+
+    const rangeLabel = `${weekStart.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – ${weekEnd.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+
+    return `
+      <div class="section-card home-att-banner home-fade-in">
+        <div class="section-card-body" style="padding:14px 20px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <button class="btn btn--ghost btn--sm" id="home-att-prev" aria-label="Previous week" style="padding:2px 8px;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:600;font-size:13px;">This week: ${summary}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">${rangeLabel}</div>
+            </div>
+            <button class="btn btn--ghost btn--sm" id="home-att-next" aria-label="Next week" style="padding:2px 8px;" ${canGoNext ? '' : 'disabled'}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+            <a href="#leave-tracker" style="font-size:12px;color:var(--primary);text-decoration:none;white-space:nowrap;margin-left:6px;">View attendance</a>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:12px;">
+            ${days.map(d => {
+              const style = _ATT_STATE_STYLE[d.state] || _ATT_STATE_STYLE.pending
+              const dimmed = d.state === 'off' || d.state === 'future'
+              return `
+                <div class="home-att-day" data-att-day="${d.iso}" title="${Utils.escapeHtml(d.title || '')}" style="flex:1;text-align:center;background:${style.bg};border-radius:8px;padding:7px 2px;cursor:pointer;${dimmed ? 'opacity:0.55;' : ''}">
+                  <div style="font-size:10px;color:var(--text-muted);">${d.dow}</div>
+                  <div style="font-size:11px;font-weight:600;color:${style.color};margin-top:3px;">${Utils.escapeHtml(d.chip || '')}</div>
+                </div>`
+            }).join('')}
+          </div>
+        </div>
+      </div>`
+  }
+
+  async function _loadAttendanceBannerData(weekStart) {
+    const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate() + 6)
+    const year = weekStart.getFullYear()
+
+    const fetches = [API.getEmployeeAttendance(_user.id, _toISO(weekStart), _toISO(weekEnd))]
+    if (year !== _attHolidayYear) fetches.push(API.getCompanyHolidays(year))
+
+    const results = await Promise.all(fetches)
+    _attWeekAttendance = results[0].data || []
+    if (results[1]) { _attHolidays = results[1].data || []; _attHolidayYear = year }
+  }
+
+  async function _refreshAttendanceBanner() {
+    await _loadAttendanceBannerData(_attWeekStart)
+    const el = document.getElementById('home-att-banner-wrap')
+    if (el) { el.innerHTML = _renderAttendanceBanner(); _bindAttendanceBanner() }
+  }
+
+  function _bindAttendanceBanner() {
+    document.getElementById('home-att-prev')?.addEventListener('click', async () => {
+      _attWeekStart.setDate(_attWeekStart.getDate() - 7)
+      await _refreshAttendanceBanner()
+    })
+    document.getElementById('home-att-next')?.addEventListener('click', async () => {
+      _attWeekStart.setDate(_attWeekStart.getDate() + 7)
+      await _refreshAttendanceBanner()
+    })
+    document.querySelectorAll('[data-att-day]').forEach(cell => {
+      cell.addEventListener('click', () => {
+        sessionStorage.setItem('lt_open_date', cell.dataset.attDay)
+        window.location.hash = 'leave-tracker'
+      })
+    })
   }
 
   /* ── Section: Knowledge Labs entry point ──────────────────── */
@@ -620,6 +804,7 @@ const HomeModule = (() => {
   async function init(user) {
     _user = user
     const todayISO = _todayISO()
+    _attWeekStart = _getMondayOf(new Date())
 
     const [
       { data: todayEntries },
@@ -632,6 +817,7 @@ const HomeModule = (() => {
       { data: allEmployees },
       { data: myBadges },
       { data: knowledgeResources },
+      attLeaveData,
     ] = await Promise.all([
       API.getTimesheetEntries(user.id, todayISO, todayISO),
       API.getWhoIsOutToday(),
@@ -643,11 +829,15 @@ const HomeModule = (() => {
       API.getBirthdayEmployees(),
       API.getEmployeeBadges(user.id),
       API.getKnowledgeResources(),
+      API.getApprovedLeaveForEmployee(user.id),
+      _loadAttendanceBannerData(_attWeekStart),
     ])
+    _attLeaveData = attLeaveData || { leaves: [], wfhs: [], clientVisits: [] }
 
     const html = `
       ${_renderHero(user, todayEntries, whoIsOut, whoIsWfh, pendingLeaveCount, pendingTsCount)}
       ${_renderTimesheetNudge(todayEntries)}
+      <div id="home-att-banner-wrap">${_renderAttendanceBanner()}</div>
       ${_renderKnowledgeLabsCard(knowledgeResources)}
       ${_renderPendingApprovals(pendingLeaveCount, pendingTsCount)}
 
@@ -667,6 +857,7 @@ const HomeModule = (() => {
     if (el) {
       el.innerHTML = html
       _bindInteractions()
+      _bindAttendanceBanner()
     }
 
     // Fire-and-forget: check + award tenure / birthday badges without blocking render

@@ -396,6 +396,14 @@ const LeaveTracker = (() => {
     const content = document.getElementById('lt-content')
     if (!content) return
 
+    // If we got here via a day-click on the Home dashboard's attendance
+    // banner, jump to that date's month so it's actually on screen.
+    const _pendingOpenDate = sessionStorage.getItem('lt_open_date')
+    if (_pendingOpenDate) {
+      const d = _parseLocal(_pendingOpenDate)
+      _attendanceMonth = new Date(d.getFullYear(), d.getMonth(), 1)
+    }
+
     // Fetch attendance for current month
     const mStart    = _toISO(_attendanceMonth)
     const mEnd      = _toISO(new Date(_attendanceMonth.getFullYear(), _attendanceMonth.getMonth() + 1, 0))
@@ -632,6 +640,13 @@ const LeaveTracker = (() => {
         await _openAttendanceDateModal(cell.dataset.attDate, { holidayMap, leaveMap, wfhMap, clientVisitMap, attMap, eventMap })
       })
     })
+
+    // Arrived here from the Home dashboard's attendance banner — open that
+    // date's detail popup automatically, same as clicking it directly.
+    if (_pendingOpenDate) {
+      sessionStorage.removeItem('lt_open_date')
+      await _openAttendanceDateModal(_pendingOpenDate, { holidayMap, leaveMap, wfhMap, clientVisitMap, attMap, eventMap })
+    }
   }
 
   /* View what's marked on a date, and self-correct via exemption if eligible */
