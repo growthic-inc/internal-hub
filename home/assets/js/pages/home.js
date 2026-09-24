@@ -283,29 +283,30 @@ const HomeModule = (() => {
     const rangeLabel = `${weekStart.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – ${weekEnd.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
 
     return `
-      <div class="section-card home-att-banner home-fade-in">
-        <div class="section-card-body" style="padding:14px 20px;">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <button class="btn btn--ghost btn--sm" id="home-att-prev" aria-label="Previous week" style="padding:2px 8px;">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      <div class="section-card home-hover-card home-att-banner">
+        <div class="section-card-header">
+          <h3 style="display:flex;align-items:center;gap:6px;">
+            <button class="btn-icon-sm" id="home-att-prev" aria-label="Previous week">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
             </button>
-            <div style="flex:1;min-width:0;">
-              <div style="font-weight:600;font-size:13px;">This week: ${summary}</div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">${rangeLabel}</div>
-            </div>
-            <button class="btn btn--ghost btn--sm" id="home-att-next" aria-label="Next week" style="padding:2px 8px;" ${canGoNext ? '' : 'disabled'}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            <span>This week</span>
+            <button class="btn-icon-sm" id="home-att-next" aria-label="Next week" ${canGoNext ? '' : 'disabled'}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
             </button>
-            <a href="#leave-tracker" style="font-size:12px;color:var(--primary);text-decoration:none;white-space:nowrap;margin-left:6px;">View attendance</a>
-          </div>
-          <div style="display:flex;gap:6px;margin-top:12px;">
+          </h3>
+          <a href="#leave-tracker" style="font-size:12px;color:var(--primary);text-decoration:none;white-space:nowrap;">View</a>
+        </div>
+        <div class="section-card-body">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">${rangeLabel}</div>
+          <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;">${summary}</div>
+          <div style="display:flex;gap:4px;">
             ${days.map(d => {
               const style = _ATT_STATE_STYLE[d.state] || _ATT_STATE_STYLE.pending
               const dimmed = d.state === 'off' || d.state === 'future'
               return `
-                <div class="home-att-day" data-att-day="${d.iso}" title="${Utils.escapeHtml(d.title || '')}" style="flex:1;text-align:center;background:${style.bg};border-radius:8px;padding:7px 2px;cursor:pointer;${dimmed ? 'opacity:0.55;' : ''}">
-                  <div style="font-size:10px;color:var(--text-muted);">${d.dow}</div>
-                  <div style="font-size:11px;font-weight:600;color:${style.color};margin-top:3px;">${Utils.escapeHtml(d.chip || '')}</div>
+                <div class="home-att-day" data-att-day="${d.iso}" title="${Utils.escapeHtml(d.title || '')}" style="flex:1;text-align:center;background:${style.bg};border-radius:6px;padding:5px 1px;cursor:pointer;${dimmed ? 'opacity:0.55;' : ''}">
+                  <div style="font-size:9px;color:var(--text-muted);">${d.dow}</div>
+                  <div style="font-size:9px;font-weight:600;color:${style.color};margin-top:2px;">${Utils.escapeHtml(d.chip || '')}</div>
                 </div>`
             }).join('')}
           </div>
@@ -359,7 +360,7 @@ const HomeModule = (() => {
       : `Your department's SOPs and templates will show up here`
 
     return `
-      <div class="section-card home-fade-in" style="border-left:3px solid var(--primary);margin-top:12px;">
+      <div class="section-card home-hover-card home-fade-in" style="border-left:3px solid var(--primary);margin-top:12px;">
         <div class="section-card-body" style="display:flex;align-items:center;gap:14px;padding:14px 20px;">
           <div style="width:38px;height:38px;border-radius:50%;background:var(--primary-light);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">🧪</div>
           <div style="flex:1;min-width:0;">
@@ -386,7 +387,7 @@ const HomeModule = (() => {
       </div>`).join('')
 
     return `
-      <div class="section-card home-fade-in" style="border-left:3px solid var(--warning);margin-top:12px;">
+      <div class="section-card home-hover-card home-fade-in" style="border-left:3px solid var(--warning);margin-top:12px;">
         <div class="section-card-header" style="background:var(--warning-light);">
           <h3 style="color:#92400E;">Action Required</h3>
           <span class="badge" style="background:var(--warning);color:#fff;">${items.length}</span>
@@ -678,7 +679,7 @@ const HomeModule = (() => {
          </div>`
 
     return `
-      <div class="section-card home-badges-card">
+      <div class="section-card home-hover-card home-badges-card">
         <div class="section-card-header">
           <h3>Your Badges</h3>
           ${badges.length ? `<span class="badge" style="background:var(--primary);color:#fff;">${badges.length}</span>` : ''}
@@ -837,7 +838,6 @@ const HomeModule = (() => {
     const html = `
       ${_renderHero(user, todayEntries, whoIsOut, whoIsWfh, pendingLeaveCount, pendingTsCount)}
       ${_renderTimesheetNudge(todayEntries)}
-      <div id="home-att-banner-wrap">${_renderAttendanceBanner()}</div>
       ${_renderKnowledgeLabsCard(knowledgeResources)}
       ${_renderPendingApprovals(pendingLeaveCount, pendingTsCount)}
 
@@ -847,6 +847,7 @@ const HomeModule = (() => {
           ${_renderAnnouncements(announcements || [])}
         </div>
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px;">
+          <div id="home-att-banner-wrap">${_renderAttendanceBanner()}</div>
           ${_renderMyBadges(myBadges)}
           ${_renderUpcomingEvents(allEmployees || [], upcomingEventsData || { holidays: [], events: [] })}
         </div>
