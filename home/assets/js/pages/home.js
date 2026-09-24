@@ -193,28 +193,48 @@ const HomeModule = (() => {
 
   /* ── Section: This week's attendance ──────────────────────── */
 
-  // Same priority order as the Leave Tracker's Attendance tab: Sunday >
-  // Holiday > Leave > WFH > Client Visit > punch-derived status. Kept in
-  // sync manually since home.js and leave-tracker.js are separate modules.
+  // Delegates to Utils.computeDayStatus — the single source of truth for day
+  // classification shared with the Leave Tracker's Attendance tab and HRMS's
+  // Team Overview calendar, so this card can never drift from those again.
+  // This wrapper just adapts the result into the {state, chip, title} shape
+  // the banner's rendering below expects.
   function _computeDayStatus(iso, holidayMap, leaveMap, wfhMap, cvMap, attMap, todayISO) {
-    const isSunday = _parseLocal(iso).getDay() === 0
-    if (isSunday)         return { state: 'off',     chip: 'Off',     title: 'Weekly Off' }
-    if (holidayMap[iso])  return { state: 'holiday', chip: 'Holiday', title: holidayMap[iso] }
-    const leave = leaveMap[iso]
-    if (leave)            return { state: leave.status === 'pending' ? 'leave-pending' : 'leave', chip: 'Leave', title: leave.name }
-    if (wfhMap[iso])      return { state: 'wfh',     chip: 'WFH',     title: 'Work From Home' }
-    if (cvMap[iso])       return { state: 'cv',      chip: 'Visit',   title: 'Client Visit' }
-    const att = attMap[iso]
-    if (att) {
-      if (att.is_absent)              return { state: 'absent',  chip: 'Absent',  title: 'Absent' }
-      if (att.punch_in && att.punch_out) {
-        const late = att.late_minutes > 0
-        return { state: late ? 'late' : 'present', chip: late ? 'Late' : 'Present', title: late ? `Late by ${att.late_minutes} min` : 'Present' }
+    const dayStatus = Utils.computeDayStatus(iso, {
+      holiday: holidayMap[iso],
+      leave: leaveMap[iso],
+      isWfh: !!wfhMap[iso],
+      cv: cvMap[iso],
+      attendance: attMap[iso],
+      todayISO,
+    })
+
+    switch (dayStatus.state) {
+      case 'off':     return { state: 'off',     chip: 'Off',     title: 'Weekly Off' }
+      case 'holiday': return { state: 'holiday', chip: 'Holiday', title: dayStatus.label }
+      case 'leave':
+      case 'leave-pending':
+        return { state: dayStatus.state, chip: 'Leave', title: dayStatus.leave.name }
+      case 'wfh':
+        return { state: 'wfh', chip: 'WFH', title: dayStatus.pendingLeave ? `WFH / Pending ${dayStatus.pendingLeave.name}` : 'Work From Home' }
+      case 'cv':
+        return { state: 'cv', chip: 'Visit', title: dayStatus.pendingLeave ? `Client Visit / Pending ${dayStatus.pendingLeave.name}` : 'Client Visit' }
+      case 'absent':
+        return { state: 'absent', chip: 'Absent', title: 'Absent' }
+      case 'present':
+        return { state: 'present', chip: 'Present', title: 'Present' }
+      case 'late': {
+        const att = attMap[iso]
+        return { state: 'late', chip: 'Late', title: `Late by ${att.late_minutes} min` }
       }
-      if (att.punch_in)              return { state: 'partial', chip: 'Partial', title: 'Partial punch' }
+      case 'partial':
+        return { state: 'partial', chip: 'Partial', title: 'Partial punch' }
+      case 'future':
+        return { state: 'future', chip: '', title: '' }
+      case 'blank':
+      case 'no-data':
+      default:
+        return { state: 'pending', chip: '—', title: 'Not synced yet' }
     }
-    if (iso > todayISO)  return { state: 'future',  chip: '',        title: '' }
-    return { state: 'pending', chip: '—', title: 'Not synced yet' }
   }
 
   const _ATT_STATE_STYLE = {

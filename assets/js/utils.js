@@ -289,6 +289,60 @@ const Utils = (() => {
     URL.revokeObjectURL(url)
   }
 
+  /* ── Attendance day-status classifier ────────────────────────
+     Single source of truth for "what does this day show" — used by
+     the Leave Tracker's Attendance tab, HRMS Team Overview's calendar,
+     and the Home dashboard's attendance card, so all three can never
+     drift apart on the same priority order again:
+     Sunday > Holiday > Leave > WFH > Client Visit > punch record.
+
+     ctx: {
+       holiday:     string name, or falsy
+       leave:       { name, status, is_half_day, half_day_period, is_late_half_day } or falsy
+       isWfh:       boolean
+       cv:          truthy (object or true) or falsy
+       attendance:  raw employee_attendance row, or falsy
+       todayISO:    'YYYY-MM-DD' — used to tell "future" from "no data yet"
+     }
+     Returns { state, ...extra } — state is one of:
+     off | holiday | leave | leave-pending | wfh | cv | present | late |
+     partial | absent | blank | future | no-data
+     A still-pending Leave doesn't hide an existing WFH/Client Visit —
+     both stand until the Leave is actually decided, so those cases
+     return the WFH/CV state plus a `pendingLeave` field the caller can
+     use to show both. `blank` means an attendance row exists (e.g.
+     today, before punch-in) but carries no punch/absence data yet —
+     distinct from `no-data` (no row at all) so callers don't mislabel
+     "not punched in yet" as "no record". */
+  function computeDayStatus(iso, ctx) {
+    const { holiday, leave, isWfh, cv, attendance, todayISO } = ctx || {}
+    const isSunday = new Date(iso + 'T00:00:00').getDay() === 0
+
+    if (isSunday) return { state: 'off' }
+    if (holiday)  return { state: 'holiday', label: holiday }
+
+    if (leave && leave.status === 'pending' && (isWfh || cv)) {
+      return isWfh ? { state: 'wfh', pendingLeave: leave } : { state: 'cv', cv, pendingLeave: leave }
+    }
+    if (leave) return { state: leave.status === 'pending' ? 'leave-pending' : 'leave', leave }
+    if (isWfh) return { state: 'wfh' }
+    if (cv)    return { state: 'cv', cv, attendance }
+
+    if (attendance) {
+      if (attendance.is_exempted) return { state: 'present', attendance, exempted: true }
+      if (attendance.is_absent)   return { state: 'absent', attendance }
+      if (attendance.punch_in && attendance.punch_out) {
+        return { state: attendance.late_minutes > 0 ? 'late' : 'present', attendance }
+      }
+      if (attendance.punch_in) {
+        return { state: attendance.late_minutes > 0 ? 'late' : 'partial', attendance }
+      }
+      return { state: 'blank', attendance }
+    }
+    if (todayISO && iso > todayISO) return { state: 'future' }
+    return { state: 'no-data' }
+  }
+
   return {
     formatDate,
     formatDateShort,
@@ -316,6 +370,7 @@ const Utils = (() => {
     debounce,
     canAccess,
     todayIST,
+    computeDayStatus,
     downloadCSV,
     EMPLOYMENT_TYPE_LABELS,
     WORK_LOCATION_LABELS,

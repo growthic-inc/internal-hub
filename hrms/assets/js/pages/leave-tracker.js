@@ -719,60 +719,93 @@ const LeaveTracker = (() => {
       let cellContent = `<span class="att-cal-day">${day}</span>`
       let dayState    = 'future'
 
-      if (isSunday) {
-        cellClass += ' att-cal-cell--weekend'
-        cellContent += `<span class="att-cal-label">Weekly Off</span>`
-        dayState = 'weekend'
-      } else if (holiday) {
-        cellClass += ' att-cal-cell--holiday'
-        cellContent += `<span class="att-cal-label">${Utils.escapeHtml(holiday)}</span>`
-        dayState = 'holiday'
-      } else if (leave) {
-        cellClass += leave.status === 'pending' ? ' att-cal-cell--leave att-cal-cell--leave-pending' : ' att-cal-cell--leave'
-        const lbl = leave.is_half_day ? `½ ${Utils.escapeHtml(leave.name)}${leave.is_late_half_day ? ' (Late)' : ''}` : Utils.escapeHtml(leave.name)
-        cellContent += `<span class="att-cal-label">${lbl}${leave.status === 'pending' ? ' <em style="font-size:10px;font-style:normal;opacity:0.7;">(Pending)</em>' : ''}</span>`
-        dayState = 'leave'
-      } else if (isWfh) {
-        cellClass += ' att-cal-cell--wfh'
-        cellContent += `<span class="att-cal-label">WFH</span>`
-        dayState = 'wfh'
-      } else if (cv) {
-        cellClass += ' att-cal-cell--client-visit'
-        const half = cv.duration_type !== 'full_day'
-        cellContent += `<span class="att-cal-label">${half ? '½ ' : ''}Client Visit</span>`
-        cellContent += `<span class="att-cal-time att-cal-time--cv">${Utils.escapeHtml(cv.clients?.client_name || 'Client')}</span>`
-        if (att && !att.is_absent && att.punch_in) {
-          cellContent += `<span class="att-cal-time">${att.punch_in.substring(0,5)}${att.punch_out ? '–' + att.punch_out.substring(0,5) : ''}</span>`
+      const dayStatus = Utils.computeDayStatus(iso, { holiday, leave, isWfh, cv, attendance: att, todayISO: today })
+
+      switch (dayStatus.state) {
+        case 'off':
+          cellClass += ' att-cal-cell--weekend'
+          cellContent += `<span class="att-cal-label">Weekly Off</span>`
+          dayState = 'weekend'
+          break
+        case 'holiday':
+          cellClass += ' att-cal-cell--holiday'
+          cellContent += `<span class="att-cal-label">${Utils.escapeHtml(dayStatus.label)}</span>`
+          dayState = 'holiday'
+          break
+        case 'wfh':
+          cellClass += ' att-cal-cell--wfh'
+          if (dayStatus.pendingLeave) {
+            const lbl = dayStatus.pendingLeave.is_half_day ? `½ ${Utils.escapeHtml(dayStatus.pendingLeave.name)}` : Utils.escapeHtml(dayStatus.pendingLeave.name)
+            cellContent += `<span class="att-cal-label">WFH / Pending ${lbl}</span>`
+          } else {
+            cellContent += `<span class="att-cal-label">WFH</span>`
+          }
+          dayState = 'wfh'
+          break
+        case 'cv': {
+          cellClass += ' att-cal-cell--client-visit'
+          const half = cv.duration_type !== 'full_day'
+          if (dayStatus.pendingLeave) {
+            const lbl = dayStatus.pendingLeave.is_half_day ? `½ ${Utils.escapeHtml(dayStatus.pendingLeave.name)}` : Utils.escapeHtml(dayStatus.pendingLeave.name)
+            cellContent += `<span class="att-cal-label">${half ? '½ ' : ''}Client Visit / Pending ${lbl}</span>`
+          } else {
+            cellContent += `<span class="att-cal-label">${half ? '½ ' : ''}Client Visit</span>`
+            cellContent += `<span class="att-cal-time att-cal-time--cv">${Utils.escapeHtml(cv.clients?.client_name || 'Client')}</span>`
+            if (att && !att.is_absent && att.punch_in) {
+              cellContent += `<span class="att-cal-time">${att.punch_in.substring(0,5)}${att.punch_out ? '–' + att.punch_out.substring(0,5) : ''}</span>`
+            }
+          }
+          dayState = 'client-visit'
+          break
         }
-        dayState = 'client-visit'
-      } else if (att) {
-        if (att.is_exempted) {
+        case 'leave':
+        case 'leave-pending': {
+          cellClass += leave.status === 'pending' ? ' att-cal-cell--leave att-cal-cell--leave-pending' : ' att-cal-cell--leave'
+          const lbl = leave.is_half_day ? `½ ${Utils.escapeHtml(leave.name)}${leave.is_late_half_day ? ' (Late)' : ''}` : Utils.escapeHtml(leave.name)
+          cellContent += `<span class="att-cal-label">${lbl}${leave.status === 'pending' ? ' <em style="font-size:10px;font-style:normal;opacity:0.7;">(Pending)</em>' : ''}</span>`
+          dayState = 'leave'
+          break
+        }
+        case 'present':
           cellClass += ' att-cal-cell--present'
-          const inT  = att.punch_in  ? att.punch_in.slice(0, 5)  : '—'
-          const outT = att.punch_out ? att.punch_out.slice(0, 5) : '—'
-          cellContent += `<span class="att-cal-time">${inT}</span>`
-          cellContent += `<span class="att-cal-time att-cal-time--out">${outT}</span>`
+          if (dayStatus.exempted) {
+            const inT  = att.punch_in  ? att.punch_in.slice(0, 5)  : '—'
+            const outT = att.punch_out ? att.punch_out.slice(0, 5) : '—'
+            cellContent += `<span class="att-cal-time">${inT}</span>`
+            cellContent += `<span class="att-cal-time att-cal-time--out">${outT}</span>`
+          } else {
+            cellContent += `<span class="att-cal-time">${att.punch_in.substring(0,5)}</span>`
+            cellContent += `<span class="att-cal-time att-cal-time--out">${att.punch_out.substring(0,5)}</span>`
+          }
           dayState = 'present'
-        } else if (att.is_absent) {
+          break
+        case 'late':
+          cellClass += ' att-cal-cell--late'
+          cellContent += `<span class="att-cal-time att-cal-time--late">${att.punch_in.substring(0,5)} ▲</span>`
+          cellContent += `<span class="att-cal-time att-cal-time--out">${att.punch_out ? att.punch_out.substring(0,5) : '—'}</span>`
+          dayState = 'late'
+          break
+        case 'partial':
+          cellClass += ' att-cal-cell--partial'
+          cellContent += `<span class="att-cal-time">${att.punch_in.substring(0,5)}</span>`
+          cellContent += `<span class="att-cal-time att-cal-time--out">—</span>`
+          dayState = 'partial'
+          break
+        case 'absent':
           cellClass += ' att-cal-cell--absent'
           cellContent += `<span class="att-cal-label">Absent</span>`
           dayState = 'absent'
-        } else if (att.punch_in && att.punch_out) {
-          const isLate = att.late_minutes > 0
-          cellClass += isLate ? ' att-cal-cell--late' : ' att-cal-cell--present'
-          cellContent += `<span class="att-cal-time${isLate ? ' att-cal-time--late' : ''}">${att.punch_in.substring(0,5)}${isLate ? ' ▲' : ''}</span>`
-          cellContent += `<span class="att-cal-time att-cal-time--out">${att.punch_out.substring(0,5)}</span>`
-          dayState = isLate ? 'late' : 'present'
-        } else if (att.punch_in) {
-          const isLate = att.late_minutes > 0
-          cellClass += isLate ? ' att-cal-cell--late' : ' att-cal-cell--partial'
-          cellContent += `<span class="att-cal-time${isLate ? ' att-cal-time--late' : ''}">${att.punch_in.substring(0,5)}${isLate ? ' ▲' : ''}</span>`
-          cellContent += `<span class="att-cal-time att-cal-time--out">—</span>`
-          dayState = 'partial'
-        }
-      } else if (!isFuture) {
-        cellClass += ' att-cal-cell--no-data'
-        dayState = 'no-data'
+          break
+        case 'blank':
+          dayState = 'blank'
+          break
+        case 'no-data':
+          cellClass += ' att-cal-cell--no-data'
+          dayState = 'no-data'
+          break
+        case 'future':
+          dayState = 'future'
+          break
       }
 
       if (dayEvents.length) {
