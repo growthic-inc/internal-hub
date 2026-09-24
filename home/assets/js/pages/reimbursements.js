@@ -544,6 +544,11 @@ const Reimbursements = (() => {
           <label class="form-label">Expense Type <span class="required">*</span></label>
           <select class="form-select" id="cl-expense-type" ${isFromPA ? 'disabled' : ''}>${expenseOptions}</select>
         </div>
+        <div class="form-group" id="cl-other-specify-wrap" style="display:${(isFromPA ? pa.expense_type : EXPENSE_TYPES[0].value) === 'other' ? 'block' : 'none'};">
+          <label class="form-label">Please specify <span class="required">*</span></label>
+          <input class="form-input" type="text" id="cl-other-specify"
+            placeholder="What is this expense for?" />
+        </div>
 
         <p class="modal-section-label">Client</p>
         <div class="form-row">
@@ -625,6 +630,13 @@ const Reimbursements = (() => {
   }
 
   function _bindClaimStep2() {
+    // Expense type change → show/hide the "Please specify" field for Other
+    const expenseTypeEl = document.getElementById('cl-expense-type')
+    expenseTypeEl?.addEventListener('change', () => {
+      const wrap = document.getElementById('cl-other-specify-wrap')
+      if (wrap) wrap.style.display = expenseTypeEl.value === 'other' ? 'block' : 'none'
+    })
+
     // If pre-approval had a client, prefetch entities for that client
     if (_selectedPreApproval?.client_id) {
       _fetchEntitiesForModal(
@@ -783,12 +795,21 @@ const Reimbursements = (() => {
     const entityEl    = document.getElementById('cl-entity')
     const entityId    = (entityWrap && entityWrap.style.display !== 'none' && entityEl?.value)
       ? entityEl.value : (_selectedPreApproval?.entity_id || null)
-    const amount      = parseFloat(document.getElementById('cl-amount').value)
-    const date        = document.getElementById('cl-date').value
-    const description = document.getElementById('cl-description').value.trim()
+    const amount        = parseFloat(document.getElementById('cl-amount').value)
+    const date          = document.getElementById('cl-date').value
+    const description   = document.getElementById('cl-description').value.trim()
+    const otherSpecify  = document.getElementById('cl-other-specify')?.value.trim() || ''
 
     if (!amount || amount <= 0) { Utils.showToast('Enter a valid amount.', 'error'); return }
     if (!date)                  { Utils.showToast('Select an expense date.', 'error'); return }
+    if (expenseType === 'other' && !otherSpecify) {
+      Utils.showToast('Please specify what this "Other" expense is for.', 'error')
+      return
+    }
+
+    const reason = expenseType === 'other'
+      ? (description ? `${otherSpecify} — ${description}` : otherSpecify)
+      : description
 
     // Warn if a file was selected but not uploaded yet
     const fileInput   = document.getElementById('receipt-file-input')
@@ -817,7 +838,7 @@ const Reimbursements = (() => {
       amount,
       expense_date:      date,
       drive_receipt_url: _receiptUrl || null,
-      reason:            description,
+      reason,
       status:            'pending',
     })
 
@@ -830,7 +851,8 @@ const Reimbursements = (() => {
 
     // Notify HR + Super Admin — not the reporting manager, same reasoning
     // as the pre-approval submit above.
-    const _notifMsg = `${_user.name} has filed an expense claim (${Utils.getExpenseLabel(expenseType)}, ${Utils.formatCurrency(amount)}) — please review.`
+    const expenseLabel = expenseType === 'other' && otherSpecify ? `Other: ${otherSpecify}` : Utils.getExpenseLabel(expenseType)
+    const _notifMsg = `${_user.name} has filed an expense claim (${expenseLabel}, ${Utils.formatCurrency(amount)}) — please review.`
     const _notifPayload = { type: 'submitted', message: _notifMsg, module: 'reimbursements', record_id: inserted?.id || null, notify_email: true }
     const _notified = new Set([_user.id])
 
