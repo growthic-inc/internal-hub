@@ -246,14 +246,16 @@ const HomeModule = (() => {
       const end = _parseLocal(r.end_date)
       while (d <= end) { leaveMap[_toISO(d)] = { name: r.leave_types?.name || 'Leave', status: r.status }; d.setDate(d.getDate() + 1) }
     })
+    // wfhs/clientVisits are already server-side filtered to status='approved'
+    // (that column isn't even in the select) — no client-side status check needed.
     const wfhMap = {}
-    ;(_attLeaveData.wfhs || []).filter(r => r.status === 'approved').forEach(r => {
+    ;(_attLeaveData.wfhs || []).forEach(r => {
       let d = _parseLocal(r.start_date)
       const end = _parseLocal(r.end_date)
       while (d <= end) { wfhMap[_toISO(d)] = true; d.setDate(d.getDate() + 1) }
     })
     const cvMap = {}
-    ;(_attLeaveData.clientVisits || []).filter(r => r.status === 'approved').forEach(r => {
+    ;(_attLeaveData.clientVisits || []).forEach(r => {
       let d = _parseLocal(r.start_date)
       const end = _parseLocal(r.end_date)
       while (d <= end) { cvMap[_toISO(d)] = true; d.setDate(d.getDate() + 1) }
@@ -285,19 +287,19 @@ const HomeModule = (() => {
     return `
       <div class="section-card home-hover-card home-att-banner">
         <div class="section-card-header">
-          <h3 style="display:flex;align-items:center;gap:6px;">
-            <button class="btn-icon-sm" id="home-att-prev" aria-label="Previous week">
-              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-            </button>
-            <span>This week</span>
-            <button class="btn-icon-sm" id="home-att-next" aria-label="Next week" ${canGoNext ? '' : 'disabled'}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-            </button>
-          </h3>
+          <h3>Attendance</h3>
           <a href="#leave-tracker" style="font-size:12px;color:var(--primary);text-decoration:none;white-space:nowrap;">View</a>
         </div>
         <div class="section-card-body">
-          <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">${rangeLabel}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+            <button class="btn-icon-sm" id="home-att-prev" aria-label="Previous week">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <span style="font-size:11px;color:var(--text-muted);flex:1;">${rangeLabel}</span>
+            <button class="btn-icon-sm" id="home-att-next" aria-label="Next week" ${canGoNext ? '' : 'disabled'}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          </div>
           <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;">${summary}</div>
           <div style="display:flex;gap:4px;">
             ${days.map(d => {
@@ -838,7 +840,6 @@ const HomeModule = (() => {
     const html = `
       ${_renderHero(user, todayEntries, whoIsOut, whoIsWfh, pendingLeaveCount, pendingTsCount)}
       ${_renderTimesheetNudge(todayEntries)}
-      ${_renderKnowledgeLabsCard(knowledgeResources)}
       ${_renderPendingApprovals(pendingLeaveCount, pendingTsCount)}
 
       <div class="home-content-row" style="margin-top:14px;">
