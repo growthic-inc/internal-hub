@@ -1330,6 +1330,25 @@ const API = (() => {
     return supabase.from('leave_types').delete().eq('id', id)
   }
 
+  /* ── Expense Types ─────────────────────────────────────────── */
+  async function getExpenseTypes(activeOnly = false) {
+    let q = supabase.from('expense_types').select('*').order('name')
+    if (activeOnly) q = q.eq('is_active', true)
+    return q
+  }
+
+  async function createExpenseType(data) {
+    return supabase.from('expense_types').insert(data).select().single()
+  }
+
+  async function updateExpenseType(id, data) {
+    return supabase.from('expense_types').update(data).eq('id', id)
+  }
+
+  async function deleteExpenseType(id) {
+    return supabase.from('expense_types').delete().eq('id', id)
+  }
+
   /* ── Leave Credits (Phase 7) ──────────────────────────────── */
   async function getLeaveCredits(employeeId, year) {
     return supabase
@@ -2102,6 +2121,7 @@ const API = (() => {
     getEmployeesFull, getEmployeesFullWithBank, updateEmployeeFull, acknowledgePolicy, getEmployeeKyc, getEmployeeAuditLog, getReportGenLog,
     getOrgChart,
     getLeaveTypes, createLeaveType, updateLeaveType, deleteLeaveType,
+    getExpenseTypes, createExpenseType, updateExpenseType, deleteExpenseType,
     getLeaveCredits, getAllLeaveCredits, addLeaveCredit, deleteLeaveCredit,
     getMyLeaveRequests, getPendingLeaveApprovals, getHRLeaveQueue, getAllLeaveRequests,
     getApprovalHistoryLeave, getApprovalHistoryWfh,

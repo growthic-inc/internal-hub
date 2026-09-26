@@ -7,20 +7,6 @@
 
 const Reimbursements = (() => {
 
-  const EXPENSE_TYPES = [
-    { value: 'travel',                  label: 'Travel (Cab / Train / Flight)' },
-    { value: 'food_meals',              label: 'Food & Meals' },
-    { value: 'printing_stationery',     label: 'Printing & Stationery' },
-    { value: 'internet_communication',  label: 'Internet & Communication' },
-    { value: 'photography_videography', label: 'Photography & Videography' },
-    { value: 'event_venue',             label: 'Event & Venue' },
-    { value: 'software_tools',          label: 'Software & Tools' },
-    { value: 'courier_delivery',        label: 'Courier & Delivery' },
-    { value: 'marketing_materials',     label: 'Marketing Materials' },
-    { value: 'accommodation',           label: 'Accommodation' },
-    { value: 'other',                   label: 'Other' },
-  ]
-
   const STATUS_BADGE = {
     pending:  '<span class="badge badge--warning">Pending</span>',
     approved: '<span class="badge badge--success">Approved</span>',
@@ -74,9 +60,16 @@ const Reimbursements = (() => {
 
   let _user                = null
   let _clients             = []
+  let _expenseTypes        = []    // active types only — for the claim/PA dropdowns
   let _selectedPreApproval = null   // PA object linked to current claim
   let _receiptUrl          = null   // Drive URL after receipt upload
   let _canCreate            = false
+
+  // Resolves a stored expense_type value to its current label, falling back
+  // to the legacy static map for a type that's since been deleted.
+  function _expenseLabel(value) {
+    return _expenseTypes.find(e => e.value === value)?.name || Utils.getExpenseLabel(value)
+  }
 
   /* ── render ──────────────────────────────────────────────── */
   function render(user) {
@@ -98,8 +91,12 @@ const Reimbursements = (() => {
     _selectedPreApproval = null
     _receiptUrl          = null
 
-    const { data } = await API.getClients()
-    _clients = data || []
+    const [clientsRes, typesRes] = await Promise.all([
+      API.getClients(),
+      API.getExpenseTypes(true),
+    ])
+    _clients      = clientsRes.data || []
+    _expenseTypes = typesRes.data   || []
 
     _loadMineTab()
   }
@@ -158,7 +155,7 @@ const Reimbursements = (() => {
         <tbody>
           ${rows.map(r => `
             <tr>
-              <td>${Utils.getExpenseLabel(r.expense_type)}</td>
+              <td>${Utils.escapeHtml(_expenseLabel(r.expense_type))}</td>
               <td>${Utils.escapeHtml(r.clients?.client_name || '—')}</td>
               <td>${Utils.formatCurrency(r.estimated_amount)}</td>
               <td>${Utils.formatDate(r.expected_date)}</td>
@@ -193,7 +190,7 @@ const Reimbursements = (() => {
 
             return `
               <tr>
-                <td>${Utils.getExpenseLabel(r.expense_type)}</td>
+                <td>${Utils.escapeHtml(_expenseLabel(r.expense_type))}</td>
                 <td>${Utils.escapeHtml(r.clients?.client_name || '—')}</td>
                 <td>${amtCell}</td>
                 <td style="white-space:nowrap;">${Utils.formatDate(r.expense_date)}</td>
@@ -212,8 +209,8 @@ const Reimbursements = (() => {
      PRE-APPROVAL MODAL
   ══════════════════════════════════════════════════════════ */
   function _openPreApprovalModal() {
-    const expenseOptions = EXPENSE_TYPES.map(e =>
-      `<option value="${e.value}">${e.label}</option>`
+    const expenseOptions = _expenseTypes.map(e =>
+      `<option value="${e.value}">${Utils.escapeHtml(e.name)}</option>`
     ).join('')
 
     const clientOptions = _clients.map(c =>
@@ -362,7 +359,7 @@ const Reimbursements = (() => {
 
     // Notify HR + Super Admin — not the reporting manager, pre-approval is
     // an HR/finance decision, not a people-management one.
-    const _notifMsg = `${_user.name} has submitted a pre-approval request (${Utils.getExpenseLabel(expenseType)}, est. ${Utils.formatCurrency(amount)}) — please review.`
+    const _notifMsg = `${_user.name} has submitted a pre-approval request (${_expenseLabel(expenseType)}, est. ${Utils.formatCurrency(amount)}) — please review.`
     const _notifPayload = { type: 'submitted', message: _notifMsg, module: 'reimbursements', record_id: inserted?.id || null, notify_email: true }
     const _notified = new Set([_user.id])  // never notify the submitter themselves
 
@@ -435,7 +432,7 @@ const Reimbursements = (() => {
       ? preApprovals.map(pa => `
           <div class="pa-card" data-pa-id="${pa.id}">
             <div class="pa-card-top">
-              <span class="pa-card-type">${Utils.getExpenseLabel(pa.expense_type)}</span>
+              <span class="pa-card-type">${Utils.escapeHtml(_expenseLabel(pa.expense_type))}</span>
               <span class="badge badge--success">Approved</span>
             </div>
             <div class="pa-card-meta">
@@ -515,9 +512,15 @@ const Reimbursements = (() => {
   }
 
   function _buildClaimFormHTML(pa) {
-    const isFromPA         = !!pa
-    const expenseOptions   = EXPENSE_TYPES.map(e =>
-      `<option value="${e.value}"${isFromPA && pa.expense_type === e.value ? ' selected' : ''}>${e.label}</option>`
+    const isFromPA = !!pa
+    // The PA's type may since have been deactivated — still need to show it
+    // correctly in the (disabled, locked) select even though it's no longer
+    // offered for new claims.
+    const paTypeIsListed = isFromPA && _expenseTypes.some(e => e.value === pa.expense_type)
+    const expenseOptions = (
+      (isFromPA && !paTypeIsListed) ? [{ value: pa.expense_type, name: _expenseLabel(pa.expense_type) }] : []
+    ).concat(_expenseTypes).map(e =>
+      `<option value="${e.value}"${isFromPA && pa.expense_type === e.value ? ' selected' : ''}>${Utils.escapeHtml(e.name)}</option>`
     ).join('')
     const prefilledClientId   = pa?.client_id || ''
     const prefilledProjectCode = pa?.clients?.project_code || ''
@@ -532,7 +535,7 @@ const Reimbursements = (() => {
         ${isFromPA ? `
           <div class="pa-selected-chip">
             <span>🔗</span>
-            <span>Linked: <strong>${Utils.getExpenseLabel(pa.expense_type)}</strong>
+            <span>Linked: <strong>${Utils.escapeHtml(_expenseLabel(pa.expense_type))}</strong>
               — Est. ${Utils.formatCurrency(pa.estimated_amount)}
               ${pa.clients?.client_name ? `· ${Utils.escapeHtml(pa.clients.client_name)}` : ''}
             </span>
@@ -544,7 +547,7 @@ const Reimbursements = (() => {
           <label class="form-label">Expense Type <span class="required">*</span></label>
           <select class="form-select" id="cl-expense-type" ${isFromPA ? 'disabled' : ''}>${expenseOptions}</select>
         </div>
-        <div class="form-group" id="cl-other-specify-wrap" style="display:${(isFromPA ? pa.expense_type : EXPENSE_TYPES[0].value) === 'other' ? 'block' : 'none'};">
+        <div class="form-group" id="cl-other-specify-wrap" style="display:none;">
           <label class="form-label">Please specify <span class="required">*</span></label>
           <input class="form-input" type="text" id="cl-other-specify"
             placeholder="What is this expense for?" />
@@ -631,11 +634,15 @@ const Reimbursements = (() => {
 
   function _bindClaimStep2() {
     // Expense type change → show/hide the "Please specify" field for Other
+    // (also run once up front, since a PA-linked claim locks the select to
+    // whatever type the PA already carries, which may be Other)
     const expenseTypeEl = document.getElementById('cl-expense-type')
-    expenseTypeEl?.addEventListener('change', () => {
+    const _toggleOtherSpecify = () => {
       const wrap = document.getElementById('cl-other-specify-wrap')
-      if (wrap) wrap.style.display = expenseTypeEl.value === 'other' ? 'block' : 'none'
-    })
+      if (wrap) wrap.style.display = expenseTypeEl?.value === 'other' ? 'block' : 'none'
+    }
+    expenseTypeEl?.addEventListener('change', _toggleOtherSpecify)
+    _toggleOtherSpecify()
 
     // If pre-approval had a client, prefetch entities for that client
     if (_selectedPreApproval?.client_id) {
@@ -851,7 +858,7 @@ const Reimbursements = (() => {
 
     // Notify HR + Super Admin — not the reporting manager, same reasoning
     // as the pre-approval submit above.
-    const expenseLabel = expenseType === 'other' && otherSpecify ? `Other: ${otherSpecify}` : Utils.getExpenseLabel(expenseType)
+    const expenseLabel = expenseType === 'other' && otherSpecify ? `Other: ${otherSpecify}` : _expenseLabel(expenseType)
     const _notifMsg = `${_user.name} has filed an expense claim (${expenseLabel}, ${Utils.formatCurrency(amount)}) — please review.`
     const _notifPayload = { type: 'submitted', message: _notifMsg, module: 'reimbursements', record_id: inserted?.id || null, notify_email: true }
     const _notified = new Set([_user.id])

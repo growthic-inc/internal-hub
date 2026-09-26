@@ -15,23 +15,32 @@ const Reimbursements = (() => {
     paid:     '<span class="badge badge--info">Paid</span>',
   }
 
-  let _user       = null
-  let _activeTab  = null
-  let _p          = null
+  let _user         = null
+  let _activeTab    = null
+  let _p            = null
+  let _expenseTypes = []   // all types (active + inactive) — settings + label lookups need both
+
+  // Resolves a stored expense_type value to its current label, falling back
+  // to the legacy static map for a type that's since been deleted.
+  function _expenseLabel(value) {
+    return _expenseTypes.find(e => e.value === value)?.name || Utils.getExpenseLabel(value)
+  }
 
   /* ── render ──────────────────────────────────────────────── */
   function render(user) {
     const isSuperAdmin = user.role === 'super_admin'
     const isFinance    = Utils.getDeptSystemKey(user.department) === 'finance' || user.role === 'finance'
 
-    const canApprove = HRMSApp.hasAccess('reimbursements', 'approve_requests', 'can_manage')
-    const canPayment = (isFinance || isSuperAdmin) && HRMSApp.hasAccess('reimbursements', 'process_payment', 'can_manage')
+    const canApprove     = HRMSApp.hasAccess('reimbursements', 'approve_requests', 'can_manage')
+    const canPayment     = (isFinance || isSuperAdmin) && HRMSApp.hasAccess('reimbursements', 'process_payment', 'can_manage')
+    const canManageTypes = HRMSApp.hasAccess('reimbursements', 'manage_expense_types', 'can_manage')
 
     const tabs = []
-    if (canApprove)   tabs.push({ id: 'inbox',        label: 'Inbox' })
-    if (isSuperAdmin) tabs.push({ id: 'hr-requests',  label: 'HR Requests' })  // SA convenience view for HR-submitted requests
-    if (canApprove)   tabs.push({ id: 'all-requests', label: 'All Requests' })
-    if (canPayment)   tabs.push({ id: 'payment',      label: 'For Payment' })
+    if (canApprove)     tabs.push({ id: 'inbox',        label: 'Inbox' })
+    if (isSuperAdmin)   tabs.push({ id: 'hr-requests',  label: 'HR Requests' })  // SA convenience view for HR-submitted requests
+    if (canApprove)     tabs.push({ id: 'all-requests', label: 'All Requests' })
+    if (canPayment)     tabs.push({ id: 'payment',      label: 'For Payment' })
+    if (canManageTypes) tabs.push({ id: 'settings',     label: 'Settings' })
 
     _activeTab = tabs[0]?.id || null
 
@@ -58,6 +67,8 @@ const Reimbursements = (() => {
   /* ── init ────────────────────────────────────────────────── */
   async function init(user) {
     _user = user
+    const { data } = await API.getExpenseTypes()
+    _expenseTypes = data || []
     _bindTabs()
     if (_activeTab) _loadTab(_activeTab)
   }
@@ -81,6 +92,7 @@ const Reimbursements = (() => {
       case 'hr-requests':  return _loadHRRequestsTab()
       case 'all-requests': return _loadAllRequestsTab()
       case 'payment':      return _loadPaymentTab()
+      case 'settings':     return _loadSettingsTab()
     }
   }
 
@@ -105,7 +117,7 @@ const Reimbursements = (() => {
             return `
             <tr>
               ${showEmployee  ? `<td>${Utils.escapeHtml(r.submitter?.name || '—')}</td>` : ''}
-              <td>${Utils.getExpenseLabel(r.expense_type)}</td>
+              <td>${Utils.escapeHtml(_expenseLabel(r.expense_type))}</td>
               <td>${Utils.escapeHtml(r.clients?.client_name || '—')}</td>
               <td>${Utils.formatCurrency(r.estimated_amount)}</td>
               <td>${Utils.formatDate(r.expected_date)}</td>
@@ -159,7 +171,7 @@ const Reimbursements = (() => {
             return `
               <tr>
                 ${showEmployee ? `<td>${Utils.escapeHtml(employeeName)}</td>` : ''}
-                <td>${Utils.getExpenseLabel(r.expense_type)}</td>
+                <td>${Utils.escapeHtml(_expenseLabel(r.expense_type))}</td>
                 <td>${Utils.escapeHtml(r.clients?.client_name || '—')}</td>
                 <td>${amtCell}</td>
                 <td style="white-space:nowrap;">${Utils.formatDate(r.expense_date)}</td>
@@ -369,20 +381,9 @@ const Reimbursements = (() => {
 
     const all = data || []
 
-    const expenseTypeOptions = [
-      ['', 'All Types'],
-      ['travel',                  'Travel (Cab / Train / Flight)'],
-      ['food_meals',              'Food & Meals'],
-      ['printing_stationery',     'Printing & Stationery'],
-      ['internet_communication',  'Internet & Communication'],
-      ['photography_videography', 'Photography & Videography'],
-      ['event_venue',             'Event & Venue'],
-      ['software_tools',          'Software & Tools'],
-      ['courier_delivery',        'Courier & Delivery'],
-      ['marketing_materials',     'Marketing Materials'],
-      ['accommodation',           'Accommodation'],
-      ['other',                   'Other'],
-    ]
+    const expenseTypeOptions = [['', 'All Types']].concat(
+      _expenseTypes.map(e => [e.value, e.name])
+    )
 
     content.innerHTML = `
       <div class="section-card">
@@ -417,7 +418,7 @@ const Reimbursements = (() => {
             <div class="db-filter-group">
               <span class="db-filter-label">Expense Type</span>
               <select id="pay-f-type" class="db-filter-select" style="min-width:160px;">
-                ${expenseTypeOptions.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
+                ${expenseTypeOptions.map(([v, l]) => `<option value="${v}">${Utils.escapeHtml(l)}</option>`).join('')}
               </select>
             </div>
             <div class="db-filter-group">
@@ -521,7 +522,7 @@ const Reimbursements = (() => {
         Utils.getDeptLabel(r.submitter?.department) || '',
         r.clients?.client_name || '',
         r.clients?.project_code || '',
-        Utils.getExpenseLabel(r.expense_type),
+        _expenseLabel(r.expense_type),
         r.hr_approved_amount || r.amount || 0,
         r.expense_date || '',
         r.approver?.name || '',
@@ -529,6 +530,162 @@ const Reimbursements = (() => {
         r.payer?.name || '',
       ])
       Utils.downloadCSV(`reimbursement-paid-claims-${from}-to-${to}.csv`, headers, csvRows)
+    })
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     SETTINGS — Expense Types
+  ══════════════════════════════════════════════════════════ */
+  async function _loadSettingsTab() {
+    const content = document.getElementById('reimb-content')
+    content.innerHTML = '<p class="loading-text">Loading…</p>'
+
+    const { data } = await API.getExpenseTypes()
+    _expenseTypes = data || []
+
+    content.innerHTML = `
+      <div class="section-card mb-4">
+        <div class="section-card-header">
+          <h3>Expense Types</h3>
+          <button class="btn btn--primary btn--sm" id="et-add-btn">+ Add Type</button>
+        </div>
+        <div class="section-card-body" style="padding:0;" id="et-body">
+          ${_renderExpenseTypesTable(_expenseTypes)}
+        </div>
+        <div id="et-add-form" style="display:none;padding:14px 16px;border-top:1px solid var(--border);">
+          <div style="display:flex;gap:10px;align-items:flex-end;">
+            <div class="form-group" style="flex:1;margin-bottom:0;">
+              <label class="form-label">Name</label>
+              <input class="form-input" type="text" id="et-new-name" placeholder="e.g. Team Lunch" />
+            </div>
+            <button class="btn btn--primary btn--sm" id="et-save-btn">Save</button>
+            <button class="btn btn--ghost btn--sm" id="et-cancel-btn">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `
+    _bindSettingsActions()
+  }
+
+  function _renderExpenseTypesTable(types) {
+    if (!types.length) return '<p class="empty-state">No expense types configured.</p>'
+    return `
+      <table class="data-table">
+        <thead><tr><th>Name</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          ${types.map(t => {
+            const locked = t.value === 'other'
+            return `
+            <tr class="et-row" data-type-id="${t.id}">
+              <td id="et-name-${t.id}">${Utils.escapeHtml(t.name)}</td>
+              <td>
+                <span class="badge ${t.is_active ? 'badge--success' : 'badge--muted'}">
+                  ${t.is_active ? 'Active' : 'Inactive'}
+                </span>
+              </td>
+              <td style="white-space:nowrap;">
+                ${locked
+                  ? '<span class="text-sm text-muted">Required — can\'t be edited</span>'
+                  : `
+                    <button class="btn btn--xs btn--ghost" data-edit-type="${t.id}" data-name="${Utils.escapeHtml(t.name)}">Edit</button>
+                    <button class="btn btn--xs btn--ghost" data-toggle-type="${t.id}" data-active="${t.is_active}"
+                      style="margin-left:4px;">${t.is_active ? 'Deactivate' : 'Activate'}</button>
+                    <button class="btn btn--xs btn--ghost" data-delete-type="${t.id}"
+                      style="margin-left:4px;color:var(--danger);">Delete</button>
+                  `}
+              </td>
+            </tr>
+          `}).join('')}
+        </tbody>
+      </table>
+    `
+  }
+
+  // "Team Lunch" → "team_lunch" — the stable slug stored on reimbursements.expense_type
+  function _slugifyExpenseType(name) {
+    return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  }
+
+  function _bindSettingsActions() {
+    document.getElementById('et-add-btn')?.addEventListener('click', () => {
+      document.getElementById('et-add-form').style.display = 'block'
+      document.getElementById('et-new-name').focus()
+    })
+    document.getElementById('et-cancel-btn')?.addEventListener('click', () => {
+      document.getElementById('et-add-form').style.display = 'none'
+      document.getElementById('et-new-name').value = ''
+    })
+    document.getElementById('et-save-btn')?.addEventListener('click', async () => {
+      const name = document.getElementById('et-new-name').value.trim()
+      if (!name) { Utils.showToast('Please enter a name.', 'error'); return }
+      const value = _slugifyExpenseType(name)
+      if (!value || value === 'other') { Utils.showToast('Please choose a different name.', 'error'); return }
+
+      const btn = document.getElementById('et-save-btn')
+      btn.disabled = true
+      const { error } = await API.createExpenseType({ name, value, is_active: true, created_by: _user.id })
+      btn.disabled = false
+      if (error) {
+        Utils.showToast(error.code === '23505' ? 'An expense type with a similar name already exists.' : 'Failed: ' + error.message, 'error')
+        return
+      }
+      Utils.showToast('Expense type added.', 'success')
+      _loadSettingsTab()
+    })
+
+    document.querySelectorAll('[data-edit-type]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id      = btn.dataset.editType
+        const current = btn.dataset.name
+        const nameEl  = document.getElementById(`et-name-${id}`)
+        if (!nameEl) return
+        nameEl.innerHTML = `
+          <input class="form-input" type="text" id="et-inline-name-${id}"
+            value="${Utils.escapeHtml(current)}" style="max-width:200px;padding:4px 8px;font-size:13px;" />
+          <button class="btn btn--xs btn--primary" style="margin-left:6px;" data-save-type-inline="${id}">Save</button>
+          <button class="btn btn--xs btn--ghost" style="margin-left:4px;" data-cancel-type-inline="${id}">Cancel</button>
+        `
+        document.querySelector(`[data-save-type-inline="${id}"]`)?.addEventListener('click', async () => {
+          const newName = document.getElementById(`et-inline-name-${id}`)?.value.trim()
+          if (!newName) { Utils.showToast('Name cannot be empty.', 'error'); return }
+          const { error } = await API.updateExpenseType(id, { name: newName })
+          if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
+          Utils.showToast('Updated.', 'success')
+          _loadSettingsTab()
+        })
+        document.querySelector(`[data-cancel-type-inline="${id}"]`)?.addEventListener('click', () => {
+          _loadSettingsTab()
+        })
+      })
+    })
+
+    document.querySelectorAll('[data-toggle-type]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id       = btn.dataset.toggleType
+        const isActive = btn.dataset.active === 'true'
+        const { error } = await API.updateExpenseType(id, { is_active: !isActive })
+        if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
+        Utils.showToast(`Expense type ${!isActive ? 'activated' : 'deactivated'}.`, 'success')
+        _loadSettingsTab()
+      })
+    })
+
+    document.querySelectorAll('[data-delete-type]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this expense type? This cannot be undone.')) return
+        const { error } = await API.deleteExpenseType(btn.dataset.deleteType)
+        if (error) {
+          Utils.showToast(
+            error.code === '23503'
+              ? "This expense type is in use by existing claims and can't be deleted — deactivate it instead."
+              : 'Failed: ' + error.message,
+            'error'
+          )
+          return
+        }
+        Utils.showToast('Expense type deleted.', 'success')
+        _loadSettingsTab()
+      })
     })
   }
 
@@ -549,7 +706,7 @@ const Reimbursements = (() => {
       <div class="modal-body">
         <div class="info-grid mb-3">
           <div><span class="info-label">Employee</span><span class="info-value">${Utils.escapeHtml(record.submitter?.name || '—')}</span></div>
-          <div><span class="info-label">Expense Type</span><span class="info-value">${Utils.getExpenseLabel(record.expense_type)}</span></div>
+          <div><span class="info-label">Expense Type</span><span class="info-value">${Utils.escapeHtml(_expenseLabel(record.expense_type))}</span></div>
           <div><span class="info-label">Client</span><span class="info-value">${Utils.escapeHtml(record.clients?.client_name || '—')}</span></div>
           <div><span class="info-label">Reason</span><span class="info-value">${Utils.escapeHtml(record.reason || '—')}</span></div>
           ${record.drive_receipt_url ? `<div><span class="info-label">Receipt</span><a href="${Utils.escapeHtml(record.drive_receipt_url)}" target="_blank" class="link info-value">View Receipt</a></div>` : ''}
@@ -719,9 +876,11 @@ ModuleRegistry.register({
   // of the admin views. super_admin bypasses via HRMSApp.hasAccess.
   access:    (user) => user.role === 'super_admin'
     || HRMSApp.hasAccess('reimbursements', 'approve_requests', 'view_only')
-    || HRMSApp.hasAccess('reimbursements', 'process_payment', 'view_only'),
+    || HRMSApp.hasAccess('reimbursements', 'process_payment', 'view_only')
+    || HRMSApp.hasAccess('reimbursements', 'manage_expense_types', 'view_only'),
   features:  {
-    approve_requests: 'Approve Requests',
-    process_payment:  'Process Payment',
+    approve_requests:     'Approve Requests',
+    process_payment:      'Process Payment',
+    manage_expense_types: 'Manage Expense Types',
   },
 })
