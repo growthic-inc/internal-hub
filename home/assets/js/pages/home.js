@@ -425,9 +425,10 @@ const HomeModule = (() => {
       .map(r => r.employees)
       .filter(emp => emp && emp.id !== currentUserId)
 
+    const oooIds = new Set(oooList.map(emp => emp.id))
     const wfhList = (wfhRows || [])
       .map(r => r.employees)
-      .filter(emp => emp && emp.id !== currentUserId)
+      .filter(emp => emp && emp.id !== currentUserId && !oooIds.has(emp.id))
 
     const totalCount = oooList.length + wfhList.length
 
