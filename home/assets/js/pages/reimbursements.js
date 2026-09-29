@@ -231,6 +231,11 @@ const Reimbursements = (() => {
           <label class="form-label">Expense Type <span class="required">*</span></label>
           <select class="form-select" id="pa-expense-type">${expenseOptions}</select>
         </div>
+        <div class="form-group" id="pa-other-specify-wrap" style="display:none;">
+          <label class="form-label">Please specify <span class="required">*</span></label>
+          <input class="form-input" type="text" id="pa-other-specify"
+            placeholder="What is this expense for?" />
+        </div>
 
         <p class="modal-section-label">Client</p>
         <div class="form-row">
@@ -280,6 +285,15 @@ const Reimbursements = (() => {
       </div>
     `)
 
+    // Expense type change → show/hide the "Please specify" field for Other
+    const paExpenseTypeEl = document.getElementById('pa-expense-type')
+    const _togglePaOtherSpecify = () => {
+      const wrap = document.getElementById('pa-other-specify-wrap')
+      if (wrap) wrap.style.display = paExpenseTypeEl?.value === 'other' ? 'block' : 'none'
+    }
+    paExpenseTypeEl?.addEventListener('change', _togglePaOtherSpecify)
+    _togglePaOtherSpecify()
+
     // Client → project code + entity
     document.getElementById('pa-client').addEventListener('change', async function () {
       const clientId    = this.value
@@ -324,13 +338,20 @@ const Reimbursements = (() => {
     const entityWrap  = document.getElementById('pa-entity-wrap')
     const entityId    = (entityWrap && entityWrap.style.display !== 'none')
       ? (document.getElementById('pa-entity')?.value || null) : null
-    const amount      = parseFloat(document.getElementById('pa-amount').value) || null
-    const date        = document.getElementById('pa-date').value || null
-    const reason      = document.getElementById('pa-reason').value.trim()
+    const amount       = parseFloat(document.getElementById('pa-amount').value) || null
+    const date         = document.getElementById('pa-date').value || null
+    const purpose      = document.getElementById('pa-reason').value.trim()
+    const otherSpecify = document.getElementById('pa-other-specify')?.value.trim() || ''
 
     if (!amount || amount <= 0) { Utils.showToast('Enter a valid estimated amount.', 'error'); return }
     if (!date)                  { Utils.showToast('Select an expected date.', 'error'); return }
-    if (!reason)                { Utils.showToast('Please provide a reason.', 'error'); return }
+    if (!purpose)               { Utils.showToast('Please provide a reason.', 'error'); return }
+    if (expenseType === 'other' && !otherSpecify) {
+      Utils.showToast('Please specify what this "Other" expense is for.', 'error')
+      return
+    }
+
+    const reason = expenseType === 'other' ? `${otherSpecify} — ${purpose}` : purpose
 
     btn.disabled    = true
     btn.textContent = 'Submitting…'
@@ -359,7 +380,8 @@ const Reimbursements = (() => {
 
     // Notify HR + Super Admin — not the reporting manager, pre-approval is
     // an HR/finance decision, not a people-management one.
-    const _notifMsg = `${_user.name} has submitted a pre-approval request (${_expenseLabel(expenseType)}, est. ${Utils.formatCurrency(amount)}) — please review.`
+    const expenseLabel = expenseType === 'other' && otherSpecify ? `Other: ${otherSpecify}` : _expenseLabel(expenseType)
+    const _notifMsg = `${_user.name} has submitted a pre-approval request (${expenseLabel}, est. ${Utils.formatCurrency(amount)}) — please review.`
     const _notifPayload = { type: 'submitted', message: _notifMsg, module: 'reimbursements', record_id: inserted?.id || null, notify_email: true }
     const _notified = new Set([_user.id])  // never notify the submitter themselves
 
