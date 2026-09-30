@@ -689,7 +689,7 @@ const Assets = (() => {
         type:      'success',
         message:   `Your request for "${assetName}" has been approved and assigned to you!`,
         module:    'assets',
-        record_id: req.asset_id,
+        record_id: reqId,
         notify_email: true,
       })
 
@@ -807,6 +807,7 @@ const Assets = (() => {
         type:    'success',
         message: `Your return request for "${assetName}" has been approved. The asset has been successfully returned.`,
         module:  'assets',
+        record_id: returnReqId,
         notify_email: true,
       })
 
@@ -870,6 +871,7 @@ const Assets = (() => {
           type:    'warning',
           message: `Your return request for "${assetName}" was not approved.${note ? ' HR note: ' + note : ''}`,
           module:  'assets',
+          record_id: returnReqId,
           notify_email: true,
         })
       }
@@ -2058,7 +2060,7 @@ const Assets = (() => {
 
       const photoUrl = await _uploadPhoto('ast-report-photo', 'ast-report-photo-status', asset.id, 'issue', asset.type || '', asset.name || '')
 
-      const { error } = await API.createAssetRepair({
+      const { data: newRepair, error } = await API.createAssetRepair({
         asset_id: asset.id, reported_by: _user.id,
         type, description: desc, photo_url: photoUrl, status: 'open',
       })
@@ -2081,6 +2083,7 @@ const Assets = (() => {
             type:    'warning',
             message: `${_user.name} reported a ${type} on "${asset.name}": ${Utils.truncate(desc, 80)}`,
             module:  'assets',
+            record_id: newRepair?.id,
             notify_email: true,
           })))
         }
@@ -2197,6 +2200,7 @@ const Assets = (() => {
         type:    status === 'resolved' ? 'success' : 'info',
         message: notifMsg,
         module:  'assets',
+        record_id: repair.id,
         notify_email: true,
       })
 
@@ -2208,6 +2212,7 @@ const Assets = (() => {
           type:    'info',
           message: `FYI: Issue on "${asset?.name}" (reported by ${reporter.name}) — status updated to ${status === 'resolved' ? 'Resolved' : 'In Progress'}.`,
           module:  'assets',
+          record_id: repair.id,
         })
       }
 

@@ -261,7 +261,7 @@ const API = (() => {
   }
 
   async function createAssetRepair(data) {
-    return supabase.from('asset_repairs').insert(data)
+    return supabase.from('asset_repairs').insert(data).select().single()
   }
 
   async function updateAssetRepair(id, data) {
@@ -471,6 +471,13 @@ const API = (() => {
       recipient_employee_id, type, message, module, record_id,
     })
 
+    // A stable per-record key so every notification about the same underlying
+    // request (submission → approval/rejection → cancellation) gets the same
+    // email subject and threads together — while notifications about a
+    // different record (or a different module entirely) get a distinct
+    // subject and stay out of that thread.
+    const threadKey = record_id ? `${module}-${record_id}` : null
+
     // Fire push notification — non-blocking, best-effort
     ;(async () => {
       try {
@@ -485,7 +492,7 @@ const API = (() => {
           },
           body: JSON.stringify({
             employee_id: recipient_employee_id,
-            title:       _pushTitle(type, module),
+            title:       _pushTitle(type, module, record_id),
             body:        message,
             url:         _pushUrl(module),
           }),
@@ -513,9 +520,10 @@ const API = (() => {
             },
             body: JSON.stringify({
               employee_id: recipient_employee_id,
-              subject:     _pushTitle(type, module),
+              subject:     _pushTitle(type, module, record_id),
               body:        message,
               url:         _pushUrl(module),
+              thread_key:  threadKey,
             }),
           })
           const json = await res.json().catch(() => ({}))
@@ -529,7 +537,12 @@ const API = (() => {
     return result
   }
 
-  function _pushTitle(type, module) {
+  // Subject is keyed off the record, not the event kind (approved/rejected/…),
+  // so every stage of the same request's lifecycle shares one subject line —
+  // that's what makes Gmail/Outlook thread them together. Notifications with
+  // no record (or a different one) get a distinct subject and never thread
+  // with unrelated mail.
+  function _pushTitle(type, module, record_id) {
     const mod  = {
       leave_tracker:  'Leave & WFH',
       reimbursements: 'Reimbursements',
@@ -540,10 +553,15 @@ const API = (() => {
       announcements:  'Announcements',
       badges:         'Badges',
     }[module] || 'Growthic One'
+    if (record_id) {
+      const shortId = String(record_id).replace(/-/g, '').slice(0, 8).toUpperCase()
+      return `${mod} — Request #${shortId}`
+    }
     const kind = {
       approval:   '✓ Approved',
       rejection:  '✗ Rejected',
       submission: 'New submission',
+      submitted:  'New submission',
       info:       'Update',
     }[type] || 'Update'
     return `${mod} — ${kind}`
