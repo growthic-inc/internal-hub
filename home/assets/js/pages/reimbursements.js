@@ -427,7 +427,11 @@ const Reimbursements = (() => {
 
     // Filter 2: Best-effort catch for old claims that predate pre_approval_id tracking.
     // If a claim with the same expense_type + client_id is approved or paid and has no
-    // pre_approval_id set, treat the matching PA as consumed.
+    // pre_approval_id set, treat the matching PA as consumed. Bounded to claims filed
+    // on/after the PA itself — a claim can't have already resolved a PA that didn't
+    // exist yet, and without this bound an old unrelated claim (same type + client,
+    // filed long before this PA was ever raised) would wrongly hide a brand-new,
+    // still-unclaimed approved PA from this list.
     const resolvedByMatch = new Set(
       allPAs
         .filter(pa =>
@@ -435,7 +439,8 @@ const Reimbursements = (() => {
             !c.pre_approval_id &&
             ['approved', 'paid'].includes(c.status) &&
             c.expense_type === pa.expense_type &&
-            c.client_id    === pa.client_id
+            c.client_id    === pa.client_id &&
+            new Date(c.created_at) >= new Date(pa.created_at)
           )
         )
         .map(pa => pa.id)
