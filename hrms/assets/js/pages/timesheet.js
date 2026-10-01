@@ -28,7 +28,7 @@ const Timesheet = (() => {
     holiday:       '#FBBF24',
     leave:         '#6366F1',
     leave_pending: '#C084FC',
-    wfh:           '#0EA5E9',
+    wfh:           '#14B8A6',
     pending:       '#93C5FD',
     future:        'var(--border-light)',
   }
@@ -272,8 +272,11 @@ const Timesheet = (() => {
       if (holidaySet.has(iso))                   { dayStatuses[iso] = 'holiday'; continue }
       if (leaveStatusByDate[iso] === 'approved')  { dayStatuses[iso] = 'leave'; continue }
       if (leaveStatusByDate[iso] === 'pending')   { dayStatuses[iso] = 'leave_pending'; continue }
-      if (wfhDates.has(iso))                      { dayStatuses[iso] = 'wfh'; continue }
 
+      // WFH doesn't block logging hours the way full-day leave does — an
+      // employee working from home is still expected to submit a timesheet,
+      // so a real entry always wins. "wfh" is only a fallback label for a
+      // day with no entry yet, so it reads differently from an unexplained gap.
       const entry = entryByDate[iso]
       if (entry) {
         hours += parseFloat(entry.hours || 0)
@@ -281,6 +284,8 @@ const Timesheet = (() => {
         if (entry.status === 'draft')     draft++
         else if (entry.status === 'submitted' || entry.status === 'rejected') submitted++
         else if (entry.status === 'approved') approved++
+      } else if (wfhDates.has(iso)) {
+        dayStatuses[iso] = 'wfh'
       } else if (dateObj > today) {
         dayStatuses[iso] = 'future'    // hasn't happened yet
       } else if (dateObj > cutoff) {
@@ -347,7 +352,7 @@ const Timesheet = (() => {
       holiday: { bg: '#FEF3C7', border: '#FBBF24' },
       leave: { bg: '#EEF2FF', border: '#6366F1' },
       leave_pending: { bg: '#F3E8FF', border: '#C084FC' },
-      wfh: { bg: '#E0F2FE', border: '#0EA5E9' },
+      wfh: { bg: '#CCFBF1', border: '#14B8A6' },
       pending: { bg: '#EFF6FF', border: '#93C5FD' },
       future: { bg: 'transparent', border: 'var(--border)' },
     }
