@@ -332,7 +332,9 @@ const People = (() => {
           </div>
 
           <div style="font-size:20px;font-weight:700;color:#fff;line-height:1.2;">${Utils.escapeHtml(emp.name)}</div>
-          <div style="font-size:13px;color:rgba(255,255,255,0.75);margin-top:4px;">${Utils.escapeHtml(emp.designation || '—')}</div>
+          <div style="font-size:13px;color:rgba(255,255,255,0.75);margin-top:4px;">
+            ${Utils.escapeHtml(emp.designation || '—')}${emp.employee_id ? ` · ${Utils.escapeHtml(emp.employee_id)}` : ''}
+          </div>
 
           <!-- Pills -->
           <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px;flex-wrap:wrap;">

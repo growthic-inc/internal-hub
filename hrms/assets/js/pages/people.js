@@ -354,7 +354,9 @@ const People = (() => {
           </div>
 
           <div style="font-size:20px;font-weight:700;color:#fff;line-height:1.2;">${Utils.escapeHtml(emp.name)}</div>
-          <div style="font-size:13px;color:rgba(255,255,255,0.75);margin-top:4px;">${Utils.escapeHtml(emp.designation || '—')}</div>
+          <div style="font-size:13px;color:rgba(255,255,255,0.75);margin-top:4px;">
+            ${Utils.escapeHtml(emp.designation || '—')}${emp.employee_id ? ` · ${Utils.escapeHtml(emp.employee_id)}` : ''}
+          </div>
 
           <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px;flex-wrap:wrap;">
             ${emp.department ? `<span style="background:rgba(255,255,255,0.18);color:#fff;font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px;">${Utils.getDeptLabel(emp.department)}</span>` : ''}
@@ -712,6 +714,14 @@ const People = (() => {
           <div class="form-group">
             <label class="form-label">Work Email <span style="font-size:11px;color:var(--text-muted);">(read-only)</span></label>
             <input class="form-input" id="ppl-edit-email" value="${Utils.escapeHtml(emp.email || '')}"
+              readonly style="background:var(--surface-alt);cursor:not-allowed;">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Employee ID <span style="font-size:11px;color:var(--text-muted);">(auto-assigned)</span></label>
+            <input class="form-input" value="${Utils.escapeHtml(emp.employee_id || '—')}"
               readonly style="background:var(--surface-alt);cursor:not-allowed;">
           </div>
         </div>
@@ -1289,7 +1299,8 @@ const People = (() => {
       return
     }
 
-    successEl.textContent   = `${name} has been added. Share their login credentials and ask them to sign in and complete their profile.`
+    const assignedId = result.employee?.employee_id
+    successEl.textContent   = `${name} has been added${assignedId ? ` (Employee ID: ${assignedId})` : ''}. Share their login credentials and ask them to sign in and complete their profile.`
     successEl.style.display = 'block'
 
     ;['ppl-inv-name', 'ppl-inv-email', 'ppl-inv-password', 'ppl-inv-confirm-password', 'ppl-inv-designation', 'ppl-inv-joining'].forEach(id => {
