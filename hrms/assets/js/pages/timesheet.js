@@ -19,28 +19,41 @@ const Timesheet = (() => {
   // and rendered as transparent — invisible against the row background,
   // which made the strip look like it broke into unlabeled fragments).
   const DAY_COLORS = {
-    approved:  '#1D9E75',
-    submitted: '#F59E0B',
-    rejected:  '#F59E0B',
-    draft:     '#94A3B8',
-    missed:    '#EF4444',
-    weekend:   'var(--border)',
-    holiday:   '#FBBF24',
-    leave:     '#6366F1',
-    pending:   '#93C5FD',
-    future:    'var(--border-light)',
+    approved:      '#1D9E75',
+    submitted:     '#F59E0B',
+    rejected:      '#F59E0B',
+    draft:         '#94A3B8',
+    missed:        '#EF4444',
+    weekend:       'var(--border)',
+    holiday:       '#FBBF24',
+    leave:         '#6366F1',
+    leave_pending: '#C084FC',
+    wfh:           '#0EA5E9',
+    pending:       '#93C5FD',
+    future:        'var(--border-light)',
+  }
+  // Human-readable labels where the raw status key isn't presentable as-is
+  // (an underscore, or an acronym CSS capitalize would mangle to "Wfh").
+  const DAY_LABELS = {
+    leave_pending: 'Leave (Pending)',
+    wfh:           'WFH',
+  }
+  function _dayLabel(status) {
+    return DAY_LABELS[status] || (status.charAt(0).toUpperCase() + status.slice(1))
   }
   // Legend entries only — submitted/rejected share a color and a label,
   // and future/weekend aren't worth explaining in a legend meant to
   // clarify the meaningful statuses.
   const DAY_LEGEND = [
-    ['approved',  'Approved'],
-    ['submitted', 'Submitted'],
-    ['missed',    'Missed'],
-    ['leave',     'Leave'],
-    ['holiday',   'Holiday'],
-    ['draft',     'Draft'],
-    ['pending',   'Pending (grace period)'],
+    ['approved',      'Approved'],
+    ['submitted',     'Submitted'],
+    ['missed',        'Missed'],
+    ['leave',         'Leave'],
+    ['leave_pending', 'Leave (Pending)'],
+    ['wfh',           'WFH'],
+    ['holiday',       'Holiday'],
+    ['draft',         'Draft'],
+    ['pending',       'Pending (grace period)'],
   ]
 
   function _renderCoverageLegend() {
@@ -136,20 +149,25 @@ const Timesheet = (() => {
     const mStart = _toISO(_selectedMonth)
     const mEnd   = _toISO(new Date(year, month, 0))
 
-    const [entriesRes, leaveRes, holRes] = await Promise.all([
+    const [entriesRes, leaveRes, wfhRes, holRes] = await Promise.all([
       API.getTeamTimesheetEntries(mStart, mEnd, null, null, null, true),
-      API.getAllLeaveRequests({ status: 'approved' }),
+      API.getAllLeaveRequests({}),
+      API.getAllWfhRequests({ status: 'approved' }),
       API.getCompanyHolidays(year),
     ])
 
-    const allEntries  = entriesRes.data || []
-    const allLeaves    = (leaveRes.data || []).filter(r => !r.is_half_day)
-    const holidaySet   = new Set((holRes.data || []).map(h => h.date))
+    const allEntries = entriesRes.data || []
+    // Both approved and pending full-day leave block "missed" — a request
+    // still waiting on an approver isn't the employee's fault, and showing
+    // it as a plain no-show hides that there's an approval stuck somewhere.
+    const allLeaves  = (leaveRes.data || []).filter(r => !r.is_half_day && (r.status === 'approved' || r.status === 'pending'))
+    const allWfhs    = wfhRes.data || []
+    const holidaySet = new Set((holRes.data || []).map(h => h.date))
 
     const activeEmps = _employees.filter(e => e.status === 'active')
 
     const rows = activeEmps.map(emp => {
-      const stats = _computeMonthStats(emp.id, year, month, allEntries, allLeaves, holidaySet)
+      const stats = _computeMonthStats(emp.id, year, month, allEntries, allLeaves, allWfhs, holidaySet)
       return { emp, stats }
     })
 
@@ -202,10 +220,11 @@ const Timesheet = (() => {
   }
 
   // Classifies every day in the month for one employee: weekend/holiday/leave
-  // (excluded from missed-day counting) or draft/submitted/approved/missed —
-  // "missed" meaning past the edit-lock window with nothing logged, same
-  // definition payroll's own deduction calc uses.
-  function _computeMonthStats(empId, year, month, allEntries, allLeaves, holidaySet) {
+  // /leave_pending/wfh (all excluded from missed-day counting) or
+  // draft/submitted/approved/missed — "missed" meaning past the edit-lock
+  // window with nothing logged, same definition payroll's own deduction
+  // calc uses.
+  function _computeMonthStats(empId, year, month, allEntries, allLeaves, allWfhs, holidaySet) {
     const daysInMonth = new Date(year, month, 0).getDate()
     const empEntries  = allEntries.filter(e => e.employee_id === empId)
 
@@ -216,11 +235,24 @@ const Timesheet = (() => {
       if (!existing || rank(e.status) > rank(existing.status)) entryByDate[e.date] = e
     })
 
-    const leaveDates = new Set()
+    // iso -> 'approved' | 'pending'; approved wins if a date is somehow
+    // covered by both (e.g. a stale pending duplicate).
+    const leaveStatusByDate = {}
     allLeaves.filter(l => l.employee_id === empId).forEach(l => {
       let d = new Date(l.start_date)
       const end = new Date(l.end_date)
-      while (d <= end) { leaveDates.add(_toISO(d)); d.setDate(d.getDate() + 1) }
+      while (d <= end) {
+        const iso = _toISO(d)
+        if (leaveStatusByDate[iso] !== 'approved') leaveStatusByDate[iso] = l.status
+        d.setDate(d.getDate() + 1)
+      }
+    })
+
+    const wfhDates = new Set()
+    allWfhs.filter(w => w.employee_id === empId).forEach(w => {
+      let d = new Date(w.start_date)
+      const end = new Date(w.end_date)
+      while (d <= end) { wfhDates.add(_toISO(d)); d.setDate(d.getDate() + 1) }
     })
 
     const today  = new Date()
@@ -236,9 +268,11 @@ const Timesheet = (() => {
       const iso     = _toISO(dateObj)
       const isSunday = dateObj.getDay() === 0
 
-      if (isSunday)              { dayStatuses[iso] = 'weekend'; continue }
-      if (holidaySet.has(iso))   { dayStatuses[iso] = 'holiday'; continue }
-      if (leaveDates.has(iso))   { dayStatuses[iso] = 'leave';   continue }
+      if (isSunday)                              { dayStatuses[iso] = 'weekend'; continue }
+      if (holidaySet.has(iso))                   { dayStatuses[iso] = 'holiday'; continue }
+      if (leaveStatusByDate[iso] === 'approved')  { dayStatuses[iso] = 'leave'; continue }
+      if (leaveStatusByDate[iso] === 'pending')   { dayStatuses[iso] = 'leave_pending'; continue }
+      if (wfhDates.has(iso))                      { dayStatuses[iso] = 'wfh'; continue }
 
       const entry = entryByDate[iso]
       if (entry) {
@@ -265,7 +299,7 @@ const Timesheet = (() => {
     for (let d = 1; d <= daysInMonth; d++) {
       const iso    = _toISO(new Date(year, month - 1, d))
       const status = dayStatuses[iso] || 'future'
-      cells += `<span title="${d}: ${status}" style="display:inline-block;width:7px;height:14px;margin-right:1px;border-radius:1px;background:${DAY_COLORS[status] || DAY_COLORS.future};"></span>`
+      cells += `<span title="${d}: ${_dayLabel(status)}" style="display:inline-block;width:7px;height:14px;margin-right:1px;border-radius:1px;background:${DAY_COLORS[status] || DAY_COLORS.future};"></span>`
     }
     return `<div style="white-space:nowrap;line-height:0;">${cells}</div>`
   }
@@ -287,16 +321,18 @@ const Timesheet = (() => {
     const mStart = _toISO(_selectedMonth)
     const mEnd   = _toISO(new Date(year, month, 0))
 
-    const [entriesRes, leaveRes, holRes] = await Promise.all([
+    const [entriesRes, leaveRes, wfhRes, holRes] = await Promise.all([
       API.getTimesheetEntries(empId, mStart, mEnd),
-      API.getAllLeaveRequests({ status: 'approved', employeeId: empId }),
+      API.getAllLeaveRequests({ employeeId: empId }),
+      API.getAllWfhRequests({ status: 'approved' }),
       API.getCompanyHolidays(year),
     ])
 
     const entries    = entriesRes.data || []
-    const leaves      = (leaveRes.data || []).filter(l => !l.is_half_day)
-    const holidaySet  = new Set((holRes.data || []).map(h => h.date))
-    const stats       = _computeMonthStats(empId, year, month, entries, leaves, holidaySet)
+    const leaves     = (leaveRes.data || []).filter(l => !l.is_half_day && (l.status === 'approved' || l.status === 'pending'))
+    const wfhs       = (wfhRes.data || []).filter(w => w.employee_id === empId)
+    const holidaySet = new Set((holRes.data || []).map(h => h.date))
+    const stats      = _computeMonthStats(empId, year, month, entries, leaves, wfhs, holidaySet)
 
     const entriesByDate = {}
     entries.forEach(e => { (entriesByDate[e.date] ||= []).push(e) })
@@ -310,6 +346,8 @@ const Timesheet = (() => {
       weekend: { bg: 'var(--surface)', border: 'var(--border)' },
       holiday: { bg: '#FEF3C7', border: '#FBBF24' },
       leave: { bg: '#EEF2FF', border: '#6366F1' },
+      leave_pending: { bg: '#F3E8FF', border: '#C084FC' },
+      wfh: { bg: '#E0F2FE', border: '#0EA5E9' },
       pending: { bg: '#EFF6FF', border: '#93C5FD' },
       future: { bg: 'transparent', border: 'var(--border)' },
     }
@@ -331,7 +369,7 @@ const Timesheet = (() => {
           style="background:${c.bg};border-color:${c.border};">
           <span class="att-cal-day">${d}</span>
           ${dayHours ? `<span class="att-cal-time">${dayHours.toFixed(1)}h</span>` : ''}
-          <span class="att-cal-label" style="text-transform:capitalize;">${status}</span>
+          <span class="att-cal-label">${_dayLabel(status)}</span>
         </div>`
     }
 
