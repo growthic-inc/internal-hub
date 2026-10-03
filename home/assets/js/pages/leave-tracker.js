@@ -1298,16 +1298,115 @@ const LeaveTracker = (() => {
     _loadTab(_activeTab)
   }
 
+  // All calendar dates in [start, end] inclusive, as ISO strings
+  function _datesInRange(start, end) {
+    const dates = []
+    const cur = _parseLocal(start), fin = _parseLocal(end)
+    while (cur <= fin) { dates.push(_toISO(cur)); cur.setDate(cur.getDate() + 1) }
+    return dates
+  }
+
+  // Group a sorted list of ISO date strings into contiguous runs
+  function _contiguousSegments(dates) {
+    if (!dates.length) return []
+    const segs = [[dates[0]]]
+    for (let i = 1; i < dates.length; i++) {
+      const prev = new Date(dates[i - 1] + 'T00:00:00')
+      const curr = new Date(dates[i]     + 'T00:00:00')
+      if ((curr - prev) / 86400000 === 1) segs[segs.length - 1].push(dates[i])
+      else segs.push([dates[i]])
+    }
+    return segs
+  }
+
+  // Show a date-picker modal so the employee can choose which days to cancel.
+  // isApproved=true adds a required reason field (for cancellation_pending path).
+  // onConfirm(selectedDates [, reason]) is called when the user clicks Confirm.
+  function _showPartialCancelModal(req, type, isApproved, onConfirm) {
+    const dates    = _datesInRange(req.start_date, req.end_date)
+    const typeName = type === 'leave' ? (req.leave_types?.name || 'Leave') : 'WFH'
+    const dateRows = dates.map(d => `
+      <label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;border-bottom:1px solid var(--border);">
+        <input type="checkbox" class="pc-date-chk" value="${d}" checked style="width:15px;height:15px;cursor:pointer;">
+        <span style="font-size:14px;">${Utils.formatDate(d)}</span>
+      </label>`).join('')
+
+    Utils.openModal(`
+      <div class="modal-header">
+        <h3 class="modal-title">Cancel ${Utils.escapeHtml(typeName)} Days</h3>
+        <button class="modal-close" onclick="Utils.closeModal()">${CLOSE_SVG}</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Tick the days you want to cancel. Unticked days will stay ${isApproved ? 'approved' : 'pending'}.</p>
+        <div style="border:1px solid var(--border);border-radius:8px;padding:0 12px;margin-bottom:${isApproved ? '16px' : '4px'};">${dateRows}</div>
+        ${isApproved ? `
+        <div class="form-group" style="margin-top:14px;">
+          <label class="form-label">Reason <span class="required">*</span></label>
+          <textarea class="form-input" id="pc-cancel-reason" rows="2"
+            placeholder="Why are you cancelling these days?" style="resize:vertical;"></textarea>
+        </div>` : ''}
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn--ghost" onclick="Utils.closeModal()">Back</button>
+        <button class="btn btn--danger" id="pc-confirm-btn">Confirm Cancellation</button>
+      </div>
+    `)
+
+    document.getElementById('pc-confirm-btn').addEventListener('click', () => {
+      const selected = [...document.querySelectorAll('.pc-date-chk:checked')].map(el => el.value)
+      if (!selected.length) { Utils.showToast('Select at least one day to cancel.', 'error'); return }
+      if (isApproved) {
+        const reason = document.getElementById('pc-cancel-reason').value.trim()
+        if (!reason) { Utils.showToast('A reason is required.', 'error'); return }
+        onConfirm(selected, reason)
+      } else {
+        onConfirm(selected)
+      }
+    })
+  }
+
+  // Directly trim/split a pending request by removing cancelDates from it.
+  async function _applyPartialCancelNow(req, type, cancelDates) {
+    const updateFn = type === 'leave' ? API.updateLeaveRequest : API.updateWfhRequest
+    const createFn = type === 'leave' ? API.createLeaveRequest : API.createWfhRequest
+    const allDates  = _datesInRange(req.start_date, req.end_date)
+    const cancelSet = new Set(cancelDates)
+    const remaining = allDates.filter(d => !cancelSet.has(d))
+
+    if (!remaining.length) {
+      const { error } = await updateFn(req.id, { status: 'cancelled' })
+      if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
+    } else {
+      const segs  = _contiguousSegments(remaining)
+      const first = segs[0]
+      const { error } = await updateFn(req.id, { start_date: first[0], end_date: first[first.length - 1], days: first.length })
+      if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
+      for (let i = 1; i < segs.length; i++) {
+        const s    = segs[i]
+        const base = { employee_id: _user.id, start_date: s[0], end_date: s[s.length - 1], days: s.length, status: 'pending', reason: req.reason }
+        if (type === 'leave') await createFn({ ...base, leave_type_id: req.leave_type_id, is_half_day: false })
+        else                  await createFn({ ...base, work_plan: req.work_plan })
+      }
+    }
+
+    Utils.showToast('Days cancelled.', 'success')
+    await _refreshMyLeaveData()
+    _loadTab(_activeTab)
+  }
+
   async function _cancelLeave(id) {
+    const req = _leaveRequests.find(r => r.id === id)
+    if (req && req.start_date !== req.end_date) {
+      _showPartialCancelModal(req, 'leave', false, async (cancelDates) => {
+        Utils.closeModal()
+        await _applyPartialCancelNow(req, 'leave', cancelDates)
+      })
+      return
+    }
     if (!confirm('Cancel this leave request?')) return
     const { error } = await API.updateLeaveRequest(id, { status: 'cancelled' })
-    if (error) {
-      Utils.showToast('Failed to cancel: ' + error.message, 'error')
-    } else {
-      Utils.showToast('Leave request cancelled.', 'success')
-      await _refreshMyLeaveData()
-      _loadTab(_activeTab)
-    }
+    if (error) { Utils.showToast('Failed to cancel: ' + error.message, 'error') }
+    else { Utils.showToast('Leave request cancelled.', 'success'); await _refreshMyLeaveData(); _loadTab(_activeTab) }
   }
 
   // Keeps prompting until a non-empty reason is given, or the user cancels.
@@ -1324,21 +1423,33 @@ const LeaveTracker = (() => {
   }
 
   async function _requestCancellation(id) {
-    const reason = _promptCancellationReason()
-    if (reason === null) return // user clicked Cancel
     const req = _leaveRequests.find(r => r.id === id)
+    if (req && req.start_date !== req.end_date) {
+      _showPartialCancelModal(req, 'leave', true, async (cancelDates, reason) => {
+        Utils.closeModal()
+        const allDates = _datesInRange(req.start_date, req.end_date)
+        const isFullCancel = cancelDates.length === allDates.length
+        const { error } = await API.updateLeaveRequest(id, {
+          status:              'cancellation_pending',
+          cancellation_reason: reason,
+          cancellation_dates:  isFullCancel ? null : cancelDates,
+        })
+        if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
+        _notifyCancellationFiled(req, 'leave')
+        Utils.showToast('Cancellation request sent.', 'success')
+        await _refreshMyLeaveData()
+        _loadTab(_activeTab)
+      })
+      return
+    }
+    const reason = _promptCancellationReason()
+    if (reason === null) return
     const { error } = await API.updateLeaveRequest(id, {
       status:              'cancellation_pending',
       cancellation_reason: reason,
     })
-    if (error) {
-      Utils.showToast('Failed: ' + error.message, 'error')
-    } else {
-      _notifyCancellationFiled(req, 'leave')
-      Utils.showToast('Cancellation request sent.', 'success')
-      await _refreshMyLeaveData()
-      _loadTab(_activeTab)
-    }
+    if (error) { Utils.showToast('Failed: ' + error.message, 'error') }
+    else { _notifyCancellationFiled(req, 'leave'); Utils.showToast('Cancellation request sent.', 'success'); await _refreshMyLeaveData(); _loadTab(_activeTab) }
   }
 
   // Cancellation requests route to People & Culture, not the manager — notify
@@ -1687,33 +1798,48 @@ const LeaveTracker = (() => {
   }
 
   async function _cancelWfh(id) {
+    const req = _wfhRequests.find(r => r.id === id)
+    if (req && req.start_date !== req.end_date) {
+      _showPartialCancelModal(req, 'wfh', false, async (cancelDates) => {
+        Utils.closeModal()
+        await _applyPartialCancelNow(req, 'wfh', cancelDates)
+      })
+      return
+    }
     if (!confirm('Cancel this WFH request?')) return
     const { error } = await API.updateWfhRequest(id, { status: 'cancelled' })
-    if (error) {
-      Utils.showToast('Failed to cancel: ' + error.message, 'error')
-    } else {
-      Utils.showToast('WFH request cancelled.', 'success')
-      await _refreshMyLeaveData()
-      _loadTab(_activeTab)
-    }
+    if (error) { Utils.showToast('Failed to cancel: ' + error.message, 'error') }
+    else { Utils.showToast('WFH request cancelled.', 'success'); await _refreshMyLeaveData(); _loadTab(_activeTab) }
   }
 
   async function _requestWfhCancellation(id) {
+    const req = _wfhRequests.find(r => r.id === id)
+    if (req && req.start_date !== req.end_date) {
+      _showPartialCancelModal(req, 'wfh', true, async (cancelDates, reason) => {
+        Utils.closeModal()
+        const allDates = _datesInRange(req.start_date, req.end_date)
+        const isFullCancel = cancelDates.length === allDates.length
+        const { error } = await API.updateWfhRequest(id, {
+          status:              'cancellation_pending',
+          cancellation_reason: reason,
+          cancellation_dates:  isFullCancel ? null : cancelDates,
+        })
+        if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
+        _notifyCancellationFiled(req, 'wfh')
+        Utils.showToast('Cancellation request sent.', 'success')
+        await _refreshMyLeaveData()
+        _loadTab(_activeTab)
+      })
+      return
+    }
     const reason = _promptCancellationReason()
     if (reason === null) return
-    const req = _wfhRequests.find(r => r.id === id)
     const { error } = await API.updateWfhRequest(id, {
       status:              'cancellation_pending',
       cancellation_reason: reason,
     })
-    if (error) {
-      Utils.showToast('Failed: ' + error.message, 'error')
-    } else {
-      _notifyCancellationFiled(req, 'wfh')
-      Utils.showToast('Cancellation request sent.', 'success')
-      await _refreshMyLeaveData()
-      _loadTab(_activeTab)
-    }
+    if (error) { Utils.showToast('Failed: ' + error.message, 'error') }
+    else { _notifyCancellationFiled(req, 'wfh'); Utils.showToast('Cancellation request sent.', 'success'); await _refreshMyLeaveData(); _loadTab(_activeTab) }
   }
 
   /* ── Apply WFH Modal ──────────────────────────────────── */
@@ -2466,6 +2592,7 @@ const LeaveTracker = (() => {
                 </div>
               ` : ''}
               ${r.cancellation_reason ? `<div style="font-size:12px;color:var(--warning);margin-top:3px;">Cancellation reason: ${Utils.escapeHtml(r.cancellation_reason)}</div>` : ''}
+              ${r.cancellation_dates?.length ? `<div style="font-size:12px;color:var(--warning);margin-top:2px;">Cancelling: ${r.cancellation_dates.map(d => Utils.formatDate(d)).join(', ')}</div>` : ''}
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0;align-items:flex-start;">
               ${isCancPend ? `
@@ -2754,6 +2881,12 @@ const LeaveTracker = (() => {
             <div style="font-size:14px;line-height:1.6;">${Utils.escapeHtml(r.cancellation_reason)}</div>
           </div>
         ` : ''}
+        ${r.cancellation_dates?.length ? `
+          <div style="margin-bottom:14px;padding:10px 12px;border-radius:6px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--warning);letter-spacing:.05em;margin-bottom:6px;">Days Being Cancelled</div>
+            <div style="font-size:14px;line-height:1.8;">${r.cancellation_dates.map(d => Utils.formatDate(d)).join('<br>')}</div>
+          </div>
+        ` : ''}
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="Utils.closeModal()">Close</button>
@@ -2908,43 +3041,66 @@ const LeaveTracker = (() => {
   }
 
   async function _approveCancellation(id, type) {
-    const arr = _reqPending(type)
-    const req = arr.find(r => r.id === id)
-
+    const arr      = _reqPending(type)
+    const req      = arr.find(r => r.id === id)
     const updateFn = _reqUpdateFn(type)
-    const { error } = await updateFn(id, {
-      status:                'cancelled',
-      acted_at:              new Date().toISOString(),
-      cancellation_actor_id: _user.id,
-    })
-    if (error) {
-      Utils.showToast('Failed: ' + error.message, 'error')
+    const createFn = type === 'leave' ? API.createLeaveRequest : type === 'wfh' ? API.createWfhRequest : null
+    const now      = new Date().toISOString()
+
+    const cancelDates = req?.cancellation_dates
+    let error
+
+    if (cancelDates?.length && createFn) {
+      // Partial cancellation — trim or split the original record
+      const allDates  = _datesInRange(req.start_date, req.end_date)
+      const cancelSet = new Set(cancelDates)
+      const remaining = allDates.filter(d => !cancelSet.has(d))
+
+      if (!remaining.length) {
+        ;({ error } = await updateFn(id, { status: 'cancelled', acted_at: now, cancellation_actor_id: _user.id }))
+      } else {
+        const segs  = _contiguousSegments(remaining)
+        const first = segs[0]
+        ;({ error } = await updateFn(id, {
+          status:                'approved',
+          start_date:            first[0],
+          end_date:              first[first.length - 1],
+          days:                  first.length,
+          acted_at:              now,
+          cancellation_actor_id: _user.id,
+          cancellation_dates:    null,
+          cancellation_reason:   null,
+        }))
+        if (!error) {
+          for (let i = 1; i < segs.length; i++) {
+            const s    = segs[i]
+            const base = { employee_id: req.employee_id, start_date: s[0], end_date: s[s.length - 1], days: s.length, status: 'approved', reason: req.reason, approver_id: req.approver_id, acted_at: req.acted_at }
+            if (type === 'leave') await createFn({ ...base, leave_type_id: req.leave_type_id, is_half_day: false })
+            else                  await createFn({ ...base, work_plan: req.work_plan })
+          }
+        }
+      }
     } else {
-      const label = _reqLabel(type)
-      if (req?.employee?.id) {
-        API.createNotification({
-          recipient_employee_id: req.employee.id,
-          type: 'approval',
-          message: `Your ${label} cancellation request has been approved.`,
-          module: 'leave_tracker',
-          record_id: id,
-          notify_email: true,
-        })
-      }
-      if (req?.approver_id) {
-        API.createNotification({
-          recipient_employee_id: req.approver_id,
-          type: 'info',
-          message: `${req.employee?.name || 'An employee'}'s ${label} cancellation was approved by People & Culture.`,
-          module: 'leave_tracker',
-          record_id: id,
-          notify_email: true,
-        })
-      }
-      Utils.showToast('Cancellation approved.', 'success')
-      await _refreshApprovalData()
-      _loadTab('pending-approvals')
+      // Full cancellation (existing behaviour)
+      ;({ error } = await updateFn(id, { status: 'cancelled', acted_at: now, cancellation_actor_id: _user.id }))
     }
+
+    if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
+
+    const label   = _reqLabel(type)
+    const nDays   = cancelDates?.length
+    const msg     = nDays
+      ? `Your ${label} cancellation (${nDays} day${nDays === 1 ? '' : 's'}) has been approved.`
+      : `Your ${label} cancellation request has been approved.`
+    if (req?.employee?.id) {
+      API.createNotification({ recipient_employee_id: req.employee.id, type: 'approval', message: msg, module: 'leave_tracker', record_id: id, notify_email: true })
+    }
+    if (req?.approver_id) {
+      API.createNotification({ recipient_employee_id: req.approver_id, type: 'info', message: `${req.employee?.name || 'An employee'}'s ${label} cancellation was approved by People & Culture.`, module: 'leave_tracker', record_id: id, notify_email: true })
+    }
+    Utils.showToast('Cancellation approved.', 'success')
+    await _refreshApprovalData()
+    _loadTab('pending-approvals')
   }
 
   async function _denyCancellation(id, type) {
