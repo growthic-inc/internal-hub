@@ -943,10 +943,12 @@ const LeaveTracker = (() => {
             const bal = t.is_unpaid ? null : (balMap[t.id] || 0)
             return `<option value="${t.id}">${Utils.escapeHtml(t.name)}${bal !== null ? ' (' + bal + ' days remaining)' : ' (Unpaid)'}</option>`
           }).join('')
+          const _unpaidType = eligibleTypes.find(t => t.is_unpaid)
           markSection += `
             <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
               <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:10px;">Mark as Leave</div>
               <div id="lt-mark-leave-err" class="alert alert--danger" style="display:none;margin-bottom:10px;font-size:13px;"></div>
+              ${_unpaidType ? `<button class="btn btn--sm btn--danger" id="lt-mark-unpaid-btn" data-unpaid-id="${_unpaidType.id}" style="margin-bottom:12px;">⚡ Mark as Unpaid Leave</button>` : ''}
               <div style="display:flex;flex-direction:column;gap:10px;">
                 <select id="lt-mark-leave-type" class="form-control" style="font-size:13px;">${opts}</select>
                 <input id="lt-mark-leave-reason" class="form-input" type="text" placeholder="Reason (optional)" style="font-size:13px;">
@@ -1118,6 +1120,33 @@ const LeaveTracker = (() => {
         }
         overlay.remove()
         Utils.showToast('Leave type updated.', 'success')
+        _loadTeamAttCal()
+      })
+    }
+
+    const unpaidBtn = overlay.querySelector('#lt-mark-unpaid-btn')
+    if (unpaidBtn) {
+      unpaidBtn.addEventListener('click', async () => {
+        unpaidBtn.disabled = true; unpaidBtn.textContent = 'Saving…'
+        const errEl = overlay.querySelector('#lt-mark-leave-err')
+        const { error } = await API.createLeaveRequest({
+          employee_id:   empId,
+          leave_type_id: unpaidBtn.dataset.unpaidId,
+          start_date:    iso,
+          end_date:      iso,
+          days:          1,
+          is_half_day:   false,
+          reason:        'Marked as Unpaid Leave by HR',
+          status:        'approved',
+          approver_id:   _user.id,
+        })
+        if (error) {
+          if (errEl) { errEl.style.display = ''; errEl.textContent = error.message || 'Failed to save.' }
+          unpaidBtn.disabled = false; unpaidBtn.textContent = '⚡ Mark as Unpaid Leave'
+          return
+        }
+        overlay.remove()
+        Utils.showToast('Marked as Unpaid Leave.', 'success')
         _loadTeamAttCal()
       })
     }
