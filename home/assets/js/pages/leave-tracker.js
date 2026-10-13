@@ -1644,14 +1644,21 @@ const LeaveTracker = (() => {
       if (!end)    { errEl.textContent = 'Please select an end date.';        errEl.style.display = 'block'; return }
       if (start < todayISO) { errEl.textContent = 'Backdated leave is not allowed — please contact HR.'; errEl.style.display = 'block'; return }
 
-      // 4-day advance rule: CL and EL must be applied at least 4 calendar days before start
+      // 4-day advance rule: CL and EL must be applied at least 4 working days before start
       const _leaveTypeForAdv = _leaveTypes.find(t => t.id === typeId)
       if (_leaveTypeForAdv && !_leaveTypeForAdv.is_unpaid) {
         const _name = _leaveTypeForAdv.name.toLowerCase()
         if (_name.includes('casual') || _name.includes('earned')) {
-          const _minDate = new Date(); _minDate.setDate(_minDate.getDate() + 4)
-          if (start < _toISO(_minDate)) {
-            errEl.textContent = 'Casual and Earned Leave must be applied at least 4 days in advance. For urgent situations, please contact HR.'
+          const _holSet = new Set(_holidays.map(h => h.date))
+          let _wdCount = 0, _wdCur = new Date()
+          while (_wdCount < 4) {
+            const _wdIso = _toISO(_wdCur)
+            if (_wdCur.getDay() !== 0 && !_holSet.has(_wdIso)) _wdCount++
+            if (_wdCount < 4) _wdCur.setDate(_wdCur.getDate() + 1)
+          }
+          _wdCur.setDate(_wdCur.getDate() + 1)
+          if (start < _toISO(_wdCur)) {
+            errEl.textContent = 'Casual and Earned Leave must be applied at least 4 working days in advance. For urgent situations, please contact HR.'
             errEl.style.display = 'block'
             return
           }
