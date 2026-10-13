@@ -604,8 +604,8 @@ const LeaveTracker = (() => {
       </div>`
 
     content.innerHTML = `
-      <div style="display:flex;gap:16px;align-items:flex-start;" class="mb-4">
-        <div style="flex:1;min-width:0;">
+      <div style="display:flex;gap:16px;align-items:flex-start;" class="mb-4 lt-att-layout">
+        <div style="flex:1;min-width:0;" class="lt-att-main">
           <div class="section-card">
             <div class="section-card-body">
               <!-- Month nav -->
@@ -633,7 +633,7 @@ const LeaveTracker = (() => {
             </div>
           </div>
         </div>
-        <div style="width:260px;flex-shrink:0;">
+        <div style="width:260px;flex-shrink:0;" class="lt-att-side">
           ${_renderUpcomingPanel()}
         </div>
       </div>
@@ -2616,7 +2616,7 @@ const LeaveTracker = (() => {
               ${r.cancellation_reason ? `<div style="font-size:12px;color:var(--warning);margin-top:3px;">Cancellation reason: ${Utils.escapeHtml(r.cancellation_reason)}</div>` : ''}
               ${r.cancellation_dates?.length ? `<div style="font-size:12px;color:var(--warning);margin-top:2px;">Cancelling: ${r.cancellation_dates.map(d => Utils.formatDate(d)).join(', ')}</div>` : ''}
             </div>
-            <div style="display:flex;gap:6px;flex-shrink:0;align-items:flex-start;">
+            <div class="lt-approval-actions" style="display:flex;gap:6px;flex-shrink:0;align-items:flex-start;">
               ${isCancPend ? `
                 <button class="btn btn--xs btn--success" data-action="approve-cancel" data-id="${r.id}" data-type="${type}">Approve Cancellation</button>
                 <button class="btn btn--xs btn--ghost"   data-action="deny-cancel"    data-id="${r.id}" data-type="${type}" style="color:var(--danger);">Deny</button>

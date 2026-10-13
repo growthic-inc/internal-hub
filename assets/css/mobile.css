@@ -435,3 +435,122 @@
   .att-cal-day  { font-size: 11px; }
   .att-cal-time { font-size: 9px; }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   PHONE POLISH  (≤ 768px)
+   Fixes that class-level rules above can't reach: layouts set as
+   inline styles from the page JS, plus the things that make a web
+   app "feel like desktop" on a phone (input zoom, tiny tap targets).
+══════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* ── iOS Safari zooms the whole page when an input is focused and
+        its font-size is under 16px, and often doesn't zoom back.
+        Inputs are 13px on desktop; some also set 13px inline, hence
+        !important. Checkboxes/radios/files are excluded. ──────── */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+  .form-input,
+  .form-select { min-height: 42px; }
+
+  /* ── Tap targets — desktop buttons are 26–36px tall, too small
+        for a thumb. Grow the hit area, keep the look. ─────────── */
+  .btn                 { min-height: 40px; }
+  .btn--xs, .btn--sm   { min-height: 36px; }
+  .hamburger-btn       { width: 40px; height: 40px; }
+  .modal-close         { min-width: 36px; min-height: 36px; }
+
+  /* ── Sidebar drawer: 100vh is taller than the visible area on
+        mobile browsers (address bar), cutting off the footer. ──── */
+  .sidebar { height: 100dvh; }
+
+  /* ── Inline two/three-column layouts built in JS ──────────────
+        Class-based media queries can't see these. They are form
+        field pairs, label/value pairs and chart pairs — all read
+        better stacked on a phone.                                */
+  [style*="grid-template-columns:1fr 1fr"],
+  [style*="grid-template-columns:2fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Stat strips (4/3 across) → 2 across. Calendars use repeat(7,…)
+     and are deliberately not matched. */
+  [style*="grid-template-columns:repeat(4,1fr)"],
+  [style*="grid-template-columns:repeat(3,1fr)"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Shared 2-column form grid used in the Payroll modals */
+  .hrms-form-grid { grid-template-columns: 1fr; }
+
+  /* ── Table-like history lists inside modals (Payroll adjustments
+        / change history). A header row of labels sits above rows,
+        so stacking would orphan the labels — scroll sideways
+        instead and keep the columns aligned. ──────────────────── */
+  [style*="grid-template-columns:1fr 0.7fr 1.5fr"],
+  [style*="grid-template-columns:1.2fr 0.8fr 0.8fr"] {
+    min-width: 520px;
+  }
+  *:has(> [style*="grid-template-columns:1fr 0.7fr 1.5fr"]),
+  *:has(> [style*="grid-template-columns:1.2fr 0.8fr 0.8fr"]) {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   MOBILE LAYOUT FIXES (≤ 768px) — from per-module audit
+══════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* Grid/flex children must be allowed to shrink (charts, long text) */
+  .page-content *:where([style*="display:grid"], .policies-layout) > * { min-width: 0; }
+  .ts-chart-card { min-width: 0; overflow: hidden; }
+  .ts-chart-wrap--donut { flex-wrap: wrap; height: auto; min-height: 180px; gap: 12px; }
+  .ts-chart-wrap--donut canvas { max-width: 100%; height: auto !important; }
+
+  /* Leave Tracker → Attendance: stack calendar and Upcoming panel */
+  .lt-att-layout { flex-direction: column; align-items: stretch !important; }
+  .lt-att-layout > .lt-att-main,
+  .lt-att-layout > .lt-att-side { width: 100% !important; flex: none !important; }
+  .lt-att-layout .att-legend { flex-wrap: wrap; }
+
+  /* Pending approvals card: wrap the action row under the details */
+  .lt-approval-card > div { flex-wrap: wrap; }
+  .lt-approval-card-body { flex: 1 1 calc(100% - 60px) !important; min-width: 0; }
+  .lt-approval-actions { flex: 1 1 100%; flex-wrap: wrap; }
+  .lt-approval-actions .btn { flex: 1 1 auto; min-height: 38px; }
+
+  /* Policies */
+  .policies-layout { grid-template-columns: minmax(0, 1fr); }
+  .pol-card { flex-direction: column; align-items: stretch; gap: 12px; padding: 14px; }
+  .pol-card-actions { flex-wrap: wrap; }
+  .pol-card-actions .btn { flex: 1 1 auto; justify-content: center; }
+  .pol-card-title { overflow-wrap: anywhere; }
+
+  /* Assets: stop the 26px sideways wobble */
+  .page-content, .page-inner { max-width: 100%; overflow-x: clip; }
+
+  /* Access Control: no negative bleed, panels may scroll, rows stack */
+  .access-page-wrap { margin: -14px; height: auto; overflow: visible; }
+  .access-layout { margin: 0 !important; }
+  .access-tab-panel { overflow: visible; }
+  .access-tab-panel--scroll { padding: 14px; }
+  .access-feature-row { flex-wrap: wrap; padding: 10px 14px; row-gap: 8px; }
+  .access-feature-name { flex: 1 1 100%; font-size: 13px; }
+  .access-level-pills { flex: 1 1 100%; flex-wrap: wrap; gap: 4px; }
+  .alp { flex: 1 1 28%; padding: 8px 6px; font-size: 12px; text-align: center; min-height: 36px; }
+
+  /* Home: stacked columns must span full width with natural height */
+  .home-content-row { align-items: stretch !important; }
+  .home-content-row > * { flex: none !important; width: 100%; }
+
+  /* Titles / hero clips */
+  .page-header, .app-header { min-width: 0; }
+  .page-title { font-size: 14px; white-space: normal; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .home-hero { padding: 18px 16px; max-width: 100%; box-sizing: border-box; }
+  .home-hero * { max-width: 100%; overflow-wrap: anywhere; }
+}
