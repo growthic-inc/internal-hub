@@ -64,7 +64,7 @@ Deno.serve(async (req: Request) => {
     // Fetch caller's employee record
     const { data: callerEmp, error: empErr } = await adminClient
       .from('employees')
-      .select('id, role, department')
+      .select('id, role, department, department_id')
       .eq('email', caller.email)
       .single()
 
@@ -76,7 +76,7 @@ Deno.serve(async (req: Request) => {
       const { data: accessRows } = await adminClient
         .from('access_matrix')
         .select('id')
-        .eq('department', callerEmp.department)
+        .eq('department_id', callerEmp.department_id)
         .eq('module', 'client_dashboard')
         .eq('feature', 'upload_performance_data')
         .neq('access_level', 'no_access')
@@ -100,10 +100,16 @@ Deno.serve(async (req: Request) => {
     // 'personal_analytics' is treated identically to 'content' for data storage
     // but keeps its own data_type label in the upload log for profile-type detection.
     if (data_type === 'content' || data_type === 'personal_analytics') {
-      if (metrics.length > 0) {
-        const dates = metrics.map((m: { date: string }) => m.date).sort()
-        dateFrom = dates[0]; dateTo = dates[dates.length - 1]
+      // One shared window for both deletes. Posts previously computed their own
+      // (narrower) min/max from just this batch's created_date values, so a prior
+      // upload's post sitting outside that narrower window survived the delete and
+      // collided with the new batch on insert ("duplicate key ... social_posts_entity_key").
+      const metricDates = metrics.map((m: { date: string }) => m.date).filter(Boolean)
+      const postDates    = posts.map((p: { created_date: string }) => p.created_date).filter(Boolean)
+      const allDates     = [...metricDates, ...postDates].sort()
+      if (allDates.length > 0) { dateFrom = allDates[0]; dateTo = allDates[allDates.length - 1] }
 
+      if (metrics.length > 0) {
         const { error: e1 } = await withEntity(
           adminClient.from('social_metrics_daily').delete()
             .eq('client_id', client_id).eq('platform', platform)
@@ -118,20 +124,23 @@ Deno.serve(async (req: Request) => {
       }
 
       if (posts.length > 0) {
-        const dates = posts.map((p: { created_date: string }) => p.created_date).filter(Boolean).sort()
-        const pFrom = dates[0], pTo = dates[dates.length - 1]
-
         const { error: e1 } = await withEntity(
           adminClient.from('social_posts').delete()
             .eq('client_id', client_id).eq('platform', platform)
-            .gte('created_date', pFrom).lte('created_date', pTo)
+            .gte('created_date', dateFrom).lte('created_date', dateTo)
         )
         if (e1) return json({ error: `Posts delete failed: ${e1.message}` }, 500)
 
+        // De-dupe by post_url (keep last) — a source file listing the same post
+        // twice would otherwise conflict with itself within the same insert.
+        const dedupedPosts: object[] = Array.from(
+          new Map<string, object>(posts.map((p: { post_url: string }) => [p.post_url, p])).values()
+        )
+
         const { error: e2 } = await adminClient.from('social_posts')
-          .insert(posts.map((p: object) => ({ ...p, client_id, platform, entity_id, uploaded_by: uploadedBy })))
+          .insert(dedupedPosts.map((p: object) => ({ ...p, client_id, platform, entity_id, uploaded_by: uploadedBy })))
         if (e2) return json({ error: `Posts insert failed: ${e2.message}` }, 500)
-        rowsInserted += posts.length
+        rowsInserted += dedupedPosts.length
       }
     }
 

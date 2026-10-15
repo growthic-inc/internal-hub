@@ -51,8 +51,27 @@ function buildEmailHtml(subject: string, body: string, url: string): string {
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
+  // Verify caller is an authenticated Growthic One user
+  const authHeader = req.headers.get('Authorization') || ''
+  if (!authHeader) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+  const anonClient = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_ANON_KEY')!,
+    { global: { headers: { Authorization: authHeader } } }
+  )
+  const { data: { user: caller }, error: callerErr } = await anonClient.auth.getUser()
+  if (callerErr || !caller) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
   try {
-    const { employee_id, subject, body, url = '/home' } = await req.json()
+    const { employee_id, subject, body, url = '/home', thread_key = null } = await req.json()
 
     if (!employee_id || !subject || !body) {
       return new Response(JSON.stringify({ error: 'employee_id, subject, body required' }), {
@@ -88,6 +107,20 @@ Deno.serve(async (req: Request) => {
 
     const html = buildEmailHtml(subject, body, url)
 
+    // Subject alone is enough for Gmail's thread grouping, but Outlook leans
+    // more on real RFC headers — so give every email in the same thread_key
+    // (same underlying record) a shared, deterministic thread-root Message-ID
+    // via References/In-Reply-To. No prior send needs to be looked up: the
+    // root id is derived purely from thread_key, so it's identical every time.
+    const emailHeaders: Record<string, string> = {}
+    if (thread_key) {
+      const safeKey  = String(thread_key).replace(/[^a-zA-Z0-9-]/g, '')
+      const rootId   = `<growthic-${safeKey}@thegrowthic.com>`
+      emailHeaders['Message-ID']  = `<growthic-${safeKey}-${crypto.randomUUID()}@thegrowthic.com>`
+      emailHeaders['In-Reply-To'] = rootId
+      emailHeaders['References']  = rootId
+    }
+
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -99,6 +132,7 @@ Deno.serve(async (req: Request) => {
         to:      [employee.email],
         subject,
         html,
+        ...(Object.keys(emailHeaders).length ? { headers: emailHeaders } : {}),
       }),
     })
 
