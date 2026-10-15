@@ -34,7 +34,6 @@ const LeaveTracker = (() => {
   let _lateThreshold        = '10:30'   // HH:MM from app_settings
   let _lateEffectiveFrom    = ''        // YYYY-MM from app_settings
 
-  const currentYear = new Date().getFullYear()
 
   /* ── Status badge map ───────────────────────────────────── */
   const STATUS_BADGE = {
@@ -57,8 +56,8 @@ const LeaveTracker = (() => {
   // Sandwich policy: calendar days inclusive, no exclusions
   function _calcLeaveDays(startDate, endDate, isHalfDay) {
     if (isHalfDay) return 0.5
-    const start = new Date(startDate)
-    const end   = new Date(endDate)
+    const start = _parseLocal(startDate)
+    const end   = _parseLocal(endDate)
     return Math.max(0, Math.round((end - start) / 86400000) + 1)
   }
 
@@ -68,7 +67,8 @@ const LeaveTracker = (() => {
       .filter(c => c.leave_type_id === leaveTypeId && c.year === year)
       .reduce((sum, c) => sum + Number(c.credited_days), 0)
     const taken = _leaveRequests
-      .filter(r => r.leave_type_id === leaveTypeId && r.status === 'approved'
+      .filter(r => r.leave_type_id === leaveTypeId
+                && (r.status === 'approved' || r.status === 'pending')
                 && new Date(r.start_date).getFullYear() === year)
       .reduce((sum, r) => sum + Number(r.days), 0)
     return credited - taken
@@ -194,14 +194,17 @@ const LeaveTracker = (() => {
   // WFH days used for user in a given month/year
   function _wfhUsed(month, year) {
     return _wfhRequests
-      .filter(r => r.status === 'approved') // only approved WFH
+      .filter(r => r.status === 'approved')
       .reduce((sum, r) => {
-        const startYear  = new Date(r.start_date).getFullYear()
-        const startMonth = new Date(r.start_date).getMonth() + 1
-        if (startYear === year && startMonth === month) {
-          return sum + Number(r.days)
+        const start = _parseLocal(r.start_date)
+        const end   = _parseLocal(r.end_date)
+        const cur   = new Date(start)
+        let count   = 0
+        while (cur <= end) {
+          if (cur.getFullYear() === year && cur.getMonth() + 1 === month) count++
+          cur.setDate(cur.getDate() + 1)
         }
-        return sum
+        return sum + count
       }, 0)
   }
 
@@ -292,9 +295,9 @@ const LeaveTracker = (() => {
       API.getMyLeaveRequests(_user.id),
       API.getMyWfhRequests(_user.id),
       API.getMyClientVisits(_user.id),
-      API.getLeaveCredits(_user.id, currentYear),
-      API.getCompanyHolidays(currentYear),
-      API.getCompanyEvents(currentYear),
+      API.getLeaveCredits(_user.id, new Date().getFullYear()),
+      API.getCompanyHolidays(new Date().getFullYear()),
+      API.getCompanyEvents(new Date().getFullYear()),
     ])
 
     _leaveTypes    = ltRes.data  || []
@@ -769,7 +772,7 @@ const LeaveTracker = (() => {
       creditedByType[c.leave_type_id] += Number(c.credited_days)
     })
     _leaveRequests
-      .filter(r => r.status === 'approved' && new Date(r.start_date).getFullYear() === currentYear)
+      .filter(r => r.status === 'approved' && new Date(r.start_date).getFullYear() === new Date().getFullYear())
       .forEach(r => {
         if (!takenByType[r.leave_type_id]) takenByType[r.leave_type_id] = 0
         takenByType[r.leave_type_id] += Number(r.days)
@@ -1284,7 +1287,7 @@ const LeaveTracker = (() => {
       return
     }
     if (req?.approver_id) {
-      API.createNotification({
+      await API.createNotification({
         recipient_employee_id: req.approver_id,
         type: 'info',
         message: `${_user.name} requested a correction for their late half-day on ${Utils.formatDate(req.start_date)}.`,
@@ -1468,7 +1471,7 @@ const LeaveTracker = (() => {
         notify_email: true,
       }))
     if (req?.approver_id) {
-      API.createNotification({
+      await API.createNotification({
         recipient_employee_id: req.approver_id,
         type: 'info',
         message: `${_user.name}'s ${label} cancellation is now with People & Culture.`,
@@ -1593,7 +1596,7 @@ const LeaveTracker = (() => {
       }
       el.style.background = ''
       el.style.border     = ''
-      const balance = _getBalance(typeId, currentYear)
+      const balance = _getBalance(typeId, new Date().getFullYear())
       el.style.display     = 'block'
       el.style.color       = balance < 0 ? 'var(--warning)' : 'var(--success)'
       el.textContent       = `${balance} day${Math.abs(balance) === 1 ? '' : 's'} remaining this year`
@@ -1675,7 +1678,7 @@ const LeaveTracker = (() => {
       // balance concept and is exempt. The database has the same check as a
       // backstop; this is just the friendly, immediate version.
       if (!leaveType?.is_unpaid) {
-        const balance = _getBalance(typeId, currentYear)
+        const balance = _getBalance(typeId, new Date().getFullYear())
         if (days > balance) {
           errEl.textContent = `You only have ${balance} day${Math.abs(balance) === 1 ? '' : 's'} of ${leaveType?.name || 'this leave type'} remaining — cannot request ${days}.`
           errEl.style.display = 'block'
@@ -1715,7 +1718,7 @@ const LeaveTracker = (() => {
       }
 
       if (approverId) {
-        API.createNotification({
+        await API.createNotification({
           recipient_employee_id: approverId,
           type: 'info',
           message: `${_user.name} submitted a leave request.`,
@@ -2007,7 +2010,7 @@ const LeaveTracker = (() => {
       }
 
       if (approverId) {
-        API.createNotification({
+        await API.createNotification({
           recipient_employee_id: approverId,
           type: 'info',
           message: `${_user.name} submitted a WFH request.`,
@@ -2466,7 +2469,7 @@ const LeaveTracker = (() => {
       if (error) return fail(error.message)
 
       if (approverId) {
-        API.createNotification({
+        await API.createNotification({
           recipient_employee_id: approverId,
           type: 'info',
           message: `${_user.name} submitted a Client Visit request.`,
@@ -2684,7 +2687,7 @@ const LeaveTracker = (() => {
     })
     if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
     if (req?.employee?.id) {
-      API.createNotification({
+      await API.createNotification({
         recipient_employee_id: req.employee.id,
         type: 'approval',
         message: `Your correction request for the late half-day on ${Utils.formatDate(req.start_date)} was approved — the half-day has been reversed.`,
@@ -2709,7 +2712,7 @@ const LeaveTracker = (() => {
     })
     if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
     if (req?.employee?.id) {
-      API.createNotification({
+      await API.createNotification({
         recipient_employee_id: req.employee.id,
         type: 'rejection',
         message: `Your correction request for the late half-day on ${Utils.formatDate(req.start_date)} was denied. The half-day stands.`,
@@ -2965,7 +2968,7 @@ const LeaveTracker = (() => {
 
       // Notify the requester
       if (req?.employee?.id) {
-        API.createNotification({
+        await API.createNotification({
           recipient_employee_id: req.employee.id,
           type: 'approval',
           message: `Your ${label} request has been approved.`,
@@ -2983,7 +2986,7 @@ const LeaveTracker = (() => {
         e.id !== _user.id
       )
       pcTeam.forEach(e => {
-        API.createNotification({
+        await API.createNotification({
           recipient_employee_id: e.id,
           type: 'info',
           message: `${empName}'s ${label} request has been approved.`,
@@ -3046,7 +3049,7 @@ const LeaveTracker = (() => {
 
       if (req?.employee?.id) {
         const label = _reqLabel(type)
-        API.createNotification({
+        await API.createNotification({
           recipient_employee_id: req.employee.id,
           type: 'rejection',
           message: `Your ${label} request was rejected${comment ? ': ' + comment : '.'}`,
@@ -3072,6 +3075,7 @@ const LeaveTracker = (() => {
     const cancelDates = req?.cancellation_dates
     let error
 
+    const reqType = type === 'leave' ? 'leave' : 'wfh'
     if (cancelDates?.length && createFn) {
       // Partial cancellation — trim or split the original record
       const allDates  = _datesInRange(req.start_date, req.end_date)
@@ -3100,11 +3104,18 @@ const LeaveTracker = (() => {
             if (type === 'leave') await createFn({ ...base, leave_type_id: req.leave_type_id, is_half_day: false })
             else                  await createFn({ ...base, work_plan: req.work_plan })
           }
+          // Write individual rows to leave_cancellation_dates for audit/navigation
+          await API.addCancellationDates(reqType, id, cancelDates, _user.id, req.cancellation_reason)
         }
       }
     } else {
       // Full cancellation (existing behaviour)
       ;({ error } = await updateFn(id, { status: 'cancelled', acted_at: now, cancellation_actor_id: _user.id }))
+      // For full cancellations, write every date in the range as a permanent record
+      if (!error) {
+        const allDates = _datesInRange(req.start_date, req.end_date)
+        await API.addCancellationDates(reqType, id, allDates, _user.id, req.cancellation_reason)
+      }
     }
 
     if (error) { Utils.showToast('Failed: ' + error.message, 'error'); return }
@@ -3115,10 +3126,10 @@ const LeaveTracker = (() => {
       ? `Your ${label} cancellation (${nDays} day${nDays === 1 ? '' : 's'}) has been approved.`
       : `Your ${label} cancellation request has been approved.`
     if (req?.employee?.id) {
-      API.createNotification({ recipient_employee_id: req.employee.id, type: 'approval', message: msg, module: 'leave_tracker', record_id: id, notify_email: true })
+      await API.createNotification({ recipient_employee_id: req.employee.id, type: 'approval', message: msg, module: 'leave_tracker', record_id: id, notify_email: true })
     }
     if (req?.approver_id) {
-      API.createNotification({ recipient_employee_id: req.approver_id, type: 'info', message: `${req.employee?.name || 'An employee'}'s ${label} cancellation was approved by People & Culture.`, module: 'leave_tracker', record_id: id, notify_email: true })
+      await API.createNotification({ recipient_employee_id: req.approver_id, type: 'info', message: `${req.employee?.name || 'An employee'}'s ${label} cancellation was approved by People & Culture.`, module: 'leave_tracker', record_id: id, notify_email: true })
     }
     Utils.showToast('Cancellation approved.', 'success')
     await _refreshApprovalData()
@@ -3139,7 +3150,7 @@ const LeaveTracker = (() => {
     } else {
       const label = _reqLabel(type)
       if (req?.employee?.id) {
-        API.createNotification({
+        await API.createNotification({
           recipient_employee_id: req.employee.id,
           type: 'rejection',
           message: `Your ${label} cancellation request was denied. The original request remains approved.`,
@@ -3149,7 +3160,7 @@ const LeaveTracker = (() => {
         })
       }
       if (req?.approver_id) {
-        API.createNotification({
+        await API.createNotification({
           recipient_employee_id: req.approver_id,
           type: 'info',
           message: `${req.employee?.name || 'An employee'}'s ${label} cancellation was denied by People & Culture. The original request remains approved.`,

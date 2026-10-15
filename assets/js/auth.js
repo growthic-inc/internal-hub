@@ -52,20 +52,10 @@ const Auth = (() => {
     const session = await getSession()
     if (!session) return null
 
-    // Use eq + limit(1) instead of .single() so duplicate employee rows
-    // (caused by HR submitting the add-employee form more than once) don't
-    // produce a 406 "Cannot coerce to single JSON object" error and log the
-    // user out. The row whose id matches auth.uid() is preferred; if not
-    // found first, we fall back to whichever row the DB returns.
-    // ilike = case-insensitive match. Supabase Auth lowercases all emails
-    // (e.g. "Ananya@company.com" → "ananya@company.com"), but HR may have
-    // entered the email with capitals in the employees table. A plain .eq()
-    // is case-sensitive in PostgreSQL, so it returns 0 rows → 406 error.
     const { data: rows, error } = await supabase
       .from('employees')
       .select('id, name, email, role, department, department_id, status, manager_id, profile_completed, profile_image_url, joining_date, date_of_birth, policy_acknowledged_at')
-      .ilike('email', session.user.email)
-      .order('id', { ascending: true })
+      .eq('id', session.user.id)
       .limit(1)
 
     const data = rows?.[0] ?? null

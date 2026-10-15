@@ -73,12 +73,11 @@ const API = (() => {
       .order('created_at')
   }
 
-  async function setClientTeam(clientId, employeeIds, addedBy) {
-    await supabase.from('client_team_members').delete().eq('client_id', clientId)
-    if (!employeeIds.length) return { error: null }
-    return supabase.from('client_team_members').insert(
-      employeeIds.map(eid => ({ client_id: clientId, employee_id: eid, added_by: addedBy }))
-    )
+  async function setClientTeam(clientId, employeeIds) {
+    return supabase.rpc('set_client_team', {
+      p_client_id:    clientId,
+      p_employee_ids: employeeIds,
+    })
   }
 
   /* ── Client Brand Books ───────────────────────────────────── */
@@ -441,7 +440,36 @@ const API = (() => {
       .eq('id', approvalId)
   }
 
-  /* ── Notifications ────────────────────────────────────────── */
+  /* ── Leave Cancellation Dates ─────────────────────────────── */
+  async function getCancellationDates(requestType, requestId) {
+    return supabase
+      .from('leave_cancellation_dates')
+      .select('*')
+      .eq('request_type', requestType)
+      .eq('request_id', requestId)
+      .order('cancelled_date')
+  }
+
+  async function addCancellationDates(requestType, requestId, dates, cancelledBy, reason = null) {
+    const rows = dates.map(d => ({
+      request_type: requestType,
+      request_id:   requestId,
+      cancelled_date: d,
+      cancelled_by: cancelledBy,
+      cancellation_reason: reason,
+    }))
+    return supabase.from('leave_cancellation_dates').insert(rows)
+  }
+
+  async function deleteCancellationDates(requestType, requestId) {
+    return supabase
+      .from('leave_cancellation_dates')
+      .delete()
+      .eq('request_type', requestType)
+      .eq('request_id', requestId)
+  }
+
+    /* ── Notifications ────────────────────────────────────────── */
   async function getUnreadNotifications(employeeId) {
     return supabase
       .from('notifications')
@@ -755,8 +783,8 @@ const API = (() => {
     if (result.data?.client_entities) {
       const seen = new Set()
       result.data.client_entities = result.data.client_entities.filter(e => {
-        if (seen.has(e.entity_name)) return false
-        seen.add(e.entity_name)
+        if (seen.has(e.id)) return false
+        seen.add(e.id)
         return true
       })
     }
@@ -2099,6 +2127,7 @@ const API = (() => {
   return {
     getClients, getClient, getClientByProjectCode, updateEntityProfileType,
     getClientTeam, setClientTeam,
+    getCancellationDates, addCancellationDates, deleteCancellationDates,
     getBrandBooks, saveBrandBook, deleteBrandBook,
     getEmployees, getEmployee, getTeamLeads, getAllEmployees,
     getTimesheetEntries, getTeamTimesheetEntries, getDirectReports, getAllSubordinates, upsertTimesheetEntry,
