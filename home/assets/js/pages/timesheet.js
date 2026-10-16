@@ -2219,27 +2219,39 @@ const Timesheet = (() => {
 
         ${canSeeTeam ? `
         <div id="ts-insights-team" class="ts-insights-panel" style="display:none;">
-          <div class="ts-insights-filters" style="margin-bottom:10px;">
-            <div style="position:relative;flex:1;max-width:260px;">
-              <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--text-muted);" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input type="search" id="ts-insights-member-search" class="ts-insights-member-search" placeholder="Search member…" autocomplete="off">
+          <div class="ts-insights-filters" style="margin-bottom:12px;flex-wrap:nowrap;gap:10px;">
+            <div class="ts-member-dropdown-wrap" style="position:relative;">
+              <button id="ts-member-trigger" class="ts-member-trigger" type="button">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <span id="ts-member-trigger-label">All members</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-left:auto;"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div id="ts-member-dropdown" class="ts-member-dropdown" style="display:none;">
+                <div style="padding:8px 10px 6px;">
+                  <input type="search" id="ts-insights-member-search" class="ts-insights-member-search" placeholder="Search member…" autocomplete="off">
+                </div>
+                <div style="padding:4px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);">
+                  <button id="ts-member-select-all" style="font-size:11px;color:#0F4799;background:none;border:none;cursor:pointer;padding:0;font-family:inherit;">Select all</button>
+                  <button id="ts-member-clear-all" style="font-size:11px;color:var(--text-muted);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;">Clear</button>
+                </div>
+                <div id="ts-insights-members-list" style="max-height:220px;overflow-y:auto;padding:4px 0;"></div>
+              </div>
+            </div>
+            <div class="ts-insights-filters" style="margin:0;padding:0;flex:1;">
+              <span class="ts-insights-filter-label">Period:</span>
+              <button class="ts-insights-team-filter ts-insights-filter-btn ts-insights-filter-btn--active" data-tperiod="this-month">This Month</button>
+              <button class="ts-insights-team-filter ts-insights-filter-btn" data-tperiod="last-month">Last Month</button>
+              <button class="ts-insights-team-filter ts-insights-filter-btn" data-tperiod="last-3-months">Last 3 Months</button>
+              <button class="ts-insights-team-filter ts-insights-filter-btn" data-tperiod="custom">Custom</button>
+              <div id="ts-insights-team-picker" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;">
+                <input type="month" id="ts-insights-team-from" class="ts-insights-month-input">
+                <span style="font-size:12px;color:var(--text-muted);">to</span>
+                <input type="month" id="ts-insights-team-to" class="ts-insights-month-input">
+                <button id="ts-insights-team-apply" class="ts-insights-filter-btn ts-insights-filter-btn--active" style="margin-left:2px;">Apply</button>
+              </div>
             </div>
           </div>
-          <div id="ts-insights-members-list" class="ts-insights-members-list"></div>
-          <div class="ts-insights-filters" style="margin-top:12px;">
-            <span class="ts-insights-filter-label">Period:</span>
-            <button class="ts-insights-team-filter ts-insights-filter-btn ts-insights-filter-btn--active" data-tperiod="this-month">This Month</button>
-            <button class="ts-insights-team-filter ts-insights-filter-btn" data-tperiod="last-month">Last Month</button>
-            <button class="ts-insights-team-filter ts-insights-filter-btn" data-tperiod="last-3-months">Last 3 Months</button>
-            <button class="ts-insights-team-filter ts-insights-filter-btn" data-tperiod="custom">Custom</button>
-            <div id="ts-insights-team-picker" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;">
-              <input type="month" id="ts-insights-team-from" class="ts-insights-month-input">
-              <span style="font-size:12px;color:var(--text-muted);">to</span>
-              <input type="month" id="ts-insights-team-to" class="ts-insights-month-input">
-              <button id="ts-insights-team-apply" class="ts-insights-filter-btn ts-insights-filter-btn--active" style="margin-left:2px;">Apply</button>
-            </div>
-          </div>
-          <div id="ts-insights-team-body" style="margin-top:16px;"><p class="loading-text">Loading team data…</p></div>
+          <div id="ts-insights-team-body" style="margin-top:4px;"><p class="loading-text">Loading team data…</p></div>
         </div>
         ` : ''}
       </div>
@@ -2279,49 +2291,94 @@ const Timesheet = (() => {
       })
     })
 
+    function _updateTriggerLabel() {
+      const lbl = document.getElementById('ts-member-trigger-label')
+      if (!lbl) return
+      const total = _directReports.length
+      const sel   = _teamSelectedIds.size
+      lbl.textContent = sel === total ? 'All members' : sel === 1
+        ? (_directReports.find(d => _teamSelectedIds.has(d.id))?.name || '1 member')
+        : `${sel} members`
+    }
+
     function _initTeamPanel() {
       const membersList = document.getElementById('ts-insights-members-list')
       if (!membersList) return
 
-      function _buildMemberChips(filter = '') {
+      function _buildMemberRows(filter = '') {
         const q = filter.toLowerCase()
         const filtered = _directReports.filter(dr => !q || (dr.name || '').toLowerCase().includes(q))
         membersList.innerHTML = filtered.map(dr => {
           const checked = _teamSelectedIds.has(dr.id)
-          const initials = Utils.getInitials(dr.name || '?')
-          const dept = dr.department ? dr.department.replace(/_/g, ' ') : ''
-          const img  = dr.profile_image_url
-            ? `<img src="${Utils.escapeHtml(dr.profile_image_url)}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" alt="">`
-            : `<span style="font-size:10px;font-weight:700;color:#fff;">${Utils.escapeHtml(initials)}</span>`
+          const dept    = dr.department ? dr.department.replace(/_/g, ' ') : ''
+          const img     = dr.profile_image_url
+            ? `<img src="${Utils.escapeHtml(dr.profile_image_url)}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;" alt="">`
+            : `<span style="width:28px;height:28px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${Utils.escapeHtml(Utils.getInitials(dr.name || '?'))}</span>`
           return `
-            <label class="ts-insights-member-chip${checked ? ' ts-insights-member-chip--on' : ''}" data-id="${Utils.escapeHtml(dr.id)}">
-              <input type="checkbox" style="display:none;" ${checked ? 'checked' : ''} data-member-id="${Utils.escapeHtml(dr.id)}">
-              <span style="width:22px;height:22px;border-radius:50%;background:var(--primary);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">${img}</span>
-              <span style="font-size:12px;font-weight:500;white-space:nowrap;">${Utils.escapeHtml(dr.name || 'Unknown')}</span>
-              ${dept ? `<span style="font-size:10px;color:var(--text-muted);text-transform:capitalize;white-space:nowrap;">${Utils.escapeHtml(dept)}</span>` : ''}
-              <span class="ts-insights-member-chip-check">
-                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-              </span>
-            </label>`
+            <div class="ts-member-row${checked ? ' ts-member-row--on' : ''}" data-id="${Utils.escapeHtml(dr.id)}" style="display:flex;align-items:center;gap:9px;padding:6px 12px;cursor:pointer;">
+              <div class="ts-member-row-check" style="width:16px;height:16px;border-radius:4px;border:1.5px solid ${checked ? '#0F4799' : 'var(--border)'};background:${checked ? '#0F4799' : 'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .12s;">
+                ${checked ? '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5"><polyline points="20 6 9 17 4 12"/></svg>' : ''}
+              </div>
+              ${img}
+              <div style="min-width:0;">
+                <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${Utils.escapeHtml(dr.name || 'Unknown')}</div>
+                ${dept ? `<div style="font-size:11px;color:var(--text-muted);text-transform:capitalize;">${Utils.escapeHtml(dept)}</div>` : ''}
+              </div>
+            </div>`
         }).join('')
 
-        membersList.querySelectorAll('.ts-insights-member-chip').forEach(chip => {
-          chip.addEventListener('click', () => {
-            const id = chip.dataset.id
+        membersList.querySelectorAll('.ts-member-row').forEach(row => {
+          row.addEventListener('mouseenter', () => { if (!row.classList.contains('ts-member-row--on')) row.style.background = 'var(--surface,var(--bg))' })
+          row.addEventListener('mouseleave', () => { row.style.background = '' })
+          row.addEventListener('click', () => {
+            const id = row.dataset.id
             if (_teamSelectedIds.has(id)) {
-              if (_teamSelectedIds.size > 1) { _teamSelectedIds.delete(id); chip.classList.remove('ts-insights-member-chip--on') }
+              if (_teamSelectedIds.size > 1) _teamSelectedIds.delete(id)
             } else {
-              _teamSelectedIds.add(id); chip.classList.add('ts-insights-member-chip--on')
+              _teamSelectedIds.add(id)
             }
+            _updateTriggerLabel()
+            _buildMemberRows(document.getElementById('ts-insights-member-search')?.value || '')
             _renderTeamInsights(_teamPeriod, _teamSelectedIds, _teamCustomFrom, _teamCustomTo)
           })
         })
       }
 
-      _buildMemberChips()
+      _buildMemberRows()
+      _updateTriggerLabel()
+
+      // Dropdown open/close
+      const trigger  = document.getElementById('ts-member-trigger')
+      const dropdown = document.getElementById('ts-member-dropdown')
+      if (trigger && dropdown) {
+        trigger.addEventListener('click', (e) => {
+          e.stopPropagation()
+          const open = dropdown.style.display !== 'none'
+          dropdown.style.display = open ? 'none' : 'block'
+          if (!open) document.getElementById('ts-insights-member-search')?.focus()
+        })
+        document.addEventListener('click', (e) => {
+          if (!dropdown.contains(e.target) && e.target !== trigger) dropdown.style.display = 'none'
+        }, { capture: true })
+      }
+
+      document.getElementById('ts-member-select-all')?.addEventListener('click', () => {
+        _directReports.forEach(dr => _teamSelectedIds.add(dr.id))
+        _updateTriggerLabel()
+        _buildMemberRows(document.getElementById('ts-insights-member-search')?.value || '')
+        _renderTeamInsights(_teamPeriod, _teamSelectedIds, _teamCustomFrom, _teamCustomTo)
+      })
+      document.getElementById('ts-member-clear-all')?.addEventListener('click', () => {
+        const first = _directReports[0]?.id
+        _teamSelectedIds.clear()
+        if (first) _teamSelectedIds.add(first)
+        _updateTriggerLabel()
+        _buildMemberRows(document.getElementById('ts-insights-member-search')?.value || '')
+        _renderTeamInsights(_teamPeriod, _teamSelectedIds, _teamCustomFrom, _teamCustomTo)
+      })
 
       const searchEl = document.getElementById('ts-insights-member-search')
-      if (searchEl) searchEl.addEventListener('input', () => _buildMemberChips(searchEl.value))
+      if (searchEl) searchEl.addEventListener('input', () => _buildMemberRows(searchEl.value))
 
       content.querySelectorAll('.ts-insights-team-filter').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -2456,23 +2513,21 @@ const Timesheet = (() => {
           ? `<img src="${Utils.escapeHtml(dr.profile_image_url)}" style="width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0;" alt="">`
           : `<span style="width:26px;height:26px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;">${Utils.escapeHtml(Utils.getInitials(dr.name || '?'))}</span>`
         return `
-          <tr>
-            <td style="padding:8px 12px;">
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:7px 12px;">
               <div style="display:flex;align-items:center;gap:8px;">
                 ${img}
-                <div>
-                  <div style="font-size:13px;font-weight:500;">${Utils.escapeHtml(dr.name || 'Unknown')}</div>
-                  ${dr.department ? `<div style="font-size:11px;color:var(--text-muted);text-transform:capitalize;">${Utils.escapeHtml(dr.department.replace(/_/g, ' '))}</div>` : ''}
+                <div style="min-width:0;">
+                  <div style="font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${Utils.escapeHtml(dr.name || 'Unknown')}</div>
                 </div>
               </div>
             </td>
-            <td style="padding:8px 12px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;">${logged.toFixed(1)}h</td>
-            <td style="padding:8px 12px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;color:var(--text-muted);">${expected.toFixed(0)}h</td>
-            <td style="padding:8px 12px;text-align:right;">
-              <span style="font-size:13px;font-weight:600;color:${uCls};font-variant-numeric:tabular-nums;">${util}%</span>
+            <td style="padding:7px 12px;text-align:right;font-variant-numeric:tabular-nums;font-size:12px;">${logged.toFixed(1)}h</td>
+            <td style="padding:7px 12px;text-align:right;">
+              <span style="font-size:12px;font-weight:600;color:${uCls};font-variant-numeric:tabular-nums;">${util}%</span>
             </td>
-            <td style="padding:8px 12px;text-align:right;">
-              <span style="font-size:13px;font-weight:500;color:${unfilled > 0 ? '#DC2626' : '#059669'};font-variant-numeric:tabular-nums;">${unfilled}</span>
+            <td style="padding:7px 12px;text-align:right;">
+              <span style="font-size:12px;font-weight:500;color:${unfilled > 0 ? '#DC2626' : '#059669'};font-variant-numeric:tabular-nums;">${unfilled}</span>
             </td>
           </tr>`
       }).join('')
@@ -2491,6 +2546,46 @@ const Timesheet = (() => {
         })
         trendMonths.push({ label: lbl, hours: hrs })
       }
+
+      // ── Client drill-down ─────────────────────────────────────
+      // Level 1: Client/Project → Level 2: Entity/Work Area → hours
+      const drillMap = {}
+      selectedMembers.forEach(dr => {
+        const drEntries = (_teamAllEntries[dr.id] || []).filter(e => e.date >= fromISO && e.date <= toISO && ['submitted', 'approved'].includes(e.status))
+        drEntries.forEach(e => {
+          const isInt    = e.work_type === 'internal'
+          const l1       = isInt ? (e.internal_project?.name || 'Internal') : (e.clients?.client_name || 'Unknown Client')
+          const l2       = isInt ? (e.internal_entity?.entity_name || '—') : (e.entity?.entity_name || '—')
+          const hrs      = parseFloat(e.hours || 0)
+          if (!drillMap[l1]) drillMap[l1] = { total: 0, sub: {}, isInternal: isInt }
+          drillMap[l1].total += hrs
+          drillMap[l1].sub[l2] = (drillMap[l1].sub[l2] || 0) + hrs
+        })
+      })
+      const drillRows = Object.entries(drillMap).sort((a, b) => b[1].total - a[1].total).map(([client, val]) => {
+        const pct  = totalLogged > 0 ? Math.round((val.total / totalLogged) * 100) : 0
+        const tag  = val.isInternal
+          ? `<span style="font-size:10px;padding:1px 6px;background:#EEF2FF;color:#6366F1;border-radius:99px;font-weight:600;">Internal</span>`
+          : `<span style="font-size:10px;padding:1px 6px;background:#F0FDF4;color:#059669;border-radius:99px;font-weight:600;">Client</span>`
+        const subRows = Object.entries(val.sub).sort((a, b) => b[1] - a[1]).map(([sub, h]) =>
+          `<div class="ts-drill-sub-row">
+            <span style="color:var(--text-muted);">↳</span>
+            <span style="flex:1;font-size:12px;color:var(--text-muted);">${Utils.escapeHtml(sub)}</span>
+            <span style="font-size:12px;color:var(--text-muted);font-variant-numeric:tabular-nums;">${h.toFixed(1)}h</span>
+          </div>`
+        ).join('')
+        return `
+          <div class="ts-drill-row" data-drill-id="${Utils.escapeHtml(client)}">
+            <div class="ts-drill-row-header">
+              <svg class="ts-drill-arrow" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+              <span style="flex:1;font-size:13px;font-weight:500;">${Utils.escapeHtml(client)}</span>
+              ${tag}
+              <span style="font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;">${val.total.toFixed(1)}h</span>
+              <span style="font-size:12px;color:var(--text-muted);width:34px;text-align:right;">${pct}%</span>
+            </div>
+            <div class="ts-drill-sub" style="display:none;">${subRows}</div>
+          </div>`
+      }).join('')
 
       body.innerHTML = `
         <div class="grid-4 mb-4">
@@ -2528,23 +2623,31 @@ const Timesheet = (() => {
           </div>
         </div>
 
-        <div class="ts-chart-card" style="margin-bottom:0;padding:0;overflow:hidden;">
-          <div style="padding:16px 16px 0;">
-            <div class="ts-chart-title" style="margin-bottom:0;">Member Breakdown</div>
+        <div style="display:grid;grid-template-columns:1.2fr 2fr;gap:16px;margin-bottom:16px;">
+          <div class="ts-chart-card" style="margin-bottom:0;padding:0;overflow:hidden;">
+            <div style="padding:16px 16px 12px;">
+              <div class="ts-chart-title" style="margin-bottom:0;">Member Breakdown</div>
+            </div>
+            <div style="overflow-x:auto;">
+              <table style="width:100%;border-collapse:collapse;min-width:380px;">
+                <thead>
+                  <tr style="border-bottom:1px solid var(--border);">
+                    <th style="padding:7px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Member</th>
+                    <th style="padding:7px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Logged</th>
+                    <th style="padding:7px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Util%</th>
+                    <th style="padding:7px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Unfilled</th>
+                  </tr>
+                </thead>
+                <tbody>${tableRows}</tbody>
+              </table>
+            </div>
           </div>
-          <div style="overflow-x:auto;">
-            <table style="width:100%;border-collapse:collapse;min-width:500px;">
-              <thead>
-                <tr style="border-bottom:1px solid var(--border);">
-                  <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Member</th>
-                  <th style="padding:8px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Logged</th>
-                  <th style="padding:8px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Expected</th>
-                  <th style="padding:8px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Utilization</th>
-                  <th style="padding:8px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Unfilled Days</th>
-                </tr>
-              </thead>
-              <tbody>${tableRows}</tbody>
-            </table>
+          <div class="ts-chart-card" style="margin-bottom:0;padding:0;overflow:hidden;">
+            <div style="padding:16px 16px 12px;display:flex;align-items:baseline;gap:8px;">
+              <div class="ts-chart-title" style="margin-bottom:0;">Client Drill-Down</div>
+              <span style="font-size:11px;color:var(--text-muted);">Click a row to expand</span>
+            </div>
+            <div style="padding:0 0 8px;" id="ts-drill-rows">${drillRows}</div>
           </div>
         </div>
       `
@@ -2569,6 +2672,17 @@ const Timesheet = (() => {
         })
         _insightsCharts.push(c)
       }, 0)
+
+      // Drill-down toggle
+      body.querySelectorAll('.ts-drill-row').forEach(row => {
+        row.querySelector('.ts-drill-row-header').addEventListener('click', () => {
+          const sub   = row.querySelector('.ts-drill-sub')
+          const arrow = row.querySelector('.ts-drill-arrow')
+          const open  = sub.style.display !== 'none'
+          sub.style.display   = open ? 'none' : 'block'
+          arrow.style.transform = open ? '' : 'rotate(90deg)'
+        })
+      })
     }
 
     // Period filter

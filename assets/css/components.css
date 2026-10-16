@@ -6752,8 +6752,8 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 }
 .ts-insights-member-search {
   width: 100%;
-  padding: 6px 10px 6px 30px;
-  border-radius: 7px;
+  padding: 6px 10px;
+  border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--surface, var(--bg));
   font-size: 12px;
@@ -6762,34 +6762,54 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   outline: none;
 }
 .ts-insights-member-search:focus { border-color: #0F4799; }
-.ts-insights-members-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 4px 0 2px;
-}
-.ts-insights-member-chip {
+.ts-member-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 8px 4px 5px;
-  border-radius: 99px;
+  gap: 7px;
+  padding: 6px 10px;
+  border-radius: 7px;
   border: 1px solid var(--border);
   background: var(--surface, var(--bg));
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  font-family: inherit;
   cursor: pointer;
-  transition: border-color .15s, background .15s;
-  user-select: none;
+  min-width: 160px;
+  white-space: nowrap;
 }
-.ts-insights-member-chip:hover { border-color: #0F4799; }
-.ts-insights-member-chip--on {
-  border-color: #0F4799;
-  background: rgba(15,71,153,.06);
+.ts-member-trigger:hover { border-color: #0F4799; }
+.ts-member-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 240px;
+  background: var(--surface, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.10);
+  z-index: 120;
+  overflow: hidden;
 }
-.ts-insights-member-chip-check {
-  display: none;
-  color: #0F4799;
+.ts-member-row--on { background: rgba(15,71,153,.04); }
+.ts-drill-row-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background .12s;
 }
-.ts-insights-member-chip--on .ts-insights-member-chip-check { display: flex; }
+.ts-drill-row-header:hover { background: var(--surface, var(--bg)); }
+.ts-drill-arrow { transition: transform .15s; flex-shrink: 0; color: var(--text-muted); }
+.ts-drill-sub { border-bottom: 1px solid var(--border); background: var(--surface, var(--bg)); padding: 2px 0; }
+.ts-drill-sub-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 16px 5px 36px;
+}
 
 .ts-insights-section-title {
   font-size: 15px;
