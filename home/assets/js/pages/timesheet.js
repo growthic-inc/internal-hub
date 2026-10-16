@@ -2381,21 +2381,18 @@ const Timesheet = (() => {
           }).join('')
         : '<p style="font-size:13px;color:var(--text-muted);margin:0;">No entries in this period.</p>'
 
-      // ── Trend chart — months in selected range (up to 6) ────────
+      // ── Trend chart — always 3 months ending at toDate's month ──
+      // The trend is context; it doesn't mirror the period filter.
       const trendMonths = []
-      const trendStart  = new Date(fromDate.getFullYear(), fromDate.getMonth(), 1)
-      const trendEnd    = new Date(toDate.getFullYear(),   toDate.getMonth(),   1)
-      const trendCur    = new Date(trendStart)
-      while (trendCur <= trendEnd && trendMonths.length < 6) {
-        const ms  = new Date(trendCur)
-        const me  = new Date(trendCur.getFullYear(), trendCur.getMonth() + 1, 0)
-        const lbl = ms.toLocaleDateString('en-IN', { month: 'short', year: trendMonths.length === 0 || ms.getMonth() === 0 ? '2-digit' : undefined })
-        const hrs = entries
+      for (let i = 2; i >= 0; i--) {
+        const ms = new Date(toDate.getFullYear(), toDate.getMonth() - i, 1)
+        const me = new Date(toDate.getFullYear(), toDate.getMonth() - i + 1, 0)
+        const lbl = ms.toLocaleDateString('en-IN', { month: 'short' })
+        const hrs = allEntries
           .filter(e => e.date >= _toISO(ms) && e.date <= _toISO(me) && ['submitted', 'approved'].includes(e.status))
           .reduce((s, e) => s + parseFloat(e.hours || 0), 0)
         const hasData = !joinDate || joinDate <= me
         trendMonths.push({ label: lbl, hours: hasData ? hrs : null })
-        trendCur.setMonth(trendCur.getMonth() + 1)
       }
 
       const body = document.getElementById('ts-insights-mine-body')
