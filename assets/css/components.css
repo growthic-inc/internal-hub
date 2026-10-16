@@ -6681,6 +6681,66 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 }
 
 /* ── Insights Tab ─────────────────────────────────────────── */
+.ts-insights-root { display: flex; flex-direction: column; gap: 16px; }
+
+.ts-insights-tabs {
+  display: flex;
+  background: var(--surface, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+  gap: 2px;
+  width: fit-content;
+}
+.ts-insights-tab {
+  padding: 7px 18px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--text-muted);
+  border: none;
+  background: none;
+  transition: background .15s, color .15s;
+  font-family: inherit;
+}
+.ts-insights-tab.ts-insights-tab--active { background: #0F4799; color: #fff; }
+.ts-insights-tab:not(.ts-insights-tab--active):hover { background: var(--bg); color: var(--text); }
+
+.ts-insights-panel { display: flex; flex-direction: column; gap: 0; }
+
+.ts-insights-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.ts-insights-filter-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-right: 2px;
+}
+.ts-insights-filter-btn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface, var(--bg));
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all .15s;
+  font-family: inherit;
+}
+.ts-insights-filter-btn.ts-insights-filter-btn--active,
+.ts-insights-filter-btn:hover {
+  border-color: #0F4799;
+  color: #0F4799;
+  background: rgba(15,71,153,.06);
+}
+
 .ts-insights-section-title {
   font-size: 15px;
   font-weight: 700;

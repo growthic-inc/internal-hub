@@ -2182,8 +2182,261 @@ const Timesheet = (() => {
     const content = document.getElementById('ts-content')
     if (content) content.innerHTML = '<p class="loading-text">Loading insights…</p>'
 
+    const now            = new Date()
+    const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, 1)
+
+    // Fetch 3 months of entries up-front — all period options slice from this
+    const { data: raw3m } = await API.getTimesheetEntries(_user.id, _toISO(threeMonthsAgo), _toISO(now))
+    const allEntries = raw3m || []
+
+    if (!content) return
+
+    const canSeeTeam = (_p.can_approve || _isManager) && _directReports.length > 0
+
+    content.innerHTML = `
+      <div class="ts-insights-root">
+        <div class="ts-insights-tabs">
+          <button class="ts-insights-tab ts-insights-tab--active" data-itab="mine">My Insights</button>
+          ${canSeeTeam ? '<button class="ts-insights-tab" data-itab="team">Team\'s Insights</button>' : ''}
+        </div>
+
+        <div id="ts-insights-mine" class="ts-insights-panel">
+          <div class="ts-insights-filters">
+            <span class="ts-insights-filter-label">Period:</span>
+            <button class="ts-insights-filter-btn ts-insights-filter-btn--active" data-period="this-month">This Month</button>
+            <button class="ts-insights-filter-btn" data-period="last-month">Last Month</button>
+            <button class="ts-insights-filter-btn" data-period="last-3-months">Last 3 Months</button>
+          </div>
+          <div id="ts-insights-mine-body"></div>
+        </div>
+
+        ${canSeeTeam ? `
+        <div id="ts-insights-team" class="ts-insights-panel" style="display:none;">
+          <div class="ts-chart-card" style="text-align:center;padding:48px 24px;">
+            <p style="color:var(--text-muted);font-size:14px;">Team\'s Insights — coming soon</p>
+          </div>
+        </div>
+        ` : ''}
+      </div>
+    `
+
+    // Sub-tab switching
+    content.querySelectorAll('.ts-insights-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        content.querySelectorAll('.ts-insights-tab').forEach(b => b.classList.remove('ts-insights-tab--active'))
+        btn.classList.add('ts-insights-tab--active')
+        const tab = btn.dataset.itab
+        const mine = document.getElementById('ts-insights-mine')
+        const team = document.getElementById('ts-insights-team')
+        if (mine) mine.style.display = tab === 'mine' ? '' : 'none'
+        if (team) team.style.display = tab === 'team' ? '' : 'none'
+      })
+    })
+
+    // Period filter
+    content.querySelectorAll('.ts-insights-filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        content.querySelectorAll('.ts-insights-filter-btn').forEach(b => b.classList.remove('ts-insights-filter-btn--active'))
+        btn.classList.add('ts-insights-filter-btn--active')
+        _renderMyInsights(btn.dataset.period)
+      })
+    })
+
+    function _renderMyInsights(period) {
+      // Destroy previous period's charts before re-rendering
+      _insightsCharts.forEach(c => { try { c.destroy() } catch (_) {} })
+      _insightsCharts = []
+
+      const today = new Date()
+      let fromDate, toDate
+
+      if (period === 'this-month') {
+        fromDate = new Date(today.getFullYear(), today.getMonth(), 1)
+        toDate   = today
+      } else if (period === 'last-month') {
+        fromDate = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+        toDate   = new Date(today.getFullYear(), today.getMonth(), 0)
+      } else {
+        fromDate = new Date(today.getFullYear(), today.getMonth() - 2, 1)
+        toDate   = today
+      }
+
+      const fromISO = _toISO(fromDate)
+      const toISO   = _toISO(toDate)
+
+      // Honour joining date — never count days before the employee joined
+      const joinDate      = _user.joining_date ? new Date(_user.joining_date) : null
+      const effectiveFrom = joinDate && joinDate > fromDate ? joinDate : fromDate
+
+      // Entries in period (submitted + approved = logged)
+      const periodEntries = allEntries.filter(e => e.date >= fromISO && e.date <= toISO)
+      const loggedEntries = periodEntries.filter(e => ['submitted', 'approved'].includes(e.status))
+
+      // ── Expected hours ────────────────────────────────────────
+      let expectedHours    = 0
+      let workingDaysCount = 0
+      const expCur = new Date(effectiveFrom)
+      while (expCur <= toDate && expCur <= today) {
+        const iso = _toISO(expCur)
+        if (expCur.getDay() !== 0 && !_isHoliday(iso)) {
+          if (!_isFullLeaveDay(iso, _myLeaves)) {
+            workingDaysCount++
+            expectedHours += _isHalfLeaveDay(iso, _myLeaves) ? 3.75 : 7.5
+          }
+        }
+        expCur.setDate(expCur.getDate() + 1)
+      }
+
+      // ── Logged hours & utilization ────────────────────────────
+      const loggedHours = loggedEntries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+      const utilRate    = expectedHours > 0 ? Math.round((loggedHours / expectedHours) * 100) : 0
+      const utilCls     = utilRate >= 80 ? 'stat-value--positive' : utilRate >= 50 ? '' : 'stat-value--warning'
+
+      // ── Unfilled days ─────────────────────────────────────────
+      const cutoff = new Date(today)
+      cutoff.setDate(cutoff.getDate() - _editLockDays())
+      cutoff.setHours(23, 59, 59, 999)
+      const filledDates = new Set(loggedEntries.map(e => e.date))
+      const missedDays  = []
+      const missCur     = new Date(effectiveFrom)
+      while (missCur <= toDate) {
+        if (missCur > cutoff) break
+        const iso = _toISO(missCur)
+        if (missCur.getDay() !== 0 && !_isHoliday(iso) && !_isFullLeaveDay(iso, _myLeaves)) {
+          if (!filledDates.has(iso)) missedDays.push(iso)
+        }
+        missCur.setDate(missCur.getDate() + 1)
+      }
+      const missedCls = missedDays.length === 0 ? 'stat-value--positive' : missedDays.length <= 3 ? '' : 'stat-value--warning'
+
+      // ── Previous month hours (context card) ──────────────────
+      const prevMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+      const prevMonthEnd   = new Date(today.getFullYear(), today.getMonth(), 0)
+      const prevHours      = allEntries
+        .filter(e => e.date >= _toISO(prevMonthStart) && e.date <= _toISO(prevMonthEnd) && ['submitted', 'approved'].includes(e.status))
+        .reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+      const prevLabel = prevMonthStart.toLocaleDateString('en-IN', { month: 'long' })
+
+      // ── Top entities ──────────────────────────────────────────
+      const entityMap = {}
+      loggedEntries.forEach(e => {
+        const name = e.work_type === 'internal'
+          ? (e.internal_entity?.entity_name || e.internal_project?.name || 'Internal')
+          : (e.entity?.entity_name           || e.clients?.client_name   || 'Client')
+        entityMap[name] = (entityMap[name] || 0) + parseFloat(e.hours || 0)
+      })
+      const topEntities = Object.entries(entityMap).sort((a, b) => b[1] - a[1]).slice(0, 6)
+      const maxEntityH  = topEntities[0]?.[1] || 1
+
+      const entityRowsHtml = topEntities.length
+        ? topEntities.map(([name, hrs], i) => {
+            const pct   = loggedHours > 0 ? Math.round((hrs / loggedHours) * 100) : 0
+            const barW  = Math.round((hrs / maxEntityH) * 100)
+            const color = CHART_COLORS[i % CHART_COLORS.length]
+            return `
+              <div style="display:flex;align-items:center;gap:10px;padding:6px 0;">
+                <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block;"></span>
+                <span style="flex:1;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${Utils.escapeHtml(name)}</span>
+                <div style="flex:2;background:var(--bg);border-radius:4px;height:6px;overflow:hidden;">
+                  <div style="height:100%;width:${barW}%;background:${color};border-radius:4px;"></div>
+                </div>
+                <span style="font-size:12px;color:var(--text-muted);width:32px;text-align:right;font-variant-numeric:tabular-nums;">${hrs.toFixed(0)}h</span>
+                <span style="font-size:11px;color:var(--text-muted);width:30px;text-align:right;">${pct}%</span>
+              </div>`
+          }).join('')
+        : '<p style="font-size:13px;color:var(--text-muted);margin:0;">No entries in this period.</p>'
+
+      // ── 3-month trend chart data ──────────────────────────────
+      const trendMonths = []
+      for (let i = 2; i >= 0; i--) {
+        const ms = new Date(today.getFullYear(), today.getMonth() - i, 1)
+        const me = new Date(today.getFullYear(), today.getMonth() - i + 1, 0)
+        const lbl = ms.toLocaleDateString('en-IN', { month: 'short' })
+        const hrs = allEntries
+          .filter(e => e.date >= _toISO(ms) && e.date <= _toISO(me) && ['submitted', 'approved'].includes(e.status))
+          .reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+        const hasData = !joinDate || joinDate <= me
+        trendMonths.push({ label: lbl, hours: hasData ? hrs : null })
+      }
+
+      const body = document.getElementById('ts-insights-mine-body')
+      if (!body) return
+
+      body.innerHTML = `
+        <div class="grid-4 mb-4">
+          <div class="stat-card">
+            <div class="stat-label">Utilization Rate</div>
+            <div class="stat-value ${utilCls}" style="font-variant-numeric:tabular-nums;">${utilRate}%</div>
+            <div class="stat-delta">${loggedHours.toFixed(1)}h of ${expectedHours.toFixed(1)}h expected</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Unfilled Days</div>
+            <div class="stat-value ${missedCls}" style="font-variant-numeric:tabular-nums;">${missedDays.length}</div>
+            <div class="stat-delta">${missedDays.length === 0 ? 'All caught up!' : 'Days with no entry'}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Logged Hours</div>
+            <div class="stat-value" style="font-variant-numeric:tabular-nums;">${loggedHours.toFixed(1)}h</div>
+            <div class="stat-delta">${workingDaysCount} working day${workingDaysCount !== 1 ? 's' : ''}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">${prevLabel}</div>
+            <div class="stat-value" style="color:var(--text-muted);font-variant-numeric:tabular-nums;">${prevHours.toFixed(1)}h</div>
+            <div class="stat-delta">Previous month</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:2fr 1.2fr;gap:16px;">
+          <div class="ts-chart-card" style="margin-bottom:0;">
+            <div class="ts-chart-title">3-Month Trend</div>
+            <div class="ts-chart-wrap"><canvas id="ts-my-trend-chart"></canvas></div>
+          </div>
+          <div class="ts-chart-card" style="margin-bottom:0;">
+            <div class="ts-chart-title">Top Entities</div>
+            <p style="font-size:11px;color:var(--text-muted);margin:-8px 0 12px;">Where your time went</p>
+            ${entityRowsHtml}
+          </div>
+        </div>
+      `
+
+      setTimeout(() => {
+        if (typeof Chart === 'undefined') return
+        const canvas = document.getElementById('ts-my-trend-chart')
+        if (!canvas) return
+        const trendColors = trendMonths.map((m, i) => i === trendMonths.length - 1 ? '#0F4799' : '#CBD5E1')
+        const c = new Chart(canvas, {
+          type: 'bar',
+          data: {
+            labels: trendMonths.map(m => m.label),
+            datasets: [{
+              data:            trendMonths.map(m => m.hours),
+              backgroundColor: trendColors,
+              borderRadius:    6,
+            }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: { callbacks: { label: ctx => ctx.parsed.y === null ? ' No data' : ` ${ctx.parsed.y.toFixed(1)}h` } },
+            },
+            scales: {
+              x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+              y: { beginAtZero: true, ticks: { font: { size: 10 } } },
+            },
+          },
+        })
+        _insightsCharts.push(c)
+      }, 0)
+    }
+
+    _renderMyInsights('this-month')
+
+    // ── Legacy insights code below — no longer rendered ──────────
+    // Will be removed once Team's Insights is built.
+    // ─────────────────────────────────────────────────────────────
+
     // Date ranges
-    const now           = new Date()
     const monthStart    = new Date(now.getFullYear(), now.getMonth(), 1)
     const lastMonthS    = new Date(now.getFullYear(), now.getMonth() - 1, 1)
     const lastMonthE    = new Date(now.getFullYear(), now.getMonth(), 0)
