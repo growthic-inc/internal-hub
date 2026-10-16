@@ -2448,18 +2448,19 @@ const Timesheet = (() => {
         const drEntries = (_teamAllEntries[dr.id] || []).filter(e => e.date >= fromISO && e.date <= toISO)
         const logged = drEntries.filter(e => ['submitted', 'approved'].includes(e.status)).reduce((s, e) => s + parseFloat(e.hours || 0), 0)
 
-        const joinDate = dr.joining_date ? new Date(dr.joining_date) : null
-        const effFrom  = joinDate && joinDate > fromDate ? joinDate : fromDate
+        const joinDate   = dr.joining_date ? new Date(dr.joining_date) : null
+        const effFrom    = joinDate && joinDate > fromDate ? joinDate : fromDate
+        const teamCutoff = new Date(today)
+        teamCutoff.setDate(teamCutoff.getDate() - _editLockDays())
+        teamCutoff.setHours(23, 59, 59, 999)
+        const loggedDates = new Set(drEntries.filter(e => ['submitted', 'approved'].includes(e.status)).map(e => e.date))
         let expected = 0, wdCount = 0, unfilled = 0
         const cur = new Date(effFrom)
         while (cur <= toDate && cur <= today) {
           const iso = _toISO(cur)
           if (cur.getDay() !== 0 && !_isHoliday(iso)) {
             wdCount++; expected += 8
-            if (cur < today) {
-              const hasEntry = drEntries.some(e => e.date === iso && ['submitted', 'approved'].includes(e.status))
-              if (!hasEntry) unfilled++
-            }
+            if (cur <= teamCutoff && !loggedDates.has(iso)) unfilled++
           }
           cur.setDate(cur.getDate() + 1)
         }
