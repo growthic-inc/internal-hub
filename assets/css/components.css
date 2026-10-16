@@ -6808,8 +6808,23 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 16px 5px 36px;
+  padding: 7px 16px 7px 28px;
+  border-bottom: 1px solid var(--border);
+  transition: background .1s;
 }
+.ts-drill-sub-row:hover { background: rgba(15,71,153,.03); }
+.ts-drill-entries {
+  background: var(--surface, var(--bg));
+  border-bottom: 1px solid var(--border);
+}
+.ts-drill-entry-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 16px 7px 44px;
+  border-bottom: 1px solid var(--border);
+}
+.ts-drill-entry-row:last-child { border-bottom: none; }
 
 .ts-insights-section-title {
   font-size: 15px;

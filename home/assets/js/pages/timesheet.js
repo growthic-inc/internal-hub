@@ -2548,39 +2548,74 @@ const Timesheet = (() => {
       }
 
       // ── Client drill-down ─────────────────────────────────────
-      // Level 1: Client/Project → Level 2: Entity/Work Area → hours
+      // Level 1: Client/Project → Level 2: Work Area → Level 3: individual entries
       const drillMap = {}
+      // memberById for name lookup in L3
+      const memberById = {}
+      selectedMembers.forEach(dr => { memberById[dr.id] = dr })
+
       selectedMembers.forEach(dr => {
         const drEntries = (_teamAllEntries[dr.id] || []).filter(e => e.date >= fromISO && e.date <= toISO && ['submitted', 'approved'].includes(e.status))
         drEntries.forEach(e => {
-          const isInt    = e.work_type === 'internal'
-          const l1       = isInt ? (e.internal_project?.name || 'Internal') : (e.clients?.client_name || 'Unknown Client')
-          const l2       = isInt ? (e.internal_entity?.entity_name || '—') : (e.entity?.entity_name || '—')
-          const hrs      = parseFloat(e.hours || 0)
+          const isInt = e.work_type === 'internal'
+          const l1    = isInt ? (e.internal_project?.name || 'Internal') : (e.clients?.client_name || 'Unknown Client')
+          const l2    = isInt ? (e.internal_entity?.entity_name || '—') : (e.entity?.entity_name || '—')
+          const hrs   = parseFloat(e.hours || 0)
           if (!drillMap[l1]) drillMap[l1] = { total: 0, sub: {}, isInternal: isInt }
           drillMap[l1].total += hrs
-          drillMap[l1].sub[l2] = (drillMap[l1].sub[l2] || 0) + hrs
+          if (!drillMap[l1].sub[l2]) drillMap[l1].sub[l2] = { total: 0, entries: [] }
+          drillMap[l1].sub[l2].total += hrs
+          drillMap[l1].sub[l2].entries.push({ empId: dr.id, date: e.date, hours: hrs, desc: e.description || e.notes || '', status: e.status })
         })
       })
+
       const drillRows = Object.entries(drillMap).sort((a, b) => b[1].total - a[1].total).map(([client, val]) => {
-        const pct  = totalLogged > 0 ? Math.round((val.total / totalLogged) * 100) : 0
-        const tag  = val.isInternal
+        const pct = totalLogged > 0 ? Math.round((val.total / totalLogged) * 100) : 0
+        const tag = val.isInternal
           ? `<span style="font-size:10px;padding:1px 6px;background:#EEF2FF;color:#6366F1;border-radius:99px;font-weight:600;">Internal</span>`
           : `<span style="font-size:10px;padding:1px 6px;background:#F0FDF4;color:#059669;border-radius:99px;font-weight:600;">Client</span>`
-        const subRows = Object.entries(val.sub).sort((a, b) => b[1] - a[1]).map(([sub, h]) =>
-          `<div class="ts-drill-sub-row">
-            <span style="color:var(--text-muted);">↳</span>
-            <span style="flex:1;font-size:12px;color:var(--text-muted);">${Utils.escapeHtml(sub)}</span>
-            <span style="font-size:12px;color:var(--text-muted);font-variant-numeric:tabular-nums;">${h.toFixed(1)}h</span>
-          </div>`
-        ).join('')
+
+        const subRows = Object.entries(val.sub).sort((a, b) => b[1].total - a[1].total).map(([area, aVal]) => {
+          const areaId = btoa(encodeURIComponent(client + '||' + area)).replace(/[^a-z0-9]/gi, '').slice(0, 24)
+          // Sort entries: most recent first
+          const sortedEntries = [...aVal.entries].sort((a, b) => b.date.localeCompare(a.date))
+          const entryRows = sortedEntries.map(en => {
+            const emp = memberById[en.empId]
+            const empName = emp?.name || 'Unknown'
+            const empImg  = emp?.profile_image_url
+              ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;flex-shrink:0;" alt="">`
+              : `<span style="width:20px;height:20px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0;">${Utils.escapeHtml(Utils.getInitials(empName))}</span>`
+            const statusDot = en.status === 'approved'
+              ? `<span style="width:6px;height:6px;border-radius:50%;background:#059669;flex-shrink:0;" title="Approved"></span>`
+              : `<span style="width:6px;height:6px;border-radius:50%;background:#F59E0B;flex-shrink:0;" title="Submitted"></span>`
+            const dateStr = new Date(en.date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+            return `
+              <div class="ts-drill-entry-row">
+                ${empImg}
+                <span style="font-size:12px;font-weight:500;flex-shrink:0;min-width:90px;">${Utils.escapeHtml(empName)}</span>
+                <span style="font-size:11px;color:var(--text-muted);flex-shrink:0;min-width:52px;">${dateStr}</span>
+                ${en.desc ? `<span style="font-size:11px;color:var(--text-muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${Utils.escapeHtml(en.desc)}">${Utils.escapeHtml(en.desc)}</span>` : `<span style="flex:1;"></span>`}
+                ${statusDot}
+                <span style="font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;flex-shrink:0;">${en.hours.toFixed(1)}h</span>
+              </div>`
+          }).join('')
+          return `
+            <div class="ts-drill-sub-row" data-area-id="${areaId}" style="cursor:pointer;">
+              <svg class="ts-drill-area-arrow" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;color:var(--text-muted);transition:transform .15s;"><polyline points="9 18 15 12 9 6"/></svg>
+              <span style="flex:1;font-size:12px;color:var(--text);">${Utils.escapeHtml(area)}</span>
+              <span style="font-size:11px;color:var(--text-muted);margin-right:4px;">${sortedEntries.length} entr${sortedEntries.length === 1 ? 'y' : 'ies'}</span>
+              <span style="font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;">${aVal.total.toFixed(1)}h</span>
+            </div>
+            <div class="ts-drill-entries" data-entries-for="${areaId}" style="display:none;">${entryRows}</div>`
+        }).join('')
+
         return `
           <div class="ts-drill-row" data-drill-id="${Utils.escapeHtml(client)}">
             <div class="ts-drill-row-header">
               <svg class="ts-drill-arrow" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-              <span style="flex:1;font-size:13px;font-weight:500;">${Utils.escapeHtml(client)}</span>
+              <span style="flex:1;font-size:13px;font-weight:600;">${Utils.escapeHtml(client)}</span>
               ${tag}
-              <span style="font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;">${val.total.toFixed(1)}h</span>
+              <span style="font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;">${val.total.toFixed(1)}h</span>
               <span style="font-size:12px;color:var(--text-muted);width:34px;text-align:right;">${pct}%</span>
             </div>
             <div class="ts-drill-sub" style="display:none;">${subRows}</div>
@@ -2673,14 +2708,27 @@ const Timesheet = (() => {
         _insightsCharts.push(c)
       }, 0)
 
-      // Drill-down toggle
+      // Drill-down toggle — L1 header
       body.querySelectorAll('.ts-drill-row').forEach(row => {
         row.querySelector('.ts-drill-row-header').addEventListener('click', () => {
           const sub   = row.querySelector('.ts-drill-sub')
           const arrow = row.querySelector('.ts-drill-arrow')
           const open  = sub.style.display !== 'none'
-          sub.style.display   = open ? 'none' : 'block'
+          sub.style.display     = open ? 'none' : 'block'
           arrow.style.transform = open ? '' : 'rotate(90deg)'
+        })
+      })
+      // L2 work-area row → L3 entries
+      body.querySelectorAll('.ts-drill-sub-row[data-area-id]').forEach(areaRow => {
+        areaRow.addEventListener('click', (e) => {
+          e.stopPropagation()
+          const id       = areaRow.dataset.areaId
+          const entries  = body.querySelector(`.ts-drill-entries[data-entries-for="${id}"]`)
+          const arrow    = areaRow.querySelector('.ts-drill-area-arrow')
+          if (!entries) return
+          const open = entries.style.display !== 'none'
+          entries.style.display   = open ? 'none' : 'block'
+          if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)'
         })
       })
     }
