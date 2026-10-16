@@ -2333,19 +2333,26 @@ const Timesheet = (() => {
           row.addEventListener('click', () => {
             const id = row.dataset.id
             if (_teamSelectedIds.has(id)) {
-              if (_teamSelectedIds.size > 1) _teamSelectedIds.delete(id)
+              _teamSelectedIds.delete(id)
             } else {
               _teamSelectedIds.add(id)
             }
             _updateTriggerLabel()
+            if (typeof _updateSelectAllLabel === 'function') _updateSelectAllLabel()
             _buildMemberRows(document.getElementById('ts-insights-member-search')?.value || '')
-            _renderTeamInsights(_teamPeriod, _teamSelectedIds, _teamCustomFrom, _teamCustomTo)
+            if (_teamSelectedIds.size > 0) {
+              _renderTeamInsights(_teamPeriod, _teamSelectedIds, _teamCustomFrom, _teamCustomTo)
+            } else {
+              const body = document.getElementById('ts-insights-team-body')
+              if (body) body.innerHTML = '<p style="font-size:13px;color:var(--text-muted);text-align:center;padding:48px 0;">Select at least one member to view insights.</p>'
+            }
           })
         })
       }
 
       _buildMemberRows()
       _updateTriggerLabel()
+      _updateSelectAllLabel()
 
       // Dropdown open/close
       const trigger  = document.getElementById('ts-member-trigger')
@@ -2362,19 +2369,36 @@ const Timesheet = (() => {
         }, { capture: true })
       }
 
-      document.getElementById('ts-member-select-all')?.addEventListener('click', () => {
-        _directReports.forEach(dr => _teamSelectedIds.add(dr.id))
+      const _saBtn = document.getElementById('ts-member-select-all')
+      function _updateSelectAllLabel() {
+        if (!_saBtn) return
+        const allSelected = _directReports.every(dr => _teamSelectedIds.has(dr.id))
+        _saBtn.textContent = allSelected ? 'Deselect all' : 'Select all'
+        _saBtn.style.color = allSelected ? '#DC2626' : '#0F4799'
+      }
+      _saBtn?.addEventListener('click', () => {
+        const allSelected = _directReports.every(dr => _teamSelectedIds.has(dr.id))
+        if (allSelected) {
+          _teamSelectedIds.clear()
+        } else {
+          _directReports.forEach(dr => _teamSelectedIds.add(dr.id))
+        }
         _updateTriggerLabel()
+        _updateSelectAllLabel()
         _buildMemberRows(document.getElementById('ts-insights-member-search')?.value || '')
-        _renderTeamInsights(_teamPeriod, _teamSelectedIds, _teamCustomFrom, _teamCustomTo)
+        if (_teamSelectedIds.size > 0) _renderTeamInsights(_teamPeriod, _teamSelectedIds, _teamCustomFrom, _teamCustomTo)
+        else {
+          const body = document.getElementById('ts-insights-team-body')
+          if (body) body.innerHTML = '<p style="font-size:13px;color:var(--text-muted);text-align:center;padding:48px 0;">Select at least one member to view insights.</p>'
+        }
       })
       document.getElementById('ts-member-clear-all')?.addEventListener('click', () => {
-        const first = _directReports[0]?.id
         _teamSelectedIds.clear()
-        if (first) _teamSelectedIds.add(first)
         _updateTriggerLabel()
+        _updateSelectAllLabel()
         _buildMemberRows(document.getElementById('ts-insights-member-search')?.value || '')
-        _renderTeamInsights(_teamPeriod, _teamSelectedIds, _teamCustomFrom, _teamCustomTo)
+        const body = document.getElementById('ts-insights-team-body')
+        if (body) body.innerHTML = '<p style="font-size:13px;color:var(--text-muted);text-align:center;padding:48px 0;">Select at least one member to view insights.</p>'
       })
 
       const searchEl = document.getElementById('ts-insights-member-search')
@@ -2570,11 +2594,17 @@ const Timesheet = (() => {
         })
       })
 
-      const drillRows = Object.entries(drillMap).sort((a, b) => b[1].total - a[1].total).map(([client, val]) => {
-        const pct = totalLogged > 0 ? Math.round((val.total / totalLogged) * 100) : 0
-        const tag = val.isInternal
-          ? `<span style="font-size:10px;padding:1px 6px;background:#EEF2FF;color:#6366F1;border-radius:99px;font-weight:600;">Internal</span>`
-          : `<span style="font-size:10px;padding:1px 6px;background:#F0FDF4;color:#059669;border-radius:99px;font-weight:600;">Client</span>`
+      const drillEntries = Object.entries(drillMap).sort((a, b) => b[1].total - a[1].total)
+      const drillMax = drillEntries[0]?.[1].total || 1
+      const drillVisible = drillEntries.slice(0, 8)
+      const drillHidden  = drillEntries.slice(8)
+
+      function _buildDrillRow([client, val], idx) {
+        const pct      = totalLogged > 0 ? Math.round((val.total / totalLogged) * 100) : 0
+        const barW     = Math.round((val.total / drillMax) * 100)
+        const accent   = val.isInternal ? '#6366F1' : '#059669'
+        const tagBg    = val.isInternal ? '#EEF2FF' : '#F0FDF4'
+        const tagLabel = val.isInternal ? 'Internal' : 'Client'
 
         const subRows = Object.entries(val.sub).sort((a, b) => b[1].total - a[1].total).map(([area, aVal]) => {
           const areaId = btoa(encodeURIComponent(client + '||' + area)).replace(/[^a-z0-9]/gi, '').slice(0, 24)
@@ -2611,17 +2641,31 @@ const Timesheet = (() => {
         }).join('')
 
         return `
-          <div class="ts-drill-row" data-drill-id="${Utils.escapeHtml(client)}">
-            <div class="ts-drill-row-header">
+          <div class="ts-drill-row" data-drill-id="${Utils.escapeHtml(client)}" style="border-left:3px solid ${accent};">
+            <div class="ts-drill-row-header" style="padding:10px 14px 6px 13px;">
               <svg class="ts-drill-arrow" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-              <span style="flex:1;font-size:13px;font-weight:600;">${Utils.escapeHtml(client)}</span>
-              ${tag}
-              <span style="font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;">${val.total.toFixed(1)}h</span>
-              <span style="font-size:12px;color:var(--text-muted);width:34px;text-align:right;">${pct}%</span>
+              <span style="flex:1;font-size:13px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${Utils.escapeHtml(client)}">${Utils.escapeHtml(client)}</span>
+              <span style="font-size:10px;padding:1px 6px;background:${tagBg};color:${accent};border-radius:99px;font-weight:600;flex-shrink:0;margin-right:8px;">${tagLabel}</span>
+              <span style="font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;flex-shrink:0;">${val.total.toFixed(1)}h</span>
+              <span style="font-size:11px;color:var(--text-muted);width:30px;text-align:right;flex-shrink:0;">${pct}%</span>
+            </div>
+            <div style="padding:0 14px 8px 13px;">
+              <div style="height:4px;background:var(--border);border-radius:99px;overflow:hidden;">
+                <div style="height:100%;width:${barW}%;background:${accent};border-radius:99px;transition:width .3s;"></div>
+              </div>
             </div>
             <div class="ts-drill-sub" style="display:none;">${subRows}</div>
           </div>`
-      }).join('')
+      }
+
+      const drillRows = [
+        ...drillVisible.map((e, i) => _buildDrillRow(e, i)),
+        drillHidden.length ? `<div id="ts-drill-more-wrap">
+          <button id="ts-drill-show-more" style="width:100%;padding:10px;font-size:12px;color:#0F4799;background:none;border:none;border-top:1px solid var(--border);cursor:pointer;font-family:inherit;">
+            Show ${drillHidden.length} more client${drillHidden.length > 1 ? 's' : ''}…
+          </button>
+        </div>` : ''
+      ].join('')
 
       body.innerHTML = `
         <div class="grid-4 mb-4">
@@ -2711,6 +2755,7 @@ const Timesheet = (() => {
 
       // Drill-down toggle — L1 header
       body.querySelectorAll('.ts-drill-row').forEach(row => {
+        row.dataset.bound = '1'
         row.querySelector('.ts-drill-row-header').addEventListener('click', () => {
           const sub   = row.querySelector('.ts-drill-sub')
           const arrow = row.querySelector('.ts-drill-arrow')
@@ -2719,6 +2764,40 @@ const Timesheet = (() => {
           arrow.style.transform = open ? '' : 'rotate(90deg)'
         })
       })
+      // Show more drill rows
+      const showMoreBtn = body.querySelector('#ts-drill-show-more')
+      if (showMoreBtn) {
+        showMoreBtn.addEventListener('click', () => {
+          const wrap = body.querySelector('#ts-drill-more-wrap')
+          if (wrap) {
+            const extraHtml = drillHidden.map((e, i) => _buildDrillRow(e, drillVisible.length + i)).join('')
+            wrap.outerHTML = extraHtml
+            // Re-bind click handlers for new rows
+            body.querySelectorAll('.ts-drill-row').forEach(row => {
+              if (!row.dataset.bound) {
+                row.dataset.bound = '1'
+                row.querySelector('.ts-drill-row-header').addEventListener('click', () => {
+                  const sub = row.querySelector('.ts-drill-sub'); const arrow = row.querySelector('.ts-drill-arrow')
+                  const open = sub.style.display !== 'none'
+                  sub.style.display = open ? 'none' : 'block'; arrow.style.transform = open ? '' : 'rotate(90deg)'
+                })
+              }
+            })
+            body.querySelectorAll('.ts-drill-sub-row[data-area-id]').forEach(areaRow => {
+              if (!areaRow.dataset.bound) {
+                areaRow.dataset.bound = '1'
+                areaRow.addEventListener('click', (e) => {
+                  e.stopPropagation()
+                  const id = areaRow.dataset.areaId; const entries = body.querySelector(`.ts-drill-entries[data-entries-for="${id}"]`); const arrow = areaRow.querySelector('.ts-drill-area-arrow')
+                  if (!entries) return; const open = entries.style.display !== 'none'
+                  entries.style.display = open ? 'none' : 'block'; if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)'
+                })
+              }
+            })
+          }
+        })
+      }
+
       // L2 work-area row → L3 entries
       body.querySelectorAll('.ts-drill-sub-row[data-area-id]').forEach(areaRow => {
         areaRow.addEventListener('click', (e) => {
