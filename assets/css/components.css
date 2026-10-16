@@ -6740,6 +6740,16 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   color: #0F4799;
   background: rgba(15,71,153,.06);
 }
+.ts-insights-month-input {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface, var(--bg));
+  font-size: 12px;
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+}
 
 .ts-insights-section-title {
   font-size: 15px;

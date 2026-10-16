@@ -2206,6 +2206,13 @@ const Timesheet = (() => {
             <button class="ts-insights-filter-btn ts-insights-filter-btn--active" data-period="this-month">This Month</button>
             <button class="ts-insights-filter-btn" data-period="last-month">Last Month</button>
             <button class="ts-insights-filter-btn" data-period="last-3-months">Last 3 Months</button>
+            <button class="ts-insights-filter-btn" data-period="custom">Custom</button>
+            <div id="ts-insights-custom-picker" style="display:none;display:none;align-items:center;gap:6px;flex-wrap:wrap;">
+              <input type="month" id="ts-insights-from-month" class="ts-insights-month-input">
+              <span style="font-size:12px;color:var(--text-muted);">to</span>
+              <input type="month" id="ts-insights-to-month" class="ts-insights-month-input">
+              <button id="ts-insights-apply-btn" class="ts-insights-filter-btn ts-insights-filter-btn--active" style="margin-left:2px;">Apply</button>
+            </div>
           </div>
           <div id="ts-insights-mine-body"></div>
         </div>
@@ -2234,15 +2241,40 @@ const Timesheet = (() => {
     })
 
     // Period filter
-    content.querySelectorAll('.ts-insights-filter-btn').forEach(btn => {
+    content.querySelectorAll('.ts-insights-filter-btn[data-period]').forEach(btn => {
       btn.addEventListener('click', () => {
-        content.querySelectorAll('.ts-insights-filter-btn').forEach(b => b.classList.remove('ts-insights-filter-btn--active'))
+        const picker = document.getElementById('ts-insights-custom-picker')
+        if (btn.dataset.period === 'custom') {
+          content.querySelectorAll('.ts-insights-filter-btn[data-period]').forEach(b => b.classList.remove('ts-insights-filter-btn--active'))
+          btn.classList.add('ts-insights-filter-btn--active')
+          if (picker) { picker.style.display = 'flex'; picker.style.removeProperty('display'); picker.style.display = 'flex' }
+          return
+        }
+        if (picker) picker.style.display = 'none'
+        content.querySelectorAll('.ts-insights-filter-btn[data-period]').forEach(b => b.classList.remove('ts-insights-filter-btn--active'))
         btn.classList.add('ts-insights-filter-btn--active')
-        _renderMyInsights(btn.dataset.period)
+        _renderMyInsights(btn.dataset.period, allEntries)
       })
     })
 
-    function _renderMyInsights(period) {
+    // Custom date range apply
+    const applyBtn = document.getElementById('ts-insights-apply-btn')
+    if (applyBtn) {
+      applyBtn.addEventListener('click', async () => {
+        const fromVal = document.getElementById('ts-insights-from-month')?.value
+        const toVal   = document.getElementById('ts-insights-to-month')?.value
+        if (!fromVal || !toVal || fromVal > toVal) return
+        const body = document.getElementById('ts-insights-mine-body')
+        if (body) body.innerHTML = '<p class="loading-text">Loading…</p>'
+        const fromISO = fromVal + '-01'
+        const [yr, mo] = toVal.split('-').map(Number)
+        const toISO   = _toISO(new Date(yr, mo, 0))
+        const { data } = await API.getTimesheetEntries(_user.id, fromISO, toISO)
+        _renderMyInsights('custom', data || [], new Date(fromISO), new Date(yr, mo - 1, 1), new Date(yr, mo, 0))
+      })
+    }
+
+    function _renderMyInsights(period, entries, customFrom, customTo) {
       // Destroy previous period's charts before re-rendering
       _insightsCharts.forEach(c => { try { c.destroy() } catch (_) {} })
       _insightsCharts = []
@@ -2256,6 +2288,9 @@ const Timesheet = (() => {
       } else if (period === 'last-month') {
         fromDate = new Date(today.getFullYear(), today.getMonth() - 1, 1)
         toDate   = new Date(today.getFullYear(), today.getMonth(), 0)
+      } else if (period === 'custom') {
+        fromDate = customFrom
+        toDate   = customTo
       } else {
         fromDate = new Date(today.getFullYear(), today.getMonth() - 2, 1)
         toDate   = today
@@ -2269,7 +2304,7 @@ const Timesheet = (() => {
       const effectiveFrom = joinDate && joinDate > fromDate ? joinDate : fromDate
 
       // Entries in period (submitted + approved = logged)
-      const periodEntries = allEntries.filter(e => e.date >= fromISO && e.date <= toISO)
+      const periodEntries = entries.filter(e => e.date >= fromISO && e.date <= toISO)
       const loggedEntries = periodEntries.filter(e => ['submitted', 'approved'].includes(e.status))
 
       // ── Expected hours ────────────────────────────────────────
@@ -2281,7 +2316,7 @@ const Timesheet = (() => {
         if (expCur.getDay() !== 0 && !_isHoliday(iso)) {
           if (!_isFullLeaveDay(iso, _myLeaves)) {
             workingDaysCount++
-            expectedHours += _isHalfLeaveDay(iso, _myLeaves) ? 3.75 : 7.5
+            expectedHours += _isHalfLeaveDay(iso, _myLeaves) ? 4 : 8
           }
         }
         expCur.setDate(expCur.getDate() + 1)
@@ -2312,7 +2347,7 @@ const Timesheet = (() => {
       // ── Previous month hours (context card) ──────────────────
       const prevMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1)
       const prevMonthEnd   = new Date(today.getFullYear(), today.getMonth(), 0)
-      const prevHours      = allEntries
+      const prevHours      = entries
         .filter(e => e.date >= _toISO(prevMonthStart) && e.date <= _toISO(prevMonthEnd) && ['submitted', 'approved'].includes(e.status))
         .reduce((s, e) => s + parseFloat(e.hours || 0), 0)
       const prevLabel = prevMonthStart.toLocaleDateString('en-IN', { month: 'long' })
@@ -2346,17 +2381,21 @@ const Timesheet = (() => {
           }).join('')
         : '<p style="font-size:13px;color:var(--text-muted);margin:0;">No entries in this period.</p>'
 
-      // ── 3-month trend chart data ──────────────────────────────
+      // ── Trend chart — months in selected range (up to 6) ────────
       const trendMonths = []
-      for (let i = 2; i >= 0; i--) {
-        const ms = new Date(today.getFullYear(), today.getMonth() - i, 1)
-        const me = new Date(today.getFullYear(), today.getMonth() - i + 1, 0)
-        const lbl = ms.toLocaleDateString('en-IN', { month: 'short' })
-        const hrs = allEntries
+      const trendStart  = new Date(fromDate.getFullYear(), fromDate.getMonth(), 1)
+      const trendEnd    = new Date(toDate.getFullYear(),   toDate.getMonth(),   1)
+      const trendCur    = new Date(trendStart)
+      while (trendCur <= trendEnd && trendMonths.length < 6) {
+        const ms  = new Date(trendCur)
+        const me  = new Date(trendCur.getFullYear(), trendCur.getMonth() + 1, 0)
+        const lbl = ms.toLocaleDateString('en-IN', { month: 'short', year: trendMonths.length === 0 || ms.getMonth() === 0 ? '2-digit' : undefined })
+        const hrs = entries
           .filter(e => e.date >= _toISO(ms) && e.date <= _toISO(me) && ['submitted', 'approved'].includes(e.status))
           .reduce((s, e) => s + parseFloat(e.hours || 0), 0)
         const hasData = !joinDate || joinDate <= me
         trendMonths.push({ label: lbl, hours: hasData ? hrs : null })
+        trendCur.setMonth(trendCur.getMonth() + 1)
       }
 
       const body = document.getElementById('ts-insights-mine-body')
@@ -2430,7 +2469,7 @@ const Timesheet = (() => {
       }, 0)
     }
 
-    _renderMyInsights('this-month')
+    _renderMyInsights('this-month', allEntries)
   }
 
   function _statusBadge(status) {
