@@ -2370,13 +2370,13 @@ const Timesheet = (() => {
             const color = CHART_COLORS[i % CHART_COLORS.length]
             return `
               <div style="display:flex;align-items:center;gap:10px;padding:6px 0;">
-                <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block;"></span>
-                <span style="flex:1;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${Utils.escapeHtml(name)}</span>
-                <div style="flex:2;background:var(--bg);border-radius:4px;height:6px;overflow:hidden;">
+                <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block;margin-top:1px;align-self:flex-start;"></span>
+                <span style="flex:1;min-width:0;font-size:13px;font-weight:500;word-break:break-word;" title="${Utils.escapeHtml(name)}">${Utils.escapeHtml(name)}</span>
+                <div style="flex:2;background:var(--bg);border-radius:4px;height:6px;overflow:hidden;flex-shrink:0;">
                   <div style="height:100%;width:${barW}%;background:${color};border-radius:4px;"></div>
                 </div>
-                <span style="font-size:12px;color:var(--text-muted);width:32px;text-align:right;font-variant-numeric:tabular-nums;">${hrs.toFixed(0)}h</span>
-                <span style="font-size:11px;color:var(--text-muted);width:30px;text-align:right;">${pct}%</span>
+                <span style="font-size:12px;color:var(--text-muted);width:32px;text-align:right;font-variant-numeric:tabular-nums;flex-shrink:0;">${hrs.toFixed(0)}h</span>
+                <span style="font-size:11px;color:var(--text-muted);width:30px;text-align:right;flex-shrink:0;">${pct}%</span>
               </div>`
           }).join('')
         : '<p style="font-size:13px;color:var(--text-muted);margin:0;">No entries in this period.</p>'
