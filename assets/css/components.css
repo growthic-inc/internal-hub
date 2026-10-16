@@ -6750,6 +6750,46 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   font-family: inherit;
   cursor: pointer;
 }
+.ts-insights-member-search {
+  width: 100%;
+  padding: 6px 10px 6px 30px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface, var(--bg));
+  font-size: 12px;
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+}
+.ts-insights-member-search:focus { border-color: #0F4799; }
+.ts-insights-members-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0 2px;
+}
+.ts-insights-member-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px 4px 5px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--surface, var(--bg));
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  user-select: none;
+}
+.ts-insights-member-chip:hover { border-color: #0F4799; }
+.ts-insights-member-chip--on {
+  border-color: #0F4799;
+  background: rgba(15,71,153,.06);
+}
+.ts-insights-member-chip-check {
+  display: none;
+  color: #0F4799;
+}
+.ts-insights-member-chip--on .ts-insights-member-chip-check { display: flex; }
 
 .ts-insights-section-title {
   font-size: 15px;

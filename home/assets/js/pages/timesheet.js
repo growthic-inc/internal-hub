@@ -2219,17 +2219,49 @@ const Timesheet = (() => {
 
         ${canSeeTeam ? `
         <div id="ts-insights-team" class="ts-insights-panel" style="display:none;">
-          <div class="ts-chart-card" style="text-align:center;padding:48px 24px;">
-            <p style="color:var(--text-muted);font-size:14px;">Team\'s Insights — coming soon</p>
+          <div class="ts-insights-filters" style="margin-bottom:10px;">
+            <div style="position:relative;flex:1;max-width:260px;">
+              <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--text-muted);" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="search" id="ts-insights-member-search" class="ts-insights-member-search" placeholder="Search member…" autocomplete="off">
+            </div>
           </div>
+          <div id="ts-insights-members-list" class="ts-insights-members-list"></div>
+          <div class="ts-insights-filters" style="margin-top:12px;">
+            <span class="ts-insights-filter-label">Period:</span>
+            <button class="ts-insights-team-filter ts-insights-filter-btn ts-insights-filter-btn--active" data-tperiod="this-month">This Month</button>
+            <button class="ts-insights-team-filter ts-insights-filter-btn" data-tperiod="last-month">Last Month</button>
+            <button class="ts-insights-team-filter ts-insights-filter-btn" data-tperiod="last-3-months">Last 3 Months</button>
+            <button class="ts-insights-team-filter ts-insights-filter-btn" data-tperiod="custom">Custom</button>
+            <div id="ts-insights-team-picker" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;">
+              <input type="month" id="ts-insights-team-from" class="ts-insights-month-input">
+              <span style="font-size:12px;color:var(--text-muted);">to</span>
+              <input type="month" id="ts-insights-team-to" class="ts-insights-month-input">
+              <button id="ts-insights-team-apply" class="ts-insights-filter-btn ts-insights-filter-btn--active" style="margin-left:2px;">Apply</button>
+            </div>
+          </div>
+          <div id="ts-insights-team-body" style="margin-top:16px;"><p class="loading-text">Loading team data…</p></div>
         </div>
         ` : ''}
       </div>
     `
 
     // Sub-tab switching
+    let _teamDataLoaded = false
+    let _teamAllEntries = {}  // keyed by employee id
+    let _teamSelectedIds = new Set(_directReports.map(dr => dr.id))
+    let _teamPeriod = 'this-month'
+    let _teamCustomFrom = null
+    let _teamCustomTo   = null
+
+    async function _loadTeamData(fromISO, toISO) {
+      const results = await Promise.all(
+        _directReports.map(dr => API.getTimesheetEntries(dr.id, fromISO, toISO).then(r => ({ id: dr.id, entries: r.data || [] })))
+      )
+      results.forEach(({ id, entries }) => { _teamAllEntries[id] = entries })
+    }
+
     content.querySelectorAll('.ts-insights-tab').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         content.querySelectorAll('.ts-insights-tab').forEach(b => b.classList.remove('ts-insights-tab--active'))
         btn.classList.add('ts-insights-tab--active')
         const tab = btn.dataset.itab
@@ -2237,8 +2269,307 @@ const Timesheet = (() => {
         const team = document.getElementById('ts-insights-team')
         if (mine) mine.style.display = tab === 'mine' ? '' : 'none'
         if (team) team.style.display = tab === 'team' ? '' : 'none'
+        if (tab === 'team' && !_teamDataLoaded) {
+          _teamDataLoaded = true
+          const t3ago = new Date(now.getFullYear(), now.getMonth() - 2, 1)
+          await _loadTeamData(_toISO(t3ago), _toISO(now))
+          _initTeamPanel()
+          _renderTeamInsights(_teamPeriod, _teamSelectedIds)
+        }
       })
     })
+
+    function _initTeamPanel() {
+      const membersList = document.getElementById('ts-insights-members-list')
+      if (!membersList) return
+
+      function _buildMemberChips(filter = '') {
+        const q = filter.toLowerCase()
+        const filtered = _directReports.filter(dr => !q || (dr.name || '').toLowerCase().includes(q))
+        membersList.innerHTML = filtered.map(dr => {
+          const checked = _teamSelectedIds.has(dr.id)
+          const initials = Utils.getInitials(dr.name || '?')
+          const dept = dr.department ? dr.department.replace(/_/g, ' ') : ''
+          const img  = dr.profile_image_url
+            ? `<img src="${Utils.escapeHtml(dr.profile_image_url)}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" alt="">`
+            : `<span style="font-size:10px;font-weight:700;color:#fff;">${Utils.escapeHtml(initials)}</span>`
+          return `
+            <label class="ts-insights-member-chip${checked ? ' ts-insights-member-chip--on' : ''}" data-id="${Utils.escapeHtml(dr.id)}">
+              <input type="checkbox" style="display:none;" ${checked ? 'checked' : ''} data-member-id="${Utils.escapeHtml(dr.id)}">
+              <span style="width:22px;height:22px;border-radius:50%;background:var(--primary);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">${img}</span>
+              <span style="font-size:12px;font-weight:500;white-space:nowrap;">${Utils.escapeHtml(dr.name || 'Unknown')}</span>
+              ${dept ? `<span style="font-size:10px;color:var(--text-muted);text-transform:capitalize;white-space:nowrap;">${Utils.escapeHtml(dept)}</span>` : ''}
+              <span class="ts-insights-member-chip-check">
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+              </span>
+            </label>`
+        }).join('')
+
+        membersList.querySelectorAll('.ts-insights-member-chip').forEach(chip => {
+          chip.addEventListener('click', () => {
+            const id = chip.dataset.id
+            if (_teamSelectedIds.has(id)) {
+              if (_teamSelectedIds.size > 1) { _teamSelectedIds.delete(id); chip.classList.remove('ts-insights-member-chip--on') }
+            } else {
+              _teamSelectedIds.add(id); chip.classList.add('ts-insights-member-chip--on')
+            }
+            _renderTeamInsights(_teamPeriod, _teamSelectedIds, _teamCustomFrom, _teamCustomTo)
+          })
+        })
+      }
+
+      _buildMemberChips()
+
+      const searchEl = document.getElementById('ts-insights-member-search')
+      if (searchEl) searchEl.addEventListener('input', () => _buildMemberChips(searchEl.value))
+
+      content.querySelectorAll('.ts-insights-team-filter').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const picker = document.getElementById('ts-insights-team-picker')
+          if (btn.dataset.tperiod === 'custom') {
+            content.querySelectorAll('.ts-insights-team-filter').forEach(b => b.classList.remove('ts-insights-filter-btn--active'))
+            btn.classList.add('ts-insights-filter-btn--active')
+            if (picker) picker.style.display = 'flex'
+            return
+          }
+          if (picker) picker.style.display = 'none'
+          content.querySelectorAll('.ts-insights-team-filter').forEach(b => b.classList.remove('ts-insights-filter-btn--active'))
+          btn.classList.add('ts-insights-filter-btn--active')
+          _teamPeriod = btn.dataset.tperiod
+          _teamCustomFrom = null; _teamCustomTo = null
+          _renderTeamInsights(_teamPeriod, _teamSelectedIds)
+        })
+      })
+
+      const teamApply = document.getElementById('ts-insights-team-apply')
+      if (teamApply) {
+        teamApply.addEventListener('click', async () => {
+          const fv = document.getElementById('ts-insights-team-from')?.value
+          const tv = document.getElementById('ts-insights-team-to')?.value
+          if (!fv || !tv || fv > tv) return
+          const body = document.getElementById('ts-insights-team-body')
+          if (body) body.innerHTML = '<p class="loading-text">Loading…</p>'
+          const fromISO = fv + '-01'
+          const [yr, mo] = tv.split('-').map(Number)
+          const toISO    = _toISO(new Date(yr, mo, 0))
+          await _loadTeamData(fromISO, toISO)
+          _teamPeriod = 'custom'
+          _teamCustomFrom = new Date(fromISO)
+          _teamCustomTo   = new Date(yr, mo, 0)
+          _renderTeamInsights('custom', _teamSelectedIds, _teamCustomFrom, _teamCustomTo)
+        })
+      }
+    }
+
+    function _renderTeamInsights(period, selectedIds, customFrom, customTo) {
+      _insightsCharts.forEach(c => { try { c.destroy() } catch (_) {} })
+      _insightsCharts = []
+
+      const today = new Date()
+      let fromDate, toDate
+
+      if (period === 'this-month') {
+        fromDate = new Date(today.getFullYear(), today.getMonth(), 1); toDate = today
+      } else if (period === 'last-month') {
+        fromDate = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+        toDate   = new Date(today.getFullYear(), today.getMonth(), 0)
+      } else if (period === 'custom') {
+        fromDate = customFrom; toDate = customTo
+      } else {
+        fromDate = new Date(today.getFullYear(), today.getMonth() - 2, 1); toDate = today
+      }
+
+      const fromISO = _toISO(fromDate)
+      const toISO   = _toISO(toDate)
+
+      const selectedMembers = _directReports.filter(dr => selectedIds.has(dr.id))
+      const body = document.getElementById('ts-insights-team-body')
+      if (!body) return
+
+      // ── Per-member stats ──────────────────────────────────
+      const memberStats = selectedMembers.map(dr => {
+        const drEntries = (_teamAllEntries[dr.id] || []).filter(e => e.date >= fromISO && e.date <= toISO)
+        const logged = drEntries.filter(e => ['submitted', 'approved'].includes(e.status)).reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+
+        const joinDate = dr.joining_date ? new Date(dr.joining_date) : null
+        const effFrom  = joinDate && joinDate > fromDate ? joinDate : fromDate
+        let expected = 0, wdCount = 0, unfilled = 0
+        const cur = new Date(effFrom)
+        while (cur <= toDate && cur <= today) {
+          const iso = _toISO(cur)
+          if (cur.getDay() !== 0 && !_isHoliday(iso)) {
+            wdCount++; expected += 8
+            if (cur < today) {
+              const hasEntry = drEntries.some(e => e.date === iso && ['submitted', 'approved'].includes(e.status))
+              if (!hasEntry) unfilled++
+            }
+          }
+          cur.setDate(cur.getDate() + 1)
+        }
+
+        return { dr, logged, expected, wdCount, unfilled, util: expected > 0 ? Math.round((logged / expected) * 100) : 0 }
+      })
+
+      // ── Aggregate stats ───────────────────────────────────
+      const totalLogged   = memberStats.reduce((s, m) => s + m.logged, 0)
+      const totalExpected = memberStats.reduce((s, m) => s + m.expected, 0)
+      const totalUnfilled = memberStats.reduce((s, m) => s + m.unfilled, 0)
+      const avgUtil       = totalExpected > 0 ? Math.round((totalLogged / totalExpected) * 100) : 0
+      const utilCls       = avgUtil >= 85 ? 'stat-value--good' : avgUtil >= 60 ? 'stat-value--warn' : 'stat-value--bad'
+
+      // ── Top entities (combined) ───────────────────────────
+      const entityMap = {}
+      selectedMembers.forEach(dr => {
+        const drEntries = (_teamAllEntries[dr.id] || []).filter(e => e.date >= fromISO && e.date <= toISO && ['submitted', 'approved'].includes(e.status))
+        drEntries.forEach(e => {
+          const name = e.work_type === 'internal'
+            ? (e.internal_entity?.entity_name || e.internal_project?.name || 'Internal')
+            : (e.entity?.entity_name           || e.clients?.client_name   || 'Client')
+          entityMap[name] = (entityMap[name] || 0) + parseFloat(e.hours || 0)
+        })
+      })
+      const topEntities = Object.entries(entityMap).sort((a, b) => b[1] - a[1]).slice(0, 6)
+      const maxEH = topEntities[0]?.[1] || 1
+
+      const entityRowsHtml = topEntities.length
+        ? topEntities.map(([name, hrs], i) => {
+            const pct  = totalLogged > 0 ? Math.round((hrs / totalLogged) * 100) : 0
+            const barW = Math.round((hrs / maxEH) * 100)
+            const clr  = CHART_COLORS[i % CHART_COLORS.length]
+            return `
+              <div style="display:flex;align-items:center;gap:10px;padding:5px 0;">
+                <span style="width:8px;height:8px;border-radius:50%;background:${clr};flex-shrink:0;align-self:flex-start;margin-top:5px;"></span>
+                <span style="flex:1;min-width:0;font-size:12px;font-weight:500;word-break:break-word;" title="${Utils.escapeHtml(name)}">${Utils.escapeHtml(name)}</span>
+                <div style="flex:2;background:var(--bg);border-radius:4px;height:5px;overflow:hidden;flex-shrink:0;">
+                  <div style="height:100%;width:${barW}%;background:${clr};border-radius:4px;"></div>
+                </div>
+                <span style="font-size:11px;color:var(--text-muted);width:30px;text-align:right;flex-shrink:0;">${hrs.toFixed(0)}h</span>
+                <span style="font-size:11px;color:var(--text-muted);width:28px;text-align:right;flex-shrink:0;">${pct}%</span>
+              </div>`
+          }).join('')
+        : '<p style="font-size:13px;color:var(--text-muted);margin:0;">No entries in this period.</p>'
+
+      // ── Per-member table rows ─────────────────────────────
+      const tableRows = memberStats.map(({ dr, logged, expected, util, unfilled }) => {
+        const uCls = util >= 85 ? '#059669' : util >= 60 ? '#D97706' : '#DC2626'
+        const img  = dr.profile_image_url
+          ? `<img src="${Utils.escapeHtml(dr.profile_image_url)}" style="width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0;" alt="">`
+          : `<span style="width:26px;height:26px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;">${Utils.escapeHtml(Utils.getInitials(dr.name || '?'))}</span>`
+        return `
+          <tr>
+            <td style="padding:8px 12px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                ${img}
+                <div>
+                  <div style="font-size:13px;font-weight:500;">${Utils.escapeHtml(dr.name || 'Unknown')}</div>
+                  ${dr.department ? `<div style="font-size:11px;color:var(--text-muted);text-transform:capitalize;">${Utils.escapeHtml(dr.department.replace(/_/g, ' '))}</div>` : ''}
+                </div>
+              </div>
+            </td>
+            <td style="padding:8px 12px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;">${logged.toFixed(1)}h</td>
+            <td style="padding:8px 12px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;color:var(--text-muted);">${expected.toFixed(0)}h</td>
+            <td style="padding:8px 12px;text-align:right;">
+              <span style="font-size:13px;font-weight:600;color:${uCls};font-variant-numeric:tabular-nums;">${util}%</span>
+            </td>
+            <td style="padding:8px 12px;text-align:right;">
+              <span style="font-size:13px;font-weight:500;color:${unfilled > 0 ? '#DC2626' : '#059669'};font-variant-numeric:tabular-nums;">${unfilled}</span>
+            </td>
+          </tr>`
+      }).join('')
+
+      // ── 3-month trend (combined, always 3 months ending at toDate) ──
+      const trendMonths = []
+      for (let i = 2; i >= 0; i--) {
+        const ms = new Date(toDate.getFullYear(), toDate.getMonth() - i, 1)
+        const me = new Date(toDate.getFullYear(), toDate.getMonth() - i + 1, 0)
+        const lbl = ms.toLocaleDateString('en-IN', { month: 'short' })
+        let hrs = 0
+        selectedMembers.forEach(dr => {
+          hrs += (_teamAllEntries[dr.id] || [])
+            .filter(e => e.date >= _toISO(ms) && e.date <= _toISO(me) && ['submitted', 'approved'].includes(e.status))
+            .reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+        })
+        trendMonths.push({ label: lbl, hours: hrs })
+      }
+
+      body.innerHTML = `
+        <div class="grid-4 mb-4">
+          <div class="stat-card">
+            <div class="stat-label">Avg Utilization</div>
+            <div class="stat-value ${utilCls}" style="font-variant-numeric:tabular-nums;">${avgUtil}%</div>
+            <div class="stat-delta">${totalLogged.toFixed(1)}h of ${totalExpected.toFixed(0)}h expected</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total Unfilled Days</div>
+            <div class="stat-value ${totalUnfilled > 0 ? 'stat-value--bad' : 'stat-value--good'}" style="font-variant-numeric:tabular-nums;">${totalUnfilled}</div>
+            <div class="stat-delta">Across ${selectedMembers.length} member${selectedMembers.length !== 1 ? 's' : ''}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total Logged Hours</div>
+            <div class="stat-value" style="font-variant-numeric:tabular-nums;">${totalLogged.toFixed(1)}h</div>
+            <div class="stat-delta">${selectedMembers.length} member${selectedMembers.length !== 1 ? 's' : ''} selected</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Members On Track</div>
+            <div class="stat-value stat-value--good" style="font-variant-numeric:tabular-nums;">${memberStats.filter(m => m.util >= 85).length}</div>
+            <div class="stat-delta">of ${selectedMembers.length} ≥ 85% utilization</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:2fr 1.2fr;gap:16px;margin-bottom:16px;">
+          <div class="ts-chart-card" style="margin-bottom:0;">
+            <div class="ts-chart-title">3-Month Trend</div>
+            <div class="ts-chart-wrap"><canvas id="ts-team-trend-chart"></canvas></div>
+          </div>
+          <div class="ts-chart-card" style="margin-bottom:0;">
+            <div class="ts-chart-title">Top Entities</div>
+            <p style="font-size:11px;color:var(--text-muted);margin:-8px 0 12px;">Where team's time went</p>
+            ${entityRowsHtml}
+          </div>
+        </div>
+
+        <div class="ts-chart-card" style="margin-bottom:0;padding:0;overflow:hidden;">
+          <div style="padding:16px 16px 0;">
+            <div class="ts-chart-title" style="margin-bottom:0;">Member Breakdown</div>
+          </div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;min-width:500px;">
+              <thead>
+                <tr style="border-bottom:1px solid var(--border);">
+                  <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Member</th>
+                  <th style="padding:8px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Logged</th>
+                  <th style="padding:8px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Expected</th>
+                  <th style="padding:8px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Utilization</th>
+                  <th style="padding:8px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Unfilled Days</th>
+                </tr>
+              </thead>
+              <tbody>${tableRows}</tbody>
+            </table>
+          </div>
+        </div>
+      `
+
+      setTimeout(() => {
+        const ctx = document.getElementById('ts-team-trend-chart')
+        if (!ctx) return
+        const c = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: trendMonths.map(m => m.label),
+            datasets: [{ label: 'Hours', data: trendMonths.map(m => m.hours), backgroundColor: '#1D4ED8', borderRadius: 4 }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: true,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+              y: { beginAtZero: true, ticks: { font: { size: 10 } } },
+            },
+          },
+        })
+        _insightsCharts.push(c)
+      }, 0)
+    }
 
     // Period filter
     content.querySelectorAll('.ts-insights-filter-btn[data-period]').forEach(btn => {
