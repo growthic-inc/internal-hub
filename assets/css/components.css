@@ -4684,7 +4684,6 @@
   padding: 14px 20px;
 }
 .home-attn-pane--action {
-  background: color-mix(in srgb, var(--warning-light) 65%, var(--bg));
   border-left: 1px solid var(--border);
 }
 .home-attn-icon {

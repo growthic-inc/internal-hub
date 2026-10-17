@@ -581,7 +581,7 @@ const HomeModule = (() => {
 
     return `
       <div class="home-attn-pane home-attn-pane--action">
-        <div class="home-attn-icon" style="background:var(--bg);">⏳</div>
+        <div class="home-attn-icon" style="background:var(--warning-light);">⏳</div>
         <div class="home-attn-text" style="flex:1;min-width:0;">
           <div class="home-attn-title" style="font-weight:600;font-size:13px;">
             Action Required
