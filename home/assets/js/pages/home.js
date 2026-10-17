@@ -301,12 +301,14 @@ const HomeModule = (() => {
   }
 
   /* ── Section: Attention card (timesheet nudge + pending approvals) ──
-     One card, two stacked rows: today's timesheet status on top, and —
-     only when there's something waiting — "Action Required" below it. */
+     One strip, two panes side by side — today's timesheet status on the
+     left, "Action Required" on the right (only when something is waiting;
+     otherwise the timesheet pane fills the strip). Same height as the old
+     single row; the panes stack on narrow screens. */
 
   function _renderAttentionCard(entries, leaveCount, tsCount) {
     return `
-      <div class="section-card home-ts-nudge home-fade-in">
+      <div class="section-card home-ts-nudge home-attn-card home-fade-in">
         ${_timesheetNudgeSection(entries)}
         ${_pendingApprovalsSection(leaveCount, tsCount)}
       </div>`
@@ -343,15 +345,13 @@ const HomeModule = (() => {
     }
 
     return `
-      <div class="home-attn-section" style="border-left:3px solid ${color};">
-        <div style="display:flex;align-items:center;gap:14px;padding:14px 20px;">
-          <div style="width:38px;height:38px;border-radius:50%;background:${colorLight};display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">${icon}</div>
-          <div style="flex:1;min-width:0;">
-            <div style="font-weight:600;font-size:13px;color:${color};">${message}</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${sub}</div>
-          </div>
-          ${actionHtml}
+      <div class="home-attn-pane" style="border-left:3px solid ${color};">
+        <div class="home-attn-icon" style="background:${colorLight};">${icon}</div>
+        <div class="home-attn-text" style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-size:13px;color:${color};">${message}</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${sub}</div>
         </div>
+        ${actionHtml}
       </div>`
   }
 
@@ -562,23 +562,34 @@ const HomeModule = (() => {
 
   function _pendingApprovalsSection(leaveCount, tsCount) {
     const items = []
-    if (leaveCount > 0) items.push({ label: `${leaveCount} leave/WFH request${leaveCount > 1 ? 's' : ''}`, hash: 'leave-tracker' })
-    if (tsCount    > 0) items.push({ label: `${tsCount} timesheet entr${tsCount > 1 ? 'ies' : 'y'}`, hash: 'timesheet', deepTab: 'team' })
+    if (leaveCount > 0) items.push({ count: leaveCount, noun: 'leave/WFH', label: `${leaveCount} leave/WFH request${leaveCount > 1 ? 's' : ''}`, hash: 'leave-tracker' })
+    if (tsCount    > 0) items.push({ count: tsCount,    noun: 'timesheets', label: `${tsCount} timesheet entr${tsCount > 1 ? 'ies' : 'y'}`, hash: 'timesheet', deepTab: 'team' })
     if (!items.length) return ''
 
-    const rows = items.map(item => `
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--warning-light);">
-        <span style="font-size:13px;font-weight:500;">⏳ <strong>${item.label}</strong> awaiting your review</span>
-        <a href="#${item.hash}" class="btn btn--primary btn--sm"${item.deepTab ? ` data-deep-tab="${item.deepTab}"` : ''}>Review</a>
-      </div>`).join('')
+    const deepAttr = item => item.deepTab ? ` data-deep-tab="${item.deepTab}"` : ''
+
+    // One item: a plain sentence plus a Review button. Two items: a link-pill each
+    // instead, so the strip never grows taller than the timesheet row.
+    const detail = items.length === 1
+      ? `<div><strong>${items[0].label}</strong> awaiting your review</div>`
+      : `<div class="home-attn-chips">${items.map(i => `
+          <a href="#${i.hash}" class="home-attn-chip" aria-label="Review ${i.label}"${deepAttr(i)}><strong>${i.count}</strong> ${i.noun} ›</a>`).join('')}
+        </div>`
+    const action = items.length === 1
+      ? `<div class="home-attn-actions"><a href="#${items[0].hash}" class="btn btn--primary btn--sm"${deepAttr(items[0])}>Review</a></div>`
+      : ''
 
     return `
-      <div class="home-attn-section" style="border-left:3px solid var(--warning);">
-        <div class="section-card-header" style="background:var(--warning-light);">
-          <h3 class="home-attn-title">Action Required</h3>
-          <span class="badge" style="background:var(--warning);color:#fff;">${items.length}</span>
+      <div class="home-attn-pane home-attn-pane--action">
+        <div class="home-attn-icon" style="background:var(--bg);">⏳</div>
+        <div class="home-attn-text" style="flex:1;min-width:0;">
+          <div class="home-attn-title" style="font-weight:600;font-size:13px;">
+            Action Required
+            <span class="badge" style="background:var(--warning);color:#fff;margin-left:6px;">${items.length}</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${detail}</div>
         </div>
-        <div class="section-card-body">${rows}</div>
+        ${action}
       </div>`
   }
 

@@ -4668,11 +4668,81 @@
 }
 .home-ts-nudge:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.07); }
 
-/* Attention card: timesheet status + "Action Required" as two rows of one card.
-   Each row keeps its own coloured left edge; a hairline splits them. */
-.home-attn-section + .home-attn-section { border-top: 1px solid var(--border); }
+/* Attention card: timesheet status + "Action Required" side by side in one strip.
+   Same height as the old single row; the right pane is lightly tinted and split
+   from the left by a hairline. Panes stack on narrow screens. */
+.home-attn-card {
+  display: flex;
+  align-items: stretch;
+}
+.home-attn-pane {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 20px;
+}
+.home-attn-pane--action {
+  background: color-mix(in srgb, var(--warning-light) 65%, var(--bg));
+  border-left: 1px solid var(--border);
+}
+.home-attn-icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  font-size: 17px;
+}
+.home-attn-actions {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+/* Keep each text line on one row so the strip's height never changes. */
+.home-attn-text > div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-attn-chips {
+  display: flex;
+  gap: 6px;
+}
+.home-attn-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  line-height: 1.5;
+  border-radius: 100px;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+  background: var(--bg);
+  color: var(--text);
+  font-size: 11.5px;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.home-attn-chip:hover {
+  background: var(--primary-light);
+  border-color: var(--primary);
+  color: var(--text);
+}
+.home-attn-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .home-attn-title { color: #92400E; }
 [data-theme="dark"] .home-attn-title { color: var(--warning); }
+[data-theme="dark"] .home-attn-chip:hover { border-color: var(--secondary); }
+[data-theme="dark"] .home-attn-chip:focus-visible { outline-color: var(--secondary); }
+@media (max-width: 900px) {
+  .home-attn-card { flex-direction: column; }
+  .home-attn-pane--action { border-left: 0; border-top: 1px solid var(--border); }
+}
 
 /* ── Hover lift cards ──────────────────────────────────────── */
 
