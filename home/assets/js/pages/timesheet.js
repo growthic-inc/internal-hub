@@ -2618,26 +2618,61 @@ const Timesheet = (() => {
 
         const subRows = Object.entries(val.sub).sort((a, b) => b[1].total - a[1].total).map(([area, aVal]) => {
           const areaId = btoa(encodeURIComponent(client + '||' + area)).replace(/[^a-z0-9]/gi, '').slice(0, 24)
-          // Sort entries: most recent first
-          const sortedEntries = [...aVal.entries].sort((a, b) => b.date.localeCompare(a.date))
-          const entryRows = sortedEntries.map(en => {
-            const emp = memberById[en.empId]
-            const empName = emp?.name || 'Unknown'
-            const empImg  = emp?.profile_image_url
-              ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;flex-shrink:0;" alt="">`
-              : `<span style="width:20px;height:20px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0;">${Utils.escapeHtml(Utils.getInitials(empName))}</span>`
-            const statusDot = en.status === 'approved'
-              ? `<span style="width:6px;height:6px;border-radius:50%;background:#059669;flex-shrink:0;" title="Approved"></span>`
-              : `<span style="width:6px;height:6px;border-radius:50%;background:#F59E0B;flex-shrink:0;" title="Submitted"></span>`
-            const dateStr = new Date(en.date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+          // Group entries by week (Monday–Sunday bands), oldest first
+          const _weekOf = iso => {
+            const d = new Date(iso + 'T00:00:00')
+            const day = d.getDay()
+            const mon = new Date(d)
+            mon.setDate(d.getDate() - (day === 0 ? 6 : day - 1))
+            return mon.toISOString().slice(0, 10)
+          }
+          const weekBandMap = {}
+          aVal.entries.forEach(en => {
+            const wk = _weekOf(en.date)
+            if (!weekBandMap[wk]) weekBandMap[wk] = []
+            weekBandMap[wk].push(en)
+          })
+          const weekBandKeys = Object.keys(weekBandMap).sort()
+          const entryRows = weekBandKeys.map((wk, wi) => {
+            const wEntries = weekBandMap[wk].sort((a, b) => a.date.localeCompare(b.date))
+            const wTotal   = wEntries.reduce((s, e) => s + e.hours, 0)
+            const monDate  = new Date(wk + 'T00:00:00')
+            const sunDate  = new Date(monDate); sunDate.setDate(monDate.getDate() + 6)
+            const fmt      = d => d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+            const weekLabel = fmt(monDate) + ' – ' + fmt(sunDate)
+            const weekId   = areaId + '-w' + wi
+            const isLatest = wi === weekBandKeys.length - 1
+
+            const eRows = wEntries.map(en => {
+              const emp     = memberById[en.empId]
+              const empName = emp?.name || 'Unknown'
+              const empImg  = emp?.profile_image_url
+                ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;flex-shrink:0;" alt="">`
+                : `<span style="width:20px;height:20px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0;">${Utils.escapeHtml(Utils.getInitials(empName))}</span>`
+              const statusDot = en.status === 'approved'
+                ? `<span style="width:6px;height:6px;border-radius:50%;background:#059669;flex-shrink:0;" title="Approved"></span>`
+                : `<span style="width:6px;height:6px;border-radius:50%;background:#F59E0B;flex-shrink:0;" title="Submitted"></span>`
+              const dateStr = new Date(en.date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
+              return `
+                <div class="ts-drill-entry-row">
+                  ${empImg}
+                  <span style="font-size:12px;font-weight:500;flex-shrink:0;min-width:90px;">${Utils.escapeHtml(empName)}</span>
+                  <span style="font-size:11px;color:var(--text-muted);flex-shrink:0;min-width:72px;">${dateStr}</span>
+                  ${en.desc ? `<span style="font-size:11px;color:var(--text-muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${Utils.escapeHtml(en.desc)}">${Utils.escapeHtml(en.desc)}</span>` : `<span style="flex:1;"></span>`}
+                  ${statusDot}
+                  <span style="font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;flex-shrink:0;">${en.hours.toFixed(1)}h</span>
+                </div>`
+            }).join('')
+
             return `
-              <div class="ts-drill-entry-row">
-                ${empImg}
-                <span style="font-size:12px;font-weight:500;flex-shrink:0;min-width:90px;">${Utils.escapeHtml(empName)}</span>
-                <span style="font-size:11px;color:var(--text-muted);flex-shrink:0;min-width:52px;">${dateStr}</span>
-                ${en.desc ? `<span style="font-size:11px;color:var(--text-muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${Utils.escapeHtml(en.desc)}">${Utils.escapeHtml(en.desc)}</span>` : `<span style="flex:1;"></span>`}
-                ${statusDot}
-                <span style="font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;flex-shrink:0;">${en.hours.toFixed(1)}h</span>
+              <div class="ts-drill-week-band">
+                <div class="ts-drill-week-header" data-week-id="${weekId}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:7px 12px 7px 10px;background:var(--bg-card);border-bottom:1px solid var(--border);">
+                  <svg data-wk-arrow="${weekId}" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;color:var(--primary);transition:transform .15s;${isLatest ? 'transform:rotate(90deg);' : ''}"><polyline points="9 18 15 12 9 6"/></svg>
+                  <span style="font-size:11.5px;font-weight:700;color:var(--primary);flex:1;">${weekLabel}</span>
+                  <span style="font-size:11px;color:var(--text-muted);margin-right:6px;">${wEntries.length} entr${wEntries.length === 1 ? 'y' : 'ies'}</span>
+                  <span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text);">${wTotal.toFixed(1)}h</span>
+                </div>
+                <div data-week-entries="${weekId}" style="display:${isLatest ? 'block' : 'none'};">${eRows}</div>
               </div>`
           }).join('')
           return `
@@ -2804,6 +2839,7 @@ const Timesheet = (() => {
                 })
               }
             })
+            _bindWeekBands(body)
           }
         })
       }
@@ -2821,6 +2857,25 @@ const Timesheet = (() => {
           if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)'
         })
       })
+
+      // L3 week band toggle
+      const _bindWeekBands = root => {
+        root.querySelectorAll('.ts-drill-week-header[data-week-id]').forEach(wh => {
+          if (wh.dataset.bound) return
+          wh.dataset.bound = '1'
+          wh.addEventListener('click', e => {
+            e.stopPropagation()
+            const id = wh.dataset.weekId
+            const entriesDiv = root.querySelector(`[data-week-entries="${id}"]`)
+            const arrow = root.querySelector(`[data-wk-arrow="${id}"]`)
+            if (!entriesDiv) return
+            const open = entriesDiv.style.display !== 'none'
+            entriesDiv.style.display = open ? 'none' : 'block'
+            if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)'
+          })
+        })
+      }
+      _bindWeekBands(body)
     }
 
     // Period filter
