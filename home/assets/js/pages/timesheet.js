@@ -833,7 +833,9 @@ const Timesheet = (() => {
           <label class="form-label">Work Description <span class="required">*</span></label>
           <textarea class="form-input" id="ts-f-desc" rows="3"
             placeholder="Describe what you worked on…"
+            required minlength="10"
             style="resize:vertical;">${Utils.escapeHtml(existingEntry?.work_description || existingEntry?.task_description || '')}</textarea>
+          <span style="font-size:11px;color:var(--text-muted);margin-top:3px;display:block;">Minimum 10 characters. Be specific — what did you actually do?</span>
         </div>
       </div>
       <div class="modal-footer">
@@ -924,7 +926,7 @@ const Timesheet = (() => {
       if (date < minDateISO)          errs.push('This date is outside the editable window.')
       if (isNaN(hours) || hours <= 0) errs.push('Hours must be greater than 0.')
       if (hours > 12)                 errs.push('Hours cannot exceed 12 per entry.')
-      if (!desc)                      errs.push('Work description is required.')
+      if (!desc || desc.length < 10)   errs.push('Work description is required (min 10 characters).')
 
       if (workType === 'client') {
         if (!clientId)                errs.push('Please select a client.')
@@ -2598,7 +2600,7 @@ const Timesheet = (() => {
           drillMap[l1].total += hrs
           if (!drillMap[l1].sub[l2]) drillMap[l1].sub[l2] = { total: 0, entries: [] }
           drillMap[l1].sub[l2].total += hrs
-          drillMap[l1].sub[l2].entries.push({ empId: dr.id, date: e.date, hours: hrs, desc: e.description || e.notes || '', status: e.status })
+          drillMap[l1].sub[l2].entries.push({ empId: dr.id, date: e.date, hours: hrs, desc: e.work_description || e.task_description || e.description || '', status: e.status })
         })
       })
 
