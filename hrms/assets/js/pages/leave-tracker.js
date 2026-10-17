@@ -1664,6 +1664,9 @@ const LeaveTracker = (() => {
           <h3>Company Events (${curYear})</h3>
           <button class="btn btn--primary btn--sm" id="lt-add-event-btn">+ Add Event</button>
         </div>
+        <p class="text-muted" style="font-size:12px;margin:0;padding:10px 16px;border-bottom:1px solid var(--border);">
+          The next upcoming event (within 14 days) appears as a banner on everyone's Home page, so write the title and description for the whole team.
+        </p>
         <div class="section-card-body" style="padding:0;" id="lt-events-body">
           ${_renderEventsTable(allEvents)}
         </div>
@@ -1700,6 +1703,10 @@ const LeaveTracker = (() => {
               <label class="form-label">End Time</label>
               <input class="form-input" type="time" id="lt-new-evt-time-end" />
             </div>
+          </div>
+          <div class="form-group" style="margin-bottom:10px;">
+            <label class="form-label">Location <span class="text-muted" style="font-weight:400;">(optional)</span></label>
+            <input class="form-input" type="text" id="lt-new-evt-location" placeholder="e.g. Office Lounge" />
           </div>
           <div class="form-group" style="margin-bottom:10px;">
             <label class="form-label">Description</label>
@@ -1893,7 +1900,7 @@ const LeaveTracker = (() => {
     if (!events.length) return '<p class="empty-state">No events added.</p>'
     return `
       <table class="data-table">
-        <thead><tr><th>Title</th><th>Dates</th><th>Duration</th><th>Description</th><th></th></tr></thead>
+        <thead><tr><th>Title</th><th>Dates</th><th>Duration</th><th>Location</th><th>Description</th><th></th></tr></thead>
         <tbody>
           ${events.map(ev => `
             <tr data-event-id="${ev.id}">
@@ -1902,6 +1909,7 @@ const LeaveTracker = (() => {
                 ${Utils.formatDate(ev.start_date)}${ev.end_date && ev.end_date !== ev.start_date ? ' – ' + Utils.formatDate(ev.end_date) : ''}
               </td>
               <td style="white-space:nowrap;font-size:12px;">${_eventDurationLabel(ev) || 'Full Day'}</td>
+              <td class="text-muted" style="font-size:12px;word-break:break-word;max-width:140px;">${Utils.escapeHtml(ev.location || '—')}</td>
               <td class="text-muted" style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-width:200px;">${Utils.escapeHtml(ev.description || '—')}</td>
               <td style="white-space:nowrap;">
                 <button class="btn btn--xs btn--ghost" data-edit-event="${ev.id}"
@@ -1909,6 +1917,7 @@ const LeaveTracker = (() => {
                   data-start="${ev.start_date}"
                   data-end="${ev.end_date || ''}"
                   data-desc="${Utils.escapeHtml(ev.description || '')}"
+                  data-location="${Utils.escapeHtml(ev.location || '')}"
                   data-duration="${ev.duration_type || 'full_day'}"
                   data-time-start="${ev.start_time || ''}"
                   data-time-end="${ev.end_time || ''}">Edit</button>
@@ -2273,6 +2282,7 @@ const LeaveTracker = (() => {
       document.getElementById('lt-new-evt-start').value = ''
       document.getElementById('lt-new-evt-end').value   = ''
       document.getElementById('lt-new-evt-desc').value  = ''
+      document.getElementById('lt-new-evt-location').value = ''
       document.getElementById('lt-new-evt-duration').value = 'full_day'
       document.getElementById('lt-new-evt-time-start').value = ''
       document.getElementById('lt-new-evt-time-end').value   = ''
@@ -2289,6 +2299,7 @@ const LeaveTracker = (() => {
       const start    = document.getElementById('lt-new-evt-start').value
       const end      = document.getElementById('lt-new-evt-end').value
       const desc     = document.getElementById('lt-new-evt-desc').value.trim()
+      const location = document.getElementById('lt-new-evt-location').value.trim()
       const duration = document.getElementById('lt-new-evt-duration').value
       const timeStart = duration === 'specific_time' ? (document.getElementById('lt-new-evt-time-start').value || null) : null
       const timeEnd   = duration === 'specific_time' ? (document.getElementById('lt-new-evt-time-end').value || null)   : null
@@ -2302,6 +2313,7 @@ const LeaveTracker = (() => {
 
       const payload = {
         title, start_date: start, end_date: end || start, description: desc || null,
+        location: location || null,
         duration_type: duration, start_time: timeStart, end_time: timeEnd,
       }
 
@@ -2326,6 +2338,7 @@ const LeaveTracker = (() => {
         document.getElementById('lt-new-evt-start').value = btn.dataset.start
         document.getElementById('lt-new-evt-end').value   = btn.dataset.end || ''
         document.getElementById('lt-new-evt-desc').value  = btn.dataset.desc || ''
+        document.getElementById('lt-new-evt-location').value = btn.dataset.location || ''
         document.getElementById('lt-new-evt-duration').value = btn.dataset.duration || 'full_day'
         document.getElementById('lt-new-evt-time-start').value = btn.dataset.timeStart || ''
         document.getElementById('lt-new-evt-time-end').value   = btn.dataset.timeEnd || ''

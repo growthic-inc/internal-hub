@@ -146,6 +146,71 @@ const HomeModule = (() => {
       </div>`
   }
 
+  /* ── Section: HR event banner ─────────────────────────────── */
+  // HR adds these in HRMS → Leave & Attendance → Settings → Company Events.
+
+  // "16:00:00" (DB time column) → "4:00 PM"
+  function _fmtEventTime(t) {
+    const [h, m] = String(t).split(':').map(Number)
+    return new Date(2000, 0, 1, h, m)
+      .toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
+      .toUpperCase()
+  }
+
+  // Events arrive soonest-first, so the first match is the one in progress or next up.
+  // A timed event on its last day drops off once its end time has passed.
+  function _pickBannerEvent(events) {
+    const today = _todayISO()
+    const nowHM = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })
+    return (events || []).find(ev => {
+      if (ev.duration_type === 'specific_time' && ev.end_time && ev.end_date === today) {
+        return nowHM < ev.end_time.slice(0, 5)
+      }
+      return true
+    }) || null
+  }
+
+  function _eventWhenText(ev) {
+    const today    = _todayISO()
+    const tomorrow = new Date(new Date().getTime() + 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+    const at = iso => new Date(iso + 'T00:00:00')
+    const dm = iso => at(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+
+    let day
+    if (ev.end_date && ev.end_date !== ev.start_date) day = `${dm(ev.start_date)} – ${dm(ev.end_date)}`
+    else if (ev.start_date === today)                  day = 'Today'
+    else if (ev.start_date === tomorrow)               day = 'Tomorrow'
+    else day = `${at(ev.start_date).toLocaleDateString('en-IN', { weekday: 'long' })}, ${dm(ev.start_date)}`
+
+    let span
+    if (ev.duration_type === 'specific_time' && ev.start_time) {
+      span = ev.end_time
+        ? `${_fmtEventTime(ev.start_time)} – ${_fmtEventTime(ev.end_time)} IST`
+        : `${_fmtEventTime(ev.start_time)} IST`
+    }
+    else if (ev.duration_type === 'first_half')  span = 'First half'
+    else if (ev.duration_type === 'second_half') span = 'Second half'
+    else                                         span = 'All day'
+
+    return `${day} • ${span}`
+  }
+
+  function _renderEventBanner(ev) {
+    if (!ev) return ''
+    const by = ev.created_by_emp?.name
+    return `
+      <div class="home-event-banner home-fade-in">
+        <div class="home-event-banner__meta">
+          <span class="home-event-banner__tag"><span class="home-event-banner__dot"></span>Scheduled Event</span>
+          <span class="home-event-banner__when">📅 ${Utils.escapeHtml(_eventWhenText(ev))}</span>
+          ${ev.location ? `<span class="home-event-banner__where">📍 ${Utils.escapeHtml(ev.location)}</span>` : ''}
+        </div>
+        <h3 class="home-event-banner__title">${Utils.escapeHtml(ev.title)}</h3>
+        ${ev.description ? `<p class="home-event-banner__desc" title="${Utils.escapeHtml(ev.description)}">${Utils.escapeHtml(ev.description)}</p>` : ''}
+        ${by ? `<div class="home-event-banner__by">Added by <strong>${Utils.escapeHtml(by)}</strong></div>` : ''}
+      </div>`
+  }
+
   /* ── Section: Timesheet nudge ─────────────────────────────── */
 
   function _renderTimesheetNudge(entries) {
@@ -842,6 +907,7 @@ const HomeModule = (() => {
       { data: myBadges },
       { data: knowledgeResources },
       attLeaveData,
+      { data: bannerEvents },
     ] = await Promise.all([
       API.getTimesheetEntries(user.id, todayISO, todayISO),
       API.getWhoIsOutToday(),
@@ -854,12 +920,14 @@ const HomeModule = (() => {
       API.getEmployeeBadges(user.id),
       API.getKnowledgeResources(),
       API.getApprovedLeaveForEmployee(user.id),
+      API.getUpcomingCompanyEvents(14),
       _loadAttendanceBannerData(_attWeekStart),
     ])
     _attLeaveData = attLeaveData || { leaves: [], wfhs: [], clientVisits: [] }
 
     const html = `
       ${_renderHero(user, todayEntries, whoIsOut, whoIsWfh, pendingLeaveCount, pendingTsCount)}
+      ${_renderEventBanner(_pickBannerEvent(bannerEvents))}
       ${_renderTimesheetNudge(todayEntries)}
       ${_renderPendingApprovals(pendingLeaveCount, pendingTsCount)}
 

@@ -1723,6 +1723,18 @@ const API = (() => {
     return q
   }
 
+  // Events still in progress or starting within the next `days` days, soonest
+  // first — feeds the Home event banner. Unlike getUpcomingEventsData this
+  // keys off end_date, so a multi-day event stays visible until its last day.
+  async function getUpcomingCompanyEvents(days = 14) {
+    const fromISO = Utils.todayIST()
+    const toISO   = new Date(new Date().getTime() + days * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+    return supabase.from('company_events')
+      .select('*, created_by_emp:employees!created_by(name)')
+      .gte('end_date', fromISO).lte('start_date', toISO)
+      .order('start_date')
+  }
+
   async function createCompanyEvent(data) {
     return supabase.from('company_events').insert(data).select().single()
   }
@@ -2181,7 +2193,7 @@ const API = (() => {
     getAttendanceConflicts,
     getWfhQuotas, createWfhQuota, deleteWfhQuota,
     getCompanyHolidays, addCompanyHoliday, deleteCompanyHoliday,
-    getCompanyEvents, createCompanyEvent, updateCompanyEvent, deleteCompanyEvent,
+    getCompanyEvents, getUpcomingCompanyEvents, createCompanyEvent, updateCompanyEvent, deleteCompanyEvent,
     getAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement,
     uploadAnnouncementImage,
     getAnnouncementReactions, addReaction, removeReaction,
