@@ -4668,6 +4668,12 @@
 }
 .home-ts-nudge:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.07); }
 
+/* Attention card: timesheet status + "Action Required" as two rows of one card.
+   Each row keeps its own coloured left edge; a hairline splits them. */
+.home-attn-section + .home-attn-section { border-top: 1px solid var(--border); }
+.home-attn-title { color: #92400E; }
+[data-theme="dark"] .home-attn-title { color: var(--warning); }
+
 /* ── Hover lift cards ──────────────────────────────────────── */
 
 .home-hover-card {

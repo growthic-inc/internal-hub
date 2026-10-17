@@ -300,9 +300,19 @@ const HomeModule = (() => {
       </div>`
   }
 
-  /* ── Section: Timesheet nudge ─────────────────────────────── */
+  /* ── Section: Attention card (timesheet nudge + pending approvals) ──
+     One card, two stacked rows: today's timesheet status on top, and —
+     only when there's something waiting — "Action Required" below it. */
 
-  function _renderTimesheetNudge(entries) {
+  function _renderAttentionCard(entries, leaveCount, tsCount) {
+    return `
+      <div class="section-card home-ts-nudge home-fade-in">
+        ${_timesheetNudgeSection(entries)}
+        ${_pendingApprovalsSection(leaveCount, tsCount)}
+      </div>`
+  }
+
+  function _timesheetNudgeSection(entries) {
     const all        = entries || []
     const totalHours = all.reduce((s, e) => s + Number(e.hours || 0), 0)
     const draftCount = all.filter(e => e.status === 'draft').length
@@ -333,8 +343,8 @@ const HomeModule = (() => {
     }
 
     return `
-      <div class="section-card home-ts-nudge home-fade-in" style="border-left:3px solid ${color};">
-        <div class="section-card-body" style="display:flex;align-items:center;gap:14px;padding:14px 20px;">
+      <div class="home-attn-section" style="border-left:3px solid ${color};">
+        <div style="display:flex;align-items:center;gap:14px;padding:14px 20px;">
           <div style="width:38px;height:38px;border-radius:50%;background:${colorLight};display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">${icon}</div>
           <div style="flex:1;min-width:0;">
             <div style="font-weight:600;font-size:13px;color:${color};">${message}</div>
@@ -548,9 +558,9 @@ const HomeModule = (() => {
       </div>`
   }
 
-  /* ── Section: Pending Approvals ──────────────────────────── */
+  /* ── Section: Pending Approvals (the lower row of the attention card) ── */
 
-  function _renderPendingApprovals(leaveCount, tsCount) {
+  function _pendingApprovalsSection(leaveCount, tsCount) {
     const items = []
     if (leaveCount > 0) items.push({ label: `${leaveCount} leave/WFH request${leaveCount > 1 ? 's' : ''}`, hash: 'leave-tracker' })
     if (tsCount    > 0) items.push({ label: `${tsCount} timesheet entr${tsCount > 1 ? 'ies' : 'y'}`, hash: 'timesheet', deepTab: 'team' })
@@ -563,9 +573,9 @@ const HomeModule = (() => {
       </div>`).join('')
 
     return `
-      <div class="section-card home-hover-card home-fade-in" style="border-left:3px solid var(--warning);margin-top:12px;">
+      <div class="home-attn-section" style="border-left:3px solid var(--warning);">
         <div class="section-card-header" style="background:var(--warning-light);">
-          <h3 style="color:#92400E;">Action Required</h3>
+          <h3 class="home-attn-title">Action Required</h3>
           <span class="badge" style="background:var(--warning);color:#fff;">${items.length}</span>
         </div>
         <div class="section-card-body">${rows}</div>
@@ -1017,8 +1027,7 @@ const HomeModule = (() => {
     const html = `
       ${_renderHero(user, todayEntries, whoIsOut, whoIsWfh, pendingLeaveCount, pendingTsCount)}
       ${_renderEventBanner(_pickBannerEvents(bannerEvents))}
-      ${_renderTimesheetNudge(todayEntries)}
-      ${_renderPendingApprovals(pendingLeaveCount, pendingTsCount)}
+      ${_renderAttentionCard(todayEntries, pendingLeaveCount, pendingTsCount)}
 
       <div class="home-content-row" style="margin-top:14px;">
         <div style="flex:1.5;min-width:0;display:flex;flex-direction:column;gap:14px;">
