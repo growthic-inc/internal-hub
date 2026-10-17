@@ -1030,7 +1030,7 @@ const HomeModule = (() => {
       API.getEmployeeBadges(user.id),
       API.getKnowledgeResources(),
       API.getApprovedLeaveForEmployee(user.id),
-      API.getUpcomingCompanyEvents(14),
+      API.getUpcomingCompanyEvents(7),
       _loadAttendanceBannerData(_attWeekStart),
     ])
     _attLeaveData = attLeaveData || { leaves: [], wfhs: [], clientVisits: [] }

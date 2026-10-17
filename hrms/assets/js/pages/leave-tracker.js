@@ -1665,7 +1665,7 @@ const LeaveTracker = (() => {
           <button class="btn btn--primary btn--sm" id="lt-add-event-btn">+ Add Event</button>
         </div>
         <p class="text-muted" style="font-size:12px;margin:0;padding:10px 16px;border-bottom:1px solid var(--border);">
-          The next upcoming event (within 14 days) appears as a banner on everyone's Home page, so write the title and description for the whole team.
+          The next upcoming event (within 7 days) appears as a banner on everyone's Home page, so write the title and description for the whole team.
         </p>
         <div class="section-card-body" style="padding:0;" id="lt-events-body">
           ${_renderEventsTable(allEvents)}

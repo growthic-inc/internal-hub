@@ -1726,7 +1726,7 @@ const API = (() => {
   // Events still in progress or starting within the next `days` days, soonest
   // first — feeds the Home event banner. Unlike getUpcomingEventsData this
   // keys off end_date, so a multi-day event stays visible until its last day.
-  async function getUpcomingCompanyEvents(days = 14) {
+  async function getUpcomingCompanyEvents(days = 7) {
     const fromISO = Utils.todayIST()
     const toISO   = new Date(new Date().getTime() + days * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
     return supabase.from('company_events')
