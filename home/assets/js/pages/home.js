@@ -277,7 +277,7 @@ const HomeModule = (() => {
     const byRole  = by?.designation
     const cd      = _eventCountdown(ev)
     return `
-      <div class="home-event-banner home-fade-in">
+      <div class="home-event-banner home-hover-card home-fade-in">
         ${_eventDateTile(ev)}
         <div class="home-event-banner__body">
           <div class="home-event-banner__meta">

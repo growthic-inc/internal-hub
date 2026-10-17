@@ -4429,14 +4429,15 @@
   align-items: flex-start;
   gap: 20px;
   background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 7%, var(--bg)) 0%, var(--bg) 42%);
-  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
-  border-left: 4px solid var(--primary);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
   padding: 18px 22px;
   margin-bottom: 14px;
   min-width: 0;
 }
+/* Fade in on load, but don't hold the final frame — otherwise it pins
+   transform and the shared .home-hover-card lift can never apply. */
+.home-event-banner.home-fade-in { animation-fill-mode: backwards; }
 .home-event-banner__body {
   display: flex;
   flex-direction: column;
@@ -4632,7 +4633,6 @@
 .home-event-banner__more:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 2px; }
 /* Brand blue is too dark to read on the dark surface — use the lighter sky blue */
 [data-theme="dark"] .home-event-banner {
-  border-left-color: var(--secondary);
   background: linear-gradient(90deg, color-mix(in srgb, var(--secondary) 10%, var(--bg)) 0%, var(--bg) 42%);
 }
 [data-theme="dark"] .home-event-banner__mon { color: var(--secondary); }
