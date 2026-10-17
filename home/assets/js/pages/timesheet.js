@@ -2489,17 +2489,18 @@ const Timesheet = (() => {
         teamCutoff.setHours(23, 59, 59, 999)
         const loggedDates = new Set(drEntries.filter(e => ['submitted', 'approved'].includes(e.status)).map(e => e.date))
         let expected = 0, wdCount = 0, unfilled = 0
+        const unfilledDates = []
         const cur = new Date(effFrom)
         while (cur <= toDate && cur <= today) {
           const iso = _toISO(cur)
           if (cur.getDay() !== 0 && !_isHoliday(iso)) {
             wdCount++; expected += 8
-            if (cur <= teamCutoff && !loggedDates.has(iso)) unfilled++
+            if (cur <= teamCutoff && !loggedDates.has(iso)) { unfilled++; unfilledDates.push(iso) }
           }
           cur.setDate(cur.getDate() + 1)
         }
 
-        return { dr, logged, expected, wdCount, unfilled, util: expected > 0 ? Math.round((logged / expected) * 100) : 0 }
+        return { dr, logged, expected, wdCount, unfilled, unfilledDates, util: expected > 0 ? Math.round((logged / expected) * 100) : 0 }
       })
 
       // ── Aggregate stats ───────────────────────────────────
@@ -2542,11 +2543,14 @@ const Timesheet = (() => {
         : '<p style="font-size:13px;color:var(--text-muted);margin:0;">No entries in this period.</p>'
 
       // ── Per-member table rows ─────────────────────────────
-      const tableRows = memberStats.map(({ dr, logged, expected, util, unfilled }) => {
+      const tableRows = memberStats.map(({ dr, logged, expected, util, unfilled, unfilledDates }) => {
         const uCls = util >= 85 ? '#059669' : util >= 60 ? '#D97706' : '#DC2626'
         const img  = dr.profile_image_url
           ? `<img src="${Utils.escapeHtml(dr.profile_image_url)}" style="width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0;" alt="">`
           : `<span style="width:26px;height:26px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;">${Utils.escapeHtml(Utils.getInitials(dr.name || '?'))}</span>`
+        const unfilledCell = unfilled > 0
+          ? `<button class="ts-unfilled-btn" data-dates="${Utils.escapeHtml(JSON.stringify(unfilledDates))}" data-name="${Utils.escapeHtml(dr.name || '')}" style="font-size:12px;font-weight:500;color:#DC2626;font-variant-numeric:tabular-nums;background:none;border:none;cursor:pointer;padding:0;font-family:inherit;text-decoration:underline dotted;text-underline-offset:2px;">${unfilled}</button>`
+          : `<span style="font-size:12px;font-weight:500;color:#059669;font-variant-numeric:tabular-nums;">0</span>`
         return `
           <tr style="border-bottom:1px solid var(--border);">
             <td style="padding:7px 12px;">
@@ -2561,9 +2565,7 @@ const Timesheet = (() => {
             <td style="padding:7px 12px;text-align:right;">
               <span style="font-size:12px;font-weight:600;color:${uCls};font-variant-numeric:tabular-nums;">${util}%</span>
             </td>
-            <td style="padding:7px 12px;text-align:right;">
-              <span style="font-size:12px;font-weight:500;color:${unfilled > 0 ? '#DC2626' : '#059669'};font-variant-numeric:tabular-nums;">${unfilled}</span>
-            </td>
+            <td style="padding:7px 12px;text-align:right;">${unfilledCell}</td>
           </tr>`
       }).join('')
 
@@ -2884,6 +2886,31 @@ const Timesheet = (() => {
         })
       }
       _bindWeekBands(body)
+
+      // Unfilled-dates popover
+      let _activePopover = null
+      const _closePopover = () => { if (_activePopover) { _activePopover.remove(); _activePopover = null } }
+      body.querySelectorAll('.ts-unfilled-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation()
+          _closePopover()
+          const dates = JSON.parse(btn.dataset.dates || '[]')
+          if (!dates.length) return
+          const fmt = iso => new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
+          const pop = document.createElement('div')
+          pop.style.cssText = 'position:absolute;z-index:999;background:var(--bg-card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);padding:10px 0;min-width:160px;max-height:240px;overflow-y:auto;'
+          pop.innerHTML = `
+            <div style="padding:4px 12px 8px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted,#6b7280);border-bottom:1px solid var(--border,#e5e7eb);margin-bottom:4px;">Unfilled days</div>
+            ${dates.map(d => `<div style="padding:5px 12px;font-size:12px;color:var(--text,#111827);">${fmt(d)}</div>`).join('')}`
+          const rect = btn.getBoundingClientRect()
+          const bodyRect = document.body.getBoundingClientRect()
+          pop.style.top  = (rect.bottom - bodyRect.top + 4) + 'px'
+          pop.style.left = Math.max(8, rect.right - bodyRect.left - 160) + 'px'
+          document.body.appendChild(pop)
+          _activePopover = pop
+        })
+      })
+      document.addEventListener('click', _closePopover, { once: true })
     }
 
     // Period filter
