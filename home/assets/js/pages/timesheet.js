@@ -2908,9 +2908,15 @@ const Timesheet = (() => {
           pop.style.left = Math.max(8, rect.right - bodyRect.left - 160) + 'px'
           document.body.appendChild(pop)
           _activePopover = pop
+          let _leaveTimer = null
+          const _scheduleClose = () => { _leaveTimer = setTimeout(_closePopover, 120) }
+          const _cancelClose  = () => { clearTimeout(_leaveTimer) }
+          btn.addEventListener('mouseleave', _scheduleClose)
+          pop.addEventListener('mouseenter', _cancelClose)
+          pop.addEventListener('mouseleave', _scheduleClose)
         })
       })
-      document.addEventListener('click', _closePopover, { once: true })
+      document.addEventListener('click', _closePopover)
     }
 
     // Period filter
