@@ -2679,7 +2679,7 @@ const Timesheet = (() => {
             <div class="ts-drill-sub-row" data-area-id="${areaId}" style="cursor:pointer;">
               <svg class="ts-drill-area-arrow" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;color:var(--text-muted);transition:transform .15s;"><polyline points="9 18 15 12 9 6"/></svg>
               <span style="flex:1;font-size:12px;color:var(--text);">${Utils.escapeHtml(area)}</span>
-              <span style="font-size:11px;color:var(--text-muted);margin-right:4px;">${sortedEntries.length} entr${sortedEntries.length === 1 ? 'y' : 'ies'}</span>
+              <span style="font-size:11px;color:var(--text-muted);margin-right:4px;">${aVal.entries.length} entr${aVal.entries.length === 1 ? 'y' : 'ies'}</span>
               <span style="font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;">${aVal.total.toFixed(1)}h</span>
             </div>
             <div class="ts-drill-entries" data-entries-for="${areaId}" style="display:none;">${entryRows}</div>`
