@@ -2481,7 +2481,7 @@ const Timesheet = (() => {
       const memberStats = selectedMembers.map(dr => {
         const drEntries = (_teamAllEntries[dr.id] || []).filter(e => e.date >= fromISO && e.date <= toISO)
 
-        const joinDate   = dr.joining_date ? new Date(dr.joining_date) : null
+        const joinDate   = dr.joining_date ? new Date(dr.joining_date + 'T00:00:00') : null
         const effFrom    = joinDate && joinDate > fromDate ? joinDate : fromDate
         const effFromISO = _toISO(effFrom)
         const teamCutoff = new Date(today)
@@ -2982,7 +2982,7 @@ const Timesheet = (() => {
       const toISO   = _toISO(toDate)
 
       // Honour joining date — never count days before the employee joined
-      const joinDate      = _user.joining_date ? new Date(_user.joining_date) : null
+      const joinDate      = _user.joining_date ? new Date(_user.joining_date + 'T00:00:00') : null
       const effectiveFrom = joinDate && joinDate > fromDate ? joinDate : fromDate
 
       // Entries in period (submitted + approved = logged)
