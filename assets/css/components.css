@@ -4422,6 +4422,92 @@
   color: #fff;
 }
 
+/* ── HR event banner (company_events, shown under the hero) ── */
+
+.home-event-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  margin-bottom: 14px;
+  min-width: 0;
+}
+.home-event-banner__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+.home-event-banner__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 100px;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.home-event-banner__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  animation: homeEventPulse 2.5s ease-in-out infinite;
+}
+@keyframes homeEventPulse {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.3); }
+}
+.home-event-banner__when,
+.home-event-banner__where {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.home-event-banner__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.home-event-banner__desc {
+  margin: 0;
+  max-width: 80ch;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.home-event-banner__by {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+/* Brand blue is too dark to read on the dark surface — use the lighter sky blue */
+[data-theme="dark"] .home-event-banner { border-left-color: var(--secondary); }
+[data-theme="dark"] .home-event-banner__tag {
+  background: var(--secondary-light);
+  color: var(--secondary);
+}
+[data-theme="dark"] .home-event-banner__dot { background: var(--secondary); }
+@media (prefers-reduced-motion: reduce) {
+  .home-event-banner__dot { animation: none; }
+}
+
 /* ── Timesheet nudge ───────────────────────────────────────── */
 
 .home-ts-nudge {
