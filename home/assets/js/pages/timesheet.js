@@ -2705,11 +2705,15 @@ const Timesheet = (() => {
 
       const drillRows = [
         ...drillVisible.map((e, i) => _buildDrillRow(e, i)),
-        drillHidden.length ? `<div id="ts-drill-more-wrap">
-          <button id="ts-drill-show-more" style="width:100%;padding:10px;font-size:12px;color:#0F4799;background:none;border:none;border-top:1px solid var(--border);cursor:pointer;font-family:inherit;">
-            Show ${drillHidden.length} more client${drillHidden.length > 1 ? 's' : ''}…
-          </button>
-        </div>` : ''
+        drillHidden.length ? `
+          <div id="ts-drill-hidden-rows" style="display:none;">
+            ${drillHidden.map((e, i) => _buildDrillRow(e, drillVisible.length + i)).join('')}
+          </div>
+          <div id="ts-drill-more-wrap" style="border-top:1px solid var(--border);">
+            <button id="ts-drill-show-more" style="width:100%;padding:10px;font-size:12px;color:#0F4799;background:none;border:none;cursor:pointer;font-family:inherit;">
+              Show ${drillHidden.length} more client${drillHidden.length > 1 ? 's' : ''}…
+            </button>
+          </div>` : ''
       ].join('')
 
       body.innerHTML = `
@@ -2809,15 +2813,19 @@ const Timesheet = (() => {
           arrow.style.transform = open ? '' : 'rotate(90deg)'
         })
       })
-      // Show more drill rows
+      // Show more / Show less toggle
       const showMoreBtn = body.querySelector('#ts-drill-show-more')
       if (showMoreBtn) {
         showMoreBtn.addEventListener('click', () => {
-          const wrap = body.querySelector('#ts-drill-more-wrap')
-          if (wrap) {
-            const extraHtml = drillHidden.map((e, i) => _buildDrillRow(e, drillVisible.length + i)).join('')
-            wrap.outerHTML = extraHtml
-            // Re-bind click handlers for new rows
+          const hiddenRows = body.querySelector('#ts-drill-hidden-rows')
+          if (!hiddenRows) return
+          const isOpen = hiddenRows.style.display !== 'none'
+          hiddenRows.style.display = isOpen ? 'none' : 'block'
+          showMoreBtn.textContent = isOpen
+            ? `Show ${drillHidden.length} more client${drillHidden.length > 1 ? 's' : ''}…`
+            : 'Show less'
+          if (!isOpen) {
+            // Bind handlers for newly revealed rows
             body.querySelectorAll('.ts-drill-row').forEach(row => {
               if (!row.dataset.bound) {
                 row.dataset.bound = '1'
