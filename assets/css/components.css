@@ -4426,16 +4426,72 @@
 
 .home-event-banner {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  background: var(--bg);
-  border: 1px solid var(--border);
+  align-items: center;
+  gap: 20px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 7%, var(--bg)) 0%, var(--bg) 42%);
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
   border-left: 4px solid var(--primary);
   border-radius: var(--radius-lg);
-  padding: 16px 20px;
+  box-shadow: var(--shadow-sm);
+  padding: 18px 22px;
   margin-bottom: 14px;
   min-width: 0;
 }
+.home-event-banner__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.home-event-banner__date {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 62px;
+  padding: 8px 6px;
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+  line-height: 1;
+}
+.home-event-banner__mon {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--primary);
+}
+.home-event-banner__day {
+  margin: 4px 0 3px;
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--text);
+}
+.home-event-banner__dow {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.home-event-banner__chip {
+  margin-left: auto;
+  padding: 3px 10px;
+  border-radius: 100px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.home-event-banner__chip--hot {
+  border-color: transparent;
+  background: var(--warning-light);
+  color: #B45309;
+}
+[data-theme="dark"] .home-event-banner__chip--hot { color: var(--warning); }
 .home-event-banner__meta {
   display: flex;
   flex-wrap: wrap;
@@ -4468,13 +4524,20 @@
 }
 .home-event-banner__when,
 .home-event-banner__where {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
 }
+.home-event-banner__icon {
+  flex: none;
+  color: var(--primary);
+}
 .home-event-banner__title {
   margin: 0;
-  font-size: 17px;
+  font-size: 19px;
   font-weight: 700;
   line-height: 1.3;
   color: var(--text);
@@ -4494,16 +4557,55 @@
   overflow: hidden;
 }
 .home-event-banner__by {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
   font-size: 11.5px;
   color: var(--text-muted);
 }
+.home-event-banner__avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 9px;
+  font-weight: 700;
+}
+.home-event-banner__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 /* Brand blue is too dark to read on the dark surface — use the lighter sky blue */
-[data-theme="dark"] .home-event-banner { border-left-color: var(--secondary); }
+[data-theme="dark"] .home-event-banner {
+  border-left-color: var(--secondary);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--secondary) 10%, var(--bg)) 0%, var(--bg) 42%);
+}
+[data-theme="dark"] .home-event-banner__mon { color: var(--secondary); }
 [data-theme="dark"] .home-event-banner__tag {
   background: var(--secondary-light);
   color: var(--secondary);
 }
 [data-theme="dark"] .home-event-banner__dot { background: var(--secondary); }
+[data-theme="dark"] .home-event-banner__icon { color: var(--secondary); }
+[data-theme="dark"] .home-event-banner__avatar {
+  background: var(--secondary-light);
+  color: var(--secondary);
+}
+@media (max-width: 520px) {
+  .home-event-banner { gap: 12px; padding: 14px; }
+  .home-event-banner__date { min-width: 52px; }
+  .home-event-banner__day { font-size: 22px; }
+  .home-event-banner__dow { display: none; }
+  .home-event-banner__chip { margin-left: 0; }
+}
 @media (prefers-reduced-motion: reduce) {
   .home-event-banner__dot { animation: none; }
 }

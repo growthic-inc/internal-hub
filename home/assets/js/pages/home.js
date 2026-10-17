@@ -157,11 +157,16 @@ const HomeModule = (() => {
       .toUpperCase()
   }
 
+  // Current IST time as "HH:MM" — comparable with the first 5 chars of a DB time column.
+  function _nowHM() {
+    return new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })
+  }
+
   // Events arrive soonest-first, so the first match is the one in progress or next up.
   // A timed event on its last day drops off once its end time has passed.
   function _pickBannerEvent(events) {
     const today = _todayISO()
-    const nowHM = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })
+    const nowHM = _nowHM()
     return (events || []).find(ev => {
       if (ev.duration_type === 'specific_time' && ev.end_time && ev.end_date === today) {
         return nowHM < ev.end_time.slice(0, 5)
@@ -170,17 +175,10 @@ const HomeModule = (() => {
     }) || null
   }
 
+  // Time/duration line. The date itself lives in the date tile, so a single-day
+  // event only needs the span; a multi-day event also gets its date range.
   function _eventWhenText(ev) {
-    const today    = _todayISO()
-    const tomorrow = new Date(new Date().getTime() + 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
-    const at = iso => new Date(iso + 'T00:00:00')
-    const dm = iso => at(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
-
-    let day
-    if (ev.end_date && ev.end_date !== ev.start_date) day = `${dm(ev.start_date)} – ${dm(ev.end_date)}`
-    else if (ev.start_date === today)                  day = 'Today'
-    else if (ev.start_date === tomorrow)               day = 'Tomorrow'
-    else day = `${at(ev.start_date).toLocaleDateString('en-IN', { weekday: 'long' })}, ${dm(ev.start_date)}`
+    const dm = iso => new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
 
     let span
     if (ev.duration_type === 'specific_time' && ev.start_time) {
@@ -192,22 +190,68 @@ const HomeModule = (() => {
     else if (ev.duration_type === 'second_half') span = 'Second half'
     else                                         span = 'All day'
 
-    return `${day} • ${span}`
+    return ev.end_date && ev.end_date !== ev.start_date
+      ? `${dm(ev.start_date)} – ${dm(ev.end_date)} • ${span}`
+      : span
   }
+
+  // { label, hot } — "hot" (warm colour) means it's today or already under way.
+  function _eventCountdown(ev) {
+    const today = _todayISO()
+    const at    = iso => new Date(iso + 'T00:00:00')
+    if (ev.start_date <= today) {
+      if (ev.end_date && ev.end_date !== ev.start_date) return { label: 'Happening now', hot: true }
+      if (ev.duration_type === 'specific_time' && ev.start_time && ev.end_time) {
+        const now = _nowHM()
+        if (now >= ev.start_time.slice(0, 5) && now < ev.end_time.slice(0, 5)) return { label: 'Happening now', hot: true }
+      }
+      return { label: 'Today', hot: true }
+    }
+    const days = Math.round((at(ev.start_date) - at(today)) / 86400000)
+    return { label: days === 1 ? 'Tomorrow' : `In ${days} days`, hot: false }
+  }
+
+  // Month / day / weekday tile. An event already in progress shows today's date.
+  function _eventDateTile(ev) {
+    const today = _todayISO()
+    const d     = new Date((ev.start_date > today ? ev.start_date : today) + 'T00:00:00')
+    return `
+      <div class="home-event-banner__date">
+        <span class="home-event-banner__mon">${d.toLocaleDateString('en-IN', { month: 'short' }).toUpperCase()}</span>
+        <span class="home-event-banner__day">${d.getDate()}</span>
+        <span class="home-event-banner__dow">${d.toLocaleDateString('en-IN', { weekday: 'short' })}</span>
+      </div>`
+  }
+
+  const _EVT_ICON_CLOCK = `<svg class="home-event-banner__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`
+  const _EVT_ICON_PIN = `<svg class="home-event-banner__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`
 
   function _renderEventBanner(ev) {
     if (!ev) return ''
-    const by = ev.created_by_emp?.name
+    const by      = ev.created_by_emp
+    const byImage = by?.profile_image_url
+    const byRole  = by?.designation
+    const cd      = _eventCountdown(ev)
     return `
       <div class="home-event-banner home-fade-in">
-        <div class="home-event-banner__meta">
-          <span class="home-event-banner__tag"><span class="home-event-banner__dot"></span>Scheduled Event</span>
-          <span class="home-event-banner__when">📅 ${Utils.escapeHtml(_eventWhenText(ev))}</span>
-          ${ev.location ? `<span class="home-event-banner__where">📍 ${Utils.escapeHtml(ev.location)}</span>` : ''}
+        ${_eventDateTile(ev)}
+        <div class="home-event-banner__body">
+          <div class="home-event-banner__meta">
+            <span class="home-event-banner__tag"><span class="home-event-banner__dot"></span>Scheduled Event</span>
+            <span class="home-event-banner__when">${_EVT_ICON_CLOCK}${Utils.escapeHtml(_eventWhenText(ev))}</span>
+            ${ev.location ? `<span class="home-event-banner__where">${_EVT_ICON_PIN}${Utils.escapeHtml(ev.location)}</span>` : ''}
+            <span class="home-event-banner__chip${cd.hot ? ' home-event-banner__chip--hot' : ''}">${Utils.escapeHtml(cd.label)}</span>
+          </div>
+          <h3 class="home-event-banner__title">${Utils.escapeHtml(ev.title)}</h3>
+          ${ev.description ? `<p class="home-event-banner__desc" title="${Utils.escapeHtml(ev.description)}">${Utils.escapeHtml(ev.description)}</p>` : ''}
+          ${by?.name ? `
+            <div class="home-event-banner__by">
+              <span class="home-event-banner__avatar">${byImage
+                ? `<img src="${Utils.escapeHtml(byImage)}" alt="">`
+                : Utils.escapeHtml(Utils.getInitials(by.name))}</span>
+              <span>Added by <strong>${Utils.escapeHtml(by.name)}</strong>${byRole ? ` · ${Utils.escapeHtml(byRole)}` : ''}</span>
+            </div>` : ''}
         </div>
-        <h3 class="home-event-banner__title">${Utils.escapeHtml(ev.title)}</h3>
-        ${ev.description ? `<p class="home-event-banner__desc" title="${Utils.escapeHtml(ev.description)}">${Utils.escapeHtml(ev.description)}</p>` : ''}
-        ${by ? `<div class="home-event-banner__by">Added by <strong>${Utils.escapeHtml(by)}</strong></div>` : ''}
       </div>`
   }
 
