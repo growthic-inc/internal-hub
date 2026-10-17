@@ -2312,6 +2312,8 @@ const Timesheet = (() => {
       const membersList = document.getElementById('ts-insights-members-list')
       if (!membersList) return
 
+      const _saBtn = document.getElementById('ts-member-select-all')
+
       function _buildMemberRows(filter = '') {
         const q = filter.toLowerCase()
         const filtered = _directReports.filter(dr => !q || (dr.name || '').toLowerCase().includes(q))
@@ -2376,7 +2378,6 @@ const Timesheet = (() => {
         }, { capture: true })
       }
 
-      const _saBtn = document.getElementById('ts-member-select-all')
       function _updateSelectAllLabel() {
         if (!_saBtn) return
         const allSelected = _directReports.every(dr => _teamSelectedIds.has(dr.id))
