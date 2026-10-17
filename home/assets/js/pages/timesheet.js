@@ -2480,14 +2480,17 @@ const Timesheet = (() => {
       // ── Per-member stats ──────────────────────────────────
       const memberStats = selectedMembers.map(dr => {
         const drEntries = (_teamAllEntries[dr.id] || []).filter(e => e.date >= fromISO && e.date <= toISO)
-        const logged = drEntries.filter(e => ['submitted', 'approved'].includes(e.status)).reduce((s, e) => s + parseFloat(e.hours || 0), 0)
 
         const joinDate   = dr.joining_date ? new Date(dr.joining_date) : null
         const effFrom    = joinDate && joinDate > fromDate ? joinDate : fromDate
+        const effFromISO = _toISO(effFrom)
         const teamCutoff = new Date(today)
         teamCutoff.setDate(teamCutoff.getDate() - _editLockDays())
         teamCutoff.setHours(23, 59, 59, 999)
-        const loggedDates = new Set(drEntries.filter(e => ['submitted', 'approved'].includes(e.status)).map(e => e.date))
+        // Logged hours and dates only count from effective start — same window as expected
+        const activeEntries = drEntries.filter(e => e.date >= effFromISO && ['submitted', 'approved'].includes(e.status))
+        const logged = activeEntries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+        const loggedDates = new Set(activeEntries.map(e => e.date))
         let expected = 0, wdCount = 0, unfilled = 0
         const unfilledDates = []
         const cur = new Date(effFrom)
