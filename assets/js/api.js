@@ -103,7 +103,7 @@ const API = (() => {
   async function getEmployees(activeOnly = true) {
     let query = supabase
       .from('employees')
-      .select('id, name, email, role, department, status, profile_image_url')
+      .select('id, name, email, role, department, status, profile_image_url, joining_date')
       .order('name')
     if (activeOnly) query = query.eq('status', 'active')
     return query
@@ -1730,7 +1730,7 @@ const API = (() => {
     const fromISO = Utils.todayIST()
     const toISO   = new Date(new Date().getTime() + days * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
     return supabase.from('company_events')
-      .select('*, created_by_emp:employees!created_by(name)')
+      .select('*, created_by_emp:employees!created_by(name, designation, profile_image_url)')
       .gte('end_date', fromISO).lte('start_date', toISO)
       .order('start_date')
   }
