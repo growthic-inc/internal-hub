@@ -2283,10 +2283,17 @@ const Timesheet = (() => {
         if (team) team.style.display = tab === 'team' ? '' : 'none'
         if (tab === 'team' && !_teamDataLoaded) {
           _teamDataLoaded = true
-          const t3ago = new Date(now.getFullYear(), now.getMonth() - 2, 1)
-          await _loadTeamData(_toISO(t3ago), _toISO(now))
-          _initTeamPanel()
-          _renderTeamInsights(_teamPeriod, _teamSelectedIds)
+          try {
+            const t3ago = new Date(now.getFullYear(), now.getMonth() - 2, 1)
+            await _loadTeamData(_toISO(t3ago), _toISO(now))
+            _initTeamPanel()
+            _renderTeamInsights(_teamPeriod, _teamSelectedIds)
+          } catch (err) {
+            const body = document.getElementById('ts-insights-team-body')
+            if (body) body.innerHTML = `<p style="font-size:13px;color:#DC2626;padding:24px;">Error loading team insights: ${Utils.escapeHtml(String(err?.message || err))}</p>`
+            console.error('Team insights error:', err)
+            _teamDataLoaded = false
+          }
         }
       })
     })
@@ -2599,7 +2606,7 @@ const Timesheet = (() => {
       const drillVisible = drillEntries.slice(0, 8)
       const drillHidden  = drillEntries.slice(8)
 
-      function _buildDrillRow([client, val], idx) {
+      const _buildDrillRow = ([client, val], idx) => {
         const pct      = totalLogged > 0 ? Math.round((val.total / totalLogged) * 100) : 0
         const barW     = Math.round((val.total / drillMax) * 100)
         const accent   = val.isInternal ? '#6366F1' : '#059669'
