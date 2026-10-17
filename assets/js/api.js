@@ -1733,6 +1733,7 @@ const API = (() => {
       .select('*, created_by_emp:employees!created_by(name, designation, profile_image_url)')
       .gte('end_date', fromISO).lte('start_date', toISO)
       .order('start_date')
+      .order('start_time', { ascending: true, nullsFirst: true })   // same day: all-day first, then by start time
   }
 
   async function createCompanyEvent(data) {

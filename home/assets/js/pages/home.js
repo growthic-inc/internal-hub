@@ -162,17 +162,18 @@ const HomeModule = (() => {
     return new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })
   }
 
-  // Events arrive soonest-first, so the first match is the one in progress or next up.
+  // Events arrive soonest-first (same day: all-day, then by start time), so the
+  // first one is the in-progress / next-up event and the rest are "Up next".
   // A timed event on its last day drops off once its end time has passed.
-  function _pickBannerEvent(events) {
+  function _pickBannerEvents(events) {
     const today = _todayISO()
     const nowHM = _nowHM()
-    return (events || []).find(ev => {
+    return (events || []).filter(ev => {
       if (ev.duration_type === 'specific_time' && ev.end_time && ev.end_date === today) {
         return nowHM < ev.end_time.slice(0, 5)
       }
       return true
-    }) || null
+    })
   }
 
   // Time/duration line. The date itself lives in the date tile, so a single-day
@@ -226,7 +227,50 @@ const HomeModule = (() => {
   const _EVT_ICON_CLOCK = `<svg class="home-event-banner__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`
   const _EVT_ICON_PIN = `<svg class="home-event-banner__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`
 
-  function _renderEventBanner(ev) {
+  // Up to two more events show as slim "Up next" lines under the main one;
+  // anything beyond that collapses into a "+N more" link to the Upcoming Events card.
+  const _NEXT_ROWS = 2
+
+  // "Tue, 20 Oct · 1:00 PM" — compact when-line for the slim rows
+  function _eventShortWhen(ev) {
+    const today    = _todayISO()
+    const tomorrow = new Date(new Date().getTime() + 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+    const at = iso => new Date(iso + 'T00:00:00')
+    const dm = iso => at(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+
+    let day
+    if (ev.end_date && ev.end_date !== ev.start_date) day = `${dm(ev.start_date)} – ${dm(ev.end_date)}`
+    else if (ev.start_date === today)                  day = 'Today'
+    else if (ev.start_date === tomorrow)               day = 'Tomorrow'
+    else day = `${at(ev.start_date).toLocaleDateString('en-IN', { weekday: 'short' })}, ${dm(ev.start_date)}`
+
+    let part
+    if (ev.duration_type === 'specific_time' && ev.start_time) part = _fmtEventTime(ev.start_time)
+    else if (ev.duration_type === 'first_half')                part = 'First half'
+    else if (ev.duration_type === 'second_half')               part = 'Second half'
+    else                                                       part = 'All day'
+    return `${day} · ${part}`
+  }
+
+  function _renderEventsNext(rest) {
+    if (!rest.length) return ''
+    const shown = rest.slice(0, _NEXT_ROWS)
+    const extra = rest.length - shown.length
+    return `
+      <div class="home-event-banner__next">
+        <div class="home-event-banner__next-label">Up next</div>
+        ${shown.map(e => `
+          <div class="home-event-banner__next-row">
+            <span class="home-event-banner__next-when">${Utils.escapeHtml(_eventShortWhen(e))}</span>
+            <span class="home-event-banner__next-title">${Utils.escapeHtml(e.title)}</span>
+            ${e.location ? `<span class="home-event-banner__next-where">· ${Utils.escapeHtml(e.location)}</span>` : ''}
+          </div>`).join('')}
+        ${extra > 0 ? `<button type="button" class="home-event-banner__more" onclick="document.getElementById('home-upcoming-events')?.scrollIntoView({ behavior: 'smooth', block: 'center' })">+${extra} more · see Upcoming Events</button>` : ''}
+      </div>`
+  }
+
+  function _renderEventBanner(events) {
+    const [ev, ...rest] = events || []
     if (!ev) return ''
     const by      = ev.created_by_emp
     const byImage = by?.profile_image_url
@@ -251,6 +295,7 @@ const HomeModule = (() => {
                 : Utils.escapeHtml(Utils.getInitials(by.name))}</span>
               <span>Added by <strong>${Utils.escapeHtml(by.name)}</strong>${byRole ? ` · ${Utils.escapeHtml(byRole)}` : ''}</span>
             </div>` : ''}
+          ${_renderEventsNext(rest)}
         </div>
       </div>`
   }
@@ -676,7 +721,7 @@ const HomeModule = (() => {
       : `<p class="empty-state-text" style="margin:0;padding:16px 20px;">Nothing coming up in the next 30 days.</p>`
 
     return `
-      <div class="section-card home-hover-card">
+      <div class="section-card home-hover-card" id="home-upcoming-events">
         <div class="section-card-header">
           <h3>Upcoming Events</h3>
           <a href="#leave-tracker" style="font-size:12px;color:var(--primary);font-weight:500;">Manage →</a>
@@ -971,7 +1016,7 @@ const HomeModule = (() => {
 
     const html = `
       ${_renderHero(user, todayEntries, whoIsOut, whoIsWfh, pendingLeaveCount, pendingTsCount)}
-      ${_renderEventBanner(_pickBannerEvent(bannerEvents))}
+      ${_renderEventBanner(_pickBannerEvents(bannerEvents))}
       ${_renderTimesheetNudge(todayEntries)}
       ${_renderPendingApprovals(pendingLeaveCount, pendingTsCount)}
 
