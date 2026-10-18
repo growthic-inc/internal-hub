@@ -340,6 +340,479 @@ const Timesheet = (() => {
   }
   function _fmtLeaveDays(n) { return Number.isInteger(n) ? String(n) : n.toFixed(1) }
   const _LEAVE_CARD_TIP = 'Approved leave up to today within the period. Every calendar day inside a leave counts (weekends and holidays in between too), the same way the Leave Tracker deducts balance; a half day counts as 0.5. Pending requests are shown separately and are not counted as taken.'
+
+  // ExcelJS is only needed when a super admin exports, so it is fetched on demand
+  // (≈1 MB) instead of being loaded with the page for everyone.
+  let _excelJsPromise = null
+  function _loadExcelJS() {
+    if (window.ExcelJS) return Promise.resolve(window.ExcelJS)
+    if (!_excelJsPromise) {
+      _excelJsPromise = new Promise((resolve, reject) => {
+        const el = document.createElement('script')
+        el.src = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js'
+        el.onload  = () => window.ExcelJS ? resolve(window.ExcelJS) : reject(new Error('The Excel library did not start.'))
+        el.onerror = () => { _excelJsPromise = null; reject(new Error('Could not load the Excel library. Check your connection and try again.')) }
+        document.head.appendChild(el)
+      })
+    }
+    return _excelJsPromise
+  }
+  async function _fetchBrandLogo() {
+    try {
+      const res = await fetch('/assets/img/logo.jpg')
+      return res.ok ? { buffer: await res.arrayBuffer(), extension: 'jpeg' } : null
+    } catch (_) { return null }   // the export just goes without the logo
+  }
+  function _downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob)
+    const a   = document.createElement('a')
+    a.href = url; a.download = filename
+    document.body.appendChild(a); a.click(); a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1500)
+  }
+
+  /* ── Team Insights → branded Excel workbook ──────────────────────────
+     Pure builder: takes the snapshot of what the screen shows (x) plus a few
+     context values and returns an ExcelJS workbook. No DOM or closure access, so
+     it can be exercised on its own. ExcelJS is used (not SheetJS) because the
+     free SheetJS build can't write fills, frozen rows, conditional formats or
+     print setup. */
+  function _buildTeamExportWorkbook(ExcelJS, x, ctx) {
+    const BRAND = 'FF0F4799', BRAND_LIGHT = 'FFEEF2FF', SKY_BG = 'FFCFF0FC', WHITE = 'FFFFFFFF'
+    const AMBER_BG = 'FFFEF3C7', AMBER_FG = 'FF92400E'
+    const RED_BG = 'FFFEE2E2', RED_FG = 'FF991B1B'
+    const GREEN_BG = 'FFDCFCE7', GREEN_FG = 'FF166534'
+    const GREY_BG = 'FFF1F5F9', GREY_FG = 'FF475569'
+    const INPUT_BG = 'FFFEF9C3'
+    const HRS = '0.0', PCT = '0.0%', DATEF = 'dd mmm yyyy', MONF = 'mmm yyyy'
+    const ON_TRACK = 0.85, CRITICAL = 0.60, FULL_DAY = 8
+    const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+    const utc      = iso => new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)))
+    const addD     = (iso, n) => { const d = utc(iso); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
+    const dowOf    = iso => DOW[utc(iso).getUTCDay()]
+    const num      = n => Math.round(n * 100) / 100
+    const cap      = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : ''
+    const deptName = s => {
+      if (!s) return 'No department'
+      const label = ctx.deptLabel ? ctx.deptLabel(s) : s     // the app's own department names (e.g. "People & Culture")
+      return label && label !== s ? label : s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+    }
+    const F        = o => ({ name: 'Calibri', size: 11, ...o })
+    const fill     = argb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } })
+    const cfFill   = argb => ({ type: 'pattern', pattern: 'solid', bgColor: { argb } })
+    const esc      = s => String(s).replace(/"/g, '""')
+    const longDate = iso => `${+iso.slice(8, 10)} ${MON[+iso.slice(5, 7) - 1]} ${iso.slice(0, 4)}`
+    const colL     = n => { let s = ''; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26) } return s }
+    const sum      = (arr, f) => arr.reduce((s, a) => s + f(a), 0)
+    const statusOf = util => util >= ON_TRACK ? 'On track' : util >= CRITICAL ? 'Behind' : 'Critical'
+
+    const cutoffISO = addD(ctx.todayISO, -ctx.lockDays)
+    const endISO    = x.toISO < ctx.todayISO ? x.toISO : ctx.todayISO
+
+    // Expected hours on the screen's basis: 8h per non-Sunday, non-holiday day, from
+    // the joining date up to today. Leave is NOT subtracted here (same as the screen).
+    const expectedFor = (dr, fromISO, toISO) => {
+      const start = dr.joining_date && dr.joining_date > fromISO ? dr.joining_date : fromISO
+      const end   = toISO < ctx.todayISO ? toISO : ctx.todayISO
+      let n = 0
+      for (let d = start; d <= end; d = addD(d, 1)) if (utc(d).getUTCDay() !== 0 && !ctx.isHoliday(d)) n++
+      return n * FULL_DAY
+    }
+
+    // ── Per member: daily rows + the numbers derived from them ───────────
+    const mem = x.memberStats.map(m => {
+      const dr = m.dr
+      const byDate = {}
+      ;(x.entriesByMember[dr.id] || []).forEach(e => {
+        const b = byDate[e.date] || (byDate[e.date] = { sub: 0, app: 0, draft: 0, rej: 0 })
+        const h = parseFloat(e.hours || 0)
+        if (e.status === 'submitted') b.sub += h
+        else if (e.status === 'approved') b.app += h
+        else if (e.status === 'draft') b.draft += h
+        else if (e.status === 'rejected') b.rej += h
+      })
+
+      const lv = x.leave.byMember[dr.id] || { items: [], days: 0, pendingCount: 0, byType: {} }
+      const leaveFull = {}, leaveHalf = {}, leavePend = {}
+      lv.items.forEach(i => {
+        if (i.days === 0.5) { (i.status === 'approved' ? leaveHalf : leavePend)[i.from] = i.type; return }
+        for (let d = i.from; d <= i.to; d = addD(d, 1)) (i.status === 'approved' ? leaveFull : leavePend)[d] = i.type
+      })
+
+      const start = dr.joining_date && dr.joining_date > x.fromISO ? dr.joining_date : x.fromISO
+      const rows = []
+      for (let d = start; d <= endISO; d = addD(d, 1)) {
+        const sunday   = utc(d).getUTCDay() === 0
+        const b        = byDate[d] || { sub: 0, app: 0, draft: 0, rej: 0 }
+        const reported = b.sub + b.app                            // anything the employee submitted or had approved
+        if (sunday && reported === 0) continue                    // Sundays are not working days; only listed if hours were logged
+        const holiday  = ctx.isHoliday(d)
+        const expected = (holiday || sunday) ? 0 : FULL_DAY
+        const notes = []
+        let status
+        if (sunday)                 { status = 'Weekend'; notes.push('Hours logged on a Sunday') }
+        else if (holiday)           { status = 'Holiday'; if (reported > 0) notes.push('Hours logged on a holiday') }
+        else if (leaveFull[d])      {
+          status = 'Leave'; notes.push(leaveFull[d])
+          if (reported > 0) notes.push('hours also logged')
+          else if (d <= cutoffISO) notes.push('counted as an unfilled day on the screen (leave is not subtracted yet)')
+        }
+        else if (reported >= FULL_DAY) status = 'Filled'
+        else if (reported > 0)         status = 'Short'
+        else                           status = d <= cutoffISO ? 'Unfilled' : 'Open'
+        if (leaveHalf[d])           notes.push(`Half-day leave (${leaveHalf[d]})`)
+        if (leavePend[d])           notes.push('Leave pending approval')
+        if (b.app > 0 && b.sub === 0) notes.push('Approved hours are not counted as logged')
+        if (b.draft > 0 && reported === 0) notes.push(`Draft only (${num(b.draft)}h), not submitted`)
+        if (b.rej > 0)              notes.push(`Rejected entry (${num(b.rej)}h)`)
+        if (status === 'Open')      notes.push(`Within the last ${ctx.lockDays} days — not counted as unfilled yet`)
+        rows.push({ iso: d, sub: b.sub, app: b.app, expected, status, note: notes.join(' · ') })
+      }
+
+      const expectedExLeave = sum(rows, r => r.status === 'Leave' ? 0 : (leaveHalf[r.iso] && r.expected ? r.expected - FULL_DAY / 2 : r.expected))
+      const logged     = m.logged
+      const approved   = sum(Object.values(byDate), b => b.app)
+      const pending    = sum(Object.values(byDate), b => b.sub)
+      return {
+        dr, name: dr.name || 'Unknown', dept: deptName(dr.department), logged, expected: m.expected,
+        util: m.expected > 0 ? logged / m.expected : 0, wdCount: m.wdCount, unfilled: m.unfilled, unfilledDates: m.unfilledDates,
+        shortDays: rows.filter(r => r.status === 'Short').length,
+        loggedDays: rows.filter(r => r.sub > 0).length,
+        approved, pending, leaveDays: lv.days, leavePending: lv.pendingCount, leaveByType: lv.byType, leaveItems: lv.items,
+        expectedExLeave, utilExLeave: expectedExLeave > 0 ? logged / expectedExLeave : 0, rows,
+      }
+    })
+    mem.sort((a, b) => a.dept.localeCompare(b.dept) || a.name.localeCompare(b.name))
+
+    const totalLogged   = sum(mem, m => m.logged)
+    const totalExpected = sum(mem, m => m.expected)
+    const totalUnfilled = sum(mem, m => m.unfilled)
+    const totalShort    = sum(mem, m => m.shortDays)
+    const loggedDays    = sum(mem, m => m.loggedDays)
+    const totalApproved = sum(mem, m => m.approved)
+    const totalPending  = sum(mem, m => m.pending)
+    const totalExLeave  = sum(mem, m => m.expectedExLeave)
+    const depts         = [...new Set(mem.map(m => m.dept))]
+
+    const areaTotals = {}
+    Object.values(x.drillMap).forEach(c => Object.entries(c.sub).forEach(([area, a]) => {
+      if (area !== '—') areaTotals[area] = (areaTotals[area] || 0) + a.total
+    }))
+    const topArea = Object.entries(areaTotals).sort((a, b) => b[1] - a[1])[0] || null
+
+    // ── Workbook + sheet scaffolding ─────────────────────────────────────
+    const wb = new ExcelJS.Workbook()
+    wb.creator = 'Growthic One'
+    wb.created = new Date()
+    wb.title   = "Team's Timesheet Insights"
+    wb.calcProperties.fullCalcOnLoad = true             // Excel recalculates every formula when the file opens
+
+    const wsS = wb.addWorksheet('Summary')
+    const wsM = wb.addWorksheet('Members')
+    const wsD = wb.addWorksheet('Daily')
+    const wsT = wb.addWorksheet('3-Month Trend')
+    const wsE = wb.addWorksheet('Top Entities')
+    const wsC = wb.addWorksheet('Client Drill-down')
+    const wsN = wb.addWorksheet('Entries')
+    const wsL = wb.addWorksheet('Leave')
+
+    const finish = (ws, { cols, lastRow, filter, data = true }) => {
+      ws.properties.tabColor = { argb: data ? 'FF45BBF0' : BRAND }
+      if (data) ws.views = [{ state: 'frozen', ySplit: 1 }]
+      if (filter) ws.autoFilter = `A1:${colL(cols)}${Math.max(lastRow, 2)}`
+      ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9, ...(data ? { printTitlesRow: '1:1' } : {}) }
+      ws.headerFooter = { oddFooter: '&L&8Growthic One · Team Timesheet Insights&R&8Page &P of &N' }
+    }
+    const styleHeader = (ws, cols) => {
+      const row = ws.getRow(1)
+      row.height = 26
+      for (let c = 1; c <= cols; c++) {
+        const cell = row.getCell(c)
+        cell.font      = F({ bold: true, color: { argb: BRAND } })
+        cell.fill      = fill(BRAND_LIGHT)
+        cell.alignment = { vertical: 'middle', horizontal: c === 1 ? 'left' : 'center', wrapText: true }
+        cell.border    = { bottom: { style: 'medium', color: { argb: BRAND } } }
+      }
+    }
+    const put = (ws, values, fmts = []) => {
+      const row = ws.addRow(values)
+      fmts.forEach((f, i) => { if (f) row.getCell(i + 1).numFmt = f })
+      return row
+    }
+    const widths = (ws, list) => { ws.columns = list.map(width => ({ width })) }
+    const topAlign = (ws, cols) => { for (let r = 2; r <= ws.rowCount; r++) for (let c = 1; c <= cols; c++) { const cell = ws.getRow(r).getCell(c); cell.alignment = { ...(cell.alignment || {}), vertical: 'top' } } }
+    const alignCol = (ws, col, alignment) => { for (let r = 2; r <= ws.rowCount; r++) { const c = ws.getRow(r).getCell(col); if (c.value !== null && c.value !== undefined) c.alignment = alignment } }
+    let cfPrio = 0
+    const cfStatus = (ws, ref, col, firstRow, rules) => {
+      ws.addConditionalFormatting({
+        ref,
+        rules: rules.map(([text, bg, fg]) => ({
+          type: 'expression', priority: ++cfPrio, formulae: [`${col}${firstRow}="${text}"`],
+          style: { fill: cfFill(bg), font: { color: { argb: fg } } },
+        })),
+      })
+    }
+
+    // ── Summary ──────────────────────────────────────────────────────────
+    widths(wsS, [38, 40])
+    const sum1 = wsS.addRow(['Growthic One', "Team's Timesheet Insights"])
+    sum1.height = 52
+    ;[1, 2].forEach(c => {
+      const cell = sum1.getCell(c)
+      cell.fill = fill(SKY_BG)
+      cell.font = F({ bold: true, size: c === 1 ? 20 : 14, color: { argb: BRAND } })
+      cell.alignment = { vertical: 'middle', horizontal: c === 1 ? 'left' : 'right', indent: c === 1 ? 6 : 1 }
+    })
+    if (ctx.logo) {
+      const id = wb.addImage({ buffer: ctx.logo.buffer, extension: ctx.logo.extension })
+      wsS.addImage(id, { tl: { col: 0.12, row: 0.1 }, ext: { width: 44, height: 44 } })
+    }
+    const bar = wsS.addRow(['', ''])
+    bar.height = 5
+    ;[1, 2].forEach(c => { bar.getCell(c).fill = fill(BRAND) })
+
+    const section = title => {
+      const r = wsS.addRow([title, ''])
+      r.height = 22
+      ;[1, 2].forEach(c => {
+        r.getCell(c).fill = fill(BRAND_LIGHT)
+        r.getCell(c).font = F({ bold: true, color: { argb: BRAND } })
+        r.getCell(c).alignment = { vertical: 'middle' }
+      })
+      return r
+    }
+    const line = (label, value, fmt, opts = {}) => {
+      const r = wsS.addRow([label, value])
+      r.getCell(1).font = F({ bold: !!opts.bold })
+      r.getCell(1).alignment = { vertical: 'top', wrapText: true }
+      r.getCell(2).alignment = { vertical: 'top', horizontal: 'left', wrapText: true }
+      if (fmt) r.getCell(2).numFmt = fmt
+      if (opts.input) { r.getCell(2).fill = fill(INPUT_BG); r.getCell(2).border = { top: { style: 'thin', color: { argb: 'FFD4B106' } }, bottom: { style: 'thin', color: { argb: 'FFD4B106' } }, left: { style: 'thin', color: { argb: 'FFD4B106' } }, right: { style: 'thin', color: { argb: 'FFD4B106' } } } }
+      if (opts.height) r.height = opts.height
+      return r.number
+    }
+
+    wsS.addRow([])
+    line('Period', `${longDate(x.fromISO)} – ${longDate(x.toISO)}`, null, { bold: true })
+    line('Members included', mem.length, null, { bold: true })
+    line('Member names', mem.map(m => m.name).join(', '), null, { bold: true, height: Math.max(18, 15 * Math.ceil(mem.map(m => m.name).join(', ').length / 36)) })
+    line('Generated', ctx.stamp, null, { bold: true })
+    line('Generated by', ctx.generatedBy || '', null, { bold: true })
+    wsS.addRow([])
+
+    section('Overview')
+    line('Avg utilization', totalExpected > 0 ? totalLogged / totalExpected : 0, PCT)
+    line('Total logged hours (submitted)', num(totalLogged), HRS)
+    line('Total expected hours', totalExpected, HRS)
+    line('Total unfilled days', totalUnfilled, '0')
+    line('Days under expected hours (logged days under 8h)', totalShort, '0')
+    line('Avg hours per logged day', loggedDays > 0 ? totalLogged / loggedDays : 0, HRS)
+    const rOnTrackCount = line('Members on track', null, '0')
+    wsS.addRow([])
+
+    section('Hours by approval state')
+    line('Submitted hours (pending approval)', num(totalPending), HRS)
+    line('Approved hours (not counted as logged)', num(totalApproved), HRS)
+    line('Approved share of submitted + approved', totalPending + totalApproved > 0 ? totalApproved / (totalPending + totalApproved) : 0, PCT)
+    wsS.addRow([])
+
+    section('Utilization thresholds (edit to re-grade members)')
+    const rThrOn   = line('On-track threshold', ON_TRACK, PCT, { input: true, bold: true })
+    const rThrCrit = line('Critical threshold', CRITICAL, PCT, { input: true, bold: true })
+    wsS.addRow([])
+
+    section('Leave')
+    line('Leave taken (days)', num(sum(mem, m => m.leaveDays)), '0.0')
+    line('Members who took leave', mem.filter(m => m.leaveDays > 0).length, '0')
+    line('Leave requests still pending', sum(mem, m => m.leavePending), '0')
+    line('Avg utilization excluding leave', totalExLeave > 0 ? totalLogged / totalExLeave : 0, PCT)
+    wsS.addRow([])
+
+    section('Top work area')
+    line('Top work area', topArea ? topArea[0] : '—', null, { bold: true })
+    line('Share of logged hours', topArea && totalLogged > 0 ? topArea[1] / totalLogged : 0, PCT)
+    wsS.addRow([])
+
+    section('How these are counted')
+    const note = (label, text) => line(label, text, null, { bold: true, height: Math.max(18, 15 * Math.ceil(text.length / 44)) })
+    note('Logged hours', 'Submitted entries only. Drafts, rejected and approved entries are not counted.')
+    note('Expected hours', '8 hours per working day. Sundays and company holidays are not working days, and a member is counted from their joining date. Leave is not subtracted.')
+    note('Unfilled day', `A working day older than ${ctx.lockDays} days with no submitted or approved entry.`)
+    note('Utilization', 'Logged hours divided by expected hours.')
+    note('Excluding leave', 'Same as utilization, but approved full-day leave removes that day from expected hours (a half day removes 4 hours).')
+    note('Daily status', `Filled = 8h or more submitted or approved. Short = some hours but under 8h. Unfilled = nothing submitted or approved on a day older than ${ctx.lockDays} days. Open = nothing yet, but still inside the last ${ctx.lockDays} days. Leave, Holiday and Weekend as recorded.`)
+    note('Leave taken', 'Approved leave up to today within the period. Every calendar day inside a leave counts (weekends and holidays in between too), like the Leave Tracker; a half day counts as 0.5. Pending requests are not counted as taken.')
+    note('Top work area', 'The work area with the most submitted hours across all clients and projects (entries with no work area are ignored).')
+    finish(wsS, { cols: 2, lastRow: 0, data: false })
+
+    // ── Members ──────────────────────────────────────────────────────────
+    const mHeaders = ['Member', 'Department', 'Logged hours', 'Expected hours', 'Utilization %', 'Status', 'Working days', 'Unfilled days', 'Days under 8h',
+      'Pending approval hours', 'Approved hours', 'Leave days', 'Expected excl. leave', 'Utilization excl. leave', 'Unfilled dates']
+    widths(wsM, [26, 20, 12, 13, 13, 12, 12, 12, 12, 15, 13, 11, 14, 14, 40])
+    wsM.addRow(mHeaders)
+    styleHeader(wsM, mHeaders.length)
+    const statusFormula = r => `IF(E${r}>=Summary!$B$${rThrOn},"On track",IF(E${r}>=Summary!$B$${rThrCrit},"Behind","Critical"))`
+    mem.forEach(m => {
+      const r = wsM.rowCount + 1
+      put(wsM, [
+        m.name, m.dept, num(m.logged), m.expected,
+        { formula: `IF(D${r}>0,C${r}/D${r},0)`, result: m.util },
+        { formula: statusFormula(r), result: statusOf(m.util) },
+        m.wdCount, m.unfilled, m.shortDays, num(m.pending), num(m.approved), m.leaveDays, m.expectedExLeave,
+        { formula: `IF(M${r}>0,C${r}/M${r},0)`, result: m.utilExLeave },
+        m.unfilledDates.join(', '),
+      ], [null, null, HRS, HRS, PCT, null, '0', '0', '0', HRS, HRS, '0.0', HRS, PCT, null])
+    })
+    const mLast = wsM.rowCount
+    // Totals live under the table (outside the filter range) so filtering never hides them
+    wsM.addRow([])
+    const subHead = wsM.addRow([depts.length > 1 ? 'Department subtotals' : 'Team total'])
+    subHead.font = F({ bold: true, color: { argb: BRAND } })
+    const totalRowFmt = [null, null, HRS, HRS, PCT, null, '0', '0', '0', HRS, HRS, '0.0', HRS, PCT]
+    const totalsRow = (label, second, pick, filterFn) => {
+      const r = wsM.rowCount + 1
+      const set = mem.filter(filterFn)
+      const rangeSum = col => pick === 'dept'
+        ? { formula: `SUMIF($B$2:$B$${mLast},"${esc(label)}",${col}$2:${col}$${mLast})` }
+        : { formula: `SUBTOTAL(109,${col}2:${col}${mLast})` }
+      const v = f => sum(set, f)
+      const logged = v(m => m.logged), expected = v(m => m.expected), exL = v(m => m.expectedExLeave)
+      const utilV = expected > 0 ? logged / expected : 0
+      const row = put(wsM, [
+        label, second,
+        { ...rangeSum('C'), result: num(logged) }, { ...rangeSum('D'), result: expected },
+        { formula: `IF(D${r}>0,C${r}/D${r},0)`, result: utilV },
+        { formula: statusFormula(r), result: statusOf(utilV) },
+        { ...rangeSum('G'), result: v(m => m.wdCount) }, { ...rangeSum('H'), result: v(m => m.unfilled) }, { ...rangeSum('I'), result: v(m => m.shortDays) },
+        { ...rangeSum('J'), result: num(v(m => m.pending)) }, { ...rangeSum('K'), result: num(v(m => m.approved)) }, { ...rangeSum('L'), result: v(m => m.leaveDays) },
+        { ...rangeSum('M'), result: exL },
+        { formula: `IF(M${r}>0,C${r}/M${r},0)`, result: exL > 0 ? logged / exL : 0 },
+      ], totalRowFmt)
+      row.font = F({ bold: true })
+      for (let c = 1; c <= 14; c++) row.getCell(c).fill = fill(GREY_BG)
+      return r
+    }
+    if (depts.length > 1) depts.forEach(d => totalsRow(d, `${mem.filter(m => m.dept === d).length} member(s)`, 'dept', m => m.dept === d))
+    totalsRow('All members', `${mem.length} member(s)`, 'all', () => true)
+    wsM.getCell(`A${wsM.rowCount}`).border = { top: { style: 'thin', color: { argb: BRAND } } }
+    // Utilization colouring follows the Status column (so it tracks the editable thresholds)
+    cfStatus(wsM, `E2:E${wsM.rowCount}`, 'F', 2, [['Critical', RED_BG, RED_FG], ['Behind', AMBER_BG, AMBER_FG]])
+    cfStatus(wsM, `F2:F${wsM.rowCount}`, 'F', 2, [['Critical', RED_BG, RED_FG], ['Behind', AMBER_BG, AMBER_FG], ['On track', GREEN_BG, GREEN_FG]])
+    finish(wsM, { cols: mHeaders.length, lastRow: mLast, filter: true })
+
+    topAlign(wsM, 15)
+    alignCol(wsM, 15, { wrapText: true, vertical: 'top', indent: 1 })
+    alignCol(wsM, 6, { horizontal: 'center', vertical: 'top' })
+
+    // Summary: members on track counts the Status column, so it follows the thresholds too
+    const onTrackCell = wsS.getCell(`B${rOnTrackCount}`)
+    onTrackCell.value = { formula: `COUNTIF(Members!F2:F${mLast},"On track")`, result: mem.filter(m => m.util >= ON_TRACK).length }
+
+    // ── Daily ────────────────────────────────────────────────────────────
+    const dHeaders = ['Date', 'Day', 'Member', 'Department', 'Submitted hours (logged)', 'Approved hours', 'Expected hours', 'Gap vs expected', 'Status', 'Note']
+    widths(wsD, [13, 7, 24, 18, 14, 12, 12, 12, 11, 55])
+    wsD.addRow(dHeaders)
+    styleHeader(wsD, dHeaders.length)
+    mem.forEach(m => m.rows.forEach(r => {
+      const rn = wsD.rowCount + 1
+      put(wsD, [utc(r.iso), dowOf(r.iso), m.name, m.dept, num(r.sub), num(r.app), r.expected, { formula: `E${rn}-G${rn}`, result: num(r.sub - r.expected) }, r.status, r.note],
+        [DATEF, null, null, null, HRS, HRS, HRS, '0.0;[Red]-0.0', null, null])
+    }))
+    const dLast = wsD.rowCount
+    if (dLast >= 2) {
+      cfStatus(wsD, `H2:I${dLast}`, 'I', 2, [['Unfilled', RED_BG, RED_FG], ['Short', AMBER_BG, AMBER_FG]])
+      cfStatus(wsD, `I2:I${dLast}`, 'I', 2, [['Leave', GREY_BG, GREY_FG], ['Holiday', GREY_BG, GREY_FG], ['Weekend', GREY_BG, GREY_FG], ['Filled', GREEN_BG, GREEN_FG]])
+    }
+    topAlign(wsD, 10)
+    alignCol(wsD, 9, { horizontal: 'center', vertical: 'top' })
+    alignCol(wsD, 10, { wrapText: true, vertical: 'top', indent: 1 })
+    finish(wsD, { cols: dHeaders.length, lastRow: dLast, filter: true })
+
+    // ── 3-Month Trend ────────────────────────────────────────────────────
+    widths(wsT, [26, 15, 15, 15])
+    wsT.addRow(['Month', 'Hours logged', 'Expected hours', 'Utilization %'])
+    styleHeader(wsT, 4)
+    x.trendMonths.forEach(t => {
+      const first = `${t.year}-${String(t.month + 1).padStart(2, '0')}-01`
+      const last  = addD(`${t.month === 11 ? t.year + 1 : t.year}-${String(((t.month + 1) % 12) + 1).padStart(2, '0')}-01`, -1)
+      const expected = sum(mem, m => expectedFor(m.dr, first, last))
+      const isCurrent = ctx.todayISO >= first && ctx.todayISO <= last && ctx.todayISO < last
+      const rn = wsT.rowCount + 1
+      put(wsT, [
+        isCurrent ? `${t.label} ${t.year} (to ${+ctx.todayISO.slice(8, 10)} ${MON[+ctx.todayISO.slice(5, 7) - 1]})` : `${t.label} ${t.year}`,
+        num(t.hours), expected, { formula: `IF(C${rn}>0,B${rn}/C${rn},0)`, result: expected > 0 ? t.hours / expected : 0 },
+      ], [null, HRS, HRS, PCT])
+    })
+    if (wsT.rowCount >= 2) {
+      wsT.addConditionalFormatting({ ref: `D2:D${wsT.rowCount}`, rules: [
+        { type: 'cellIs', operator: 'lessThan', priority: ++cfPrio, formulae: [CRITICAL], style: { fill: cfFill(RED_BG), font: { color: { argb: RED_FG } } } },
+        { type: 'cellIs', operator: 'lessThan', priority: ++cfPrio, formulae: [ON_TRACK], style: { fill: cfFill(AMBER_BG), font: { color: { argb: AMBER_FG } } } },
+      ] })
+    }
+    finish(wsT, { cols: 4, lastRow: wsT.rowCount, filter: false })
+
+    // ── Top Entities ─────────────────────────────────────────────────────
+    widths(wsE, [36, 12, 18])
+    wsE.addRow(['Entity / client', 'Hours', '% of logged hours'])
+    styleHeader(wsE, 3)
+    Object.entries(x.entityMap).sort((a, b) => b[1] - a[1]).forEach(([name, hrs]) => {
+      put(wsE, [name, num(hrs), totalLogged > 0 ? hrs / totalLogged : 0], [null, HRS, PCT])
+    })
+    finish(wsE, { cols: 3, lastRow: wsE.rowCount, filter: false })
+
+    // ── Client Drill-down (client → work area rollup) ────────────────────
+    widths(wsC, [32, 10, 30, 11, 18, 9])
+    wsC.addRow(['Client / project', 'Type', 'Work area', 'Hours', '% of logged hours', 'Entries'])
+    styleHeader(wsC, 6)
+    const clientRank = {}
+    Object.entries(x.drillMap).sort((a, b) => b[1].total - a[1].total).forEach(([client, c], i) => {
+      clientRank[client] = i
+      Object.entries(c.sub).sort((a, b) => b[1].total - a[1].total).forEach(([area, a]) => {
+        put(wsC, [client, c.isInternal ? 'Internal' : 'Client', area, num(a.total), totalLogged > 0 ? a.total / totalLogged : 0, a.entries.length], [null, null, null, HRS, PCT, '0'])
+      })
+    })
+    finish(wsC, { cols: 6, lastRow: wsC.rowCount, filter: true })
+
+    // ── Entries (every status, with a Counts-as-logged flag) ─────────────
+    const nHeaders = ['Client / project', 'Work area', 'Employee', 'Department', 'Date', 'Day', 'Month', 'Hours', 'Status', 'Counts as logged?', 'Description']
+    widths(wsN, [30, 26, 24, 18, 13, 7, 11, 8, 11, 12, 55])
+    wsN.addRow(nHeaders)
+    styleHeader(wsN, nHeaders.length)
+    const entryRows = []
+    mem.forEach(m => (x.entriesByMember[m.dr.id] || []).forEach(e => {
+      const isInt = e.work_type === 'internal'
+      entryRows.push({
+        client: isInt ? (e.internal_project?.name || 'Internal') : (e.clients?.client_name || 'Unknown Client'),
+        area:   isInt ? (e.internal_entity?.entity_name || '—') : (e.entity?.entity_name || '—'),
+        who: m.name, dept: m.dept, date: e.date, hours: parseFloat(e.hours || 0), status: e.status,
+        desc: e.work_description || e.task_description || e.description || '',
+      })
+    }))
+    entryRows.sort((a, b) =>
+      (clientRank[a.client] ?? 9999) - (clientRank[b.client] ?? 9999) || a.client.localeCompare(b.client) ||
+      a.area.localeCompare(b.area) || a.date.localeCompare(b.date) || a.who.localeCompare(b.who))
+    entryRows.forEach(e => {
+      put(wsN, [e.client, e.area, e.who, e.dept, utc(e.date), dowOf(e.date), utc(e.date.slice(0, 7) + '-01'), num(e.hours), cap(e.status), e.status === 'submitted' ? 'Yes' : 'No', e.desc],
+        [null, null, null, null, DATEF, null, MONF, HRS, null, null, null])
+    })
+    topAlign(wsN, 11)
+    alignCol(wsN, 11, { wrapText: true, vertical: 'top', indent: 1 })
+    finish(wsN, { cols: nHeaders.length, lastRow: wsN.rowCount, filter: true })
+
+    // ── Leave (one row per leave, clipped to the period) ─────────────────
+    widths(wsL, [26, 20, 22, 13, 13, 14, 11])
+    wsL.addRow(['Member', 'Department', 'Leave type', 'From', 'To', 'Days in period', 'Status'])
+    styleHeader(wsL, 7)
+    mem.forEach(m => m.leaveItems.forEach(i => {
+      put(wsL, [m.name, m.dept, i.type, utc(i.from), utc(i.to), i.days, cap(i.status)], [null, null, null, DATEF, DATEF, '0.0', null])
+    }))
+    finish(wsL, { cols: 7, lastRow: wsL.rowCount, filter: true })
+
+    return wb
+  }
+
   // Approved client visit covering this date (or null)
   function _clientVisitForDay(iso, cvs) {
     return (cvs || []).find(c => iso >= c.start_date && iso <= c.end_date) || null
@@ -2490,99 +2963,30 @@ const Timesheet = (() => {
       }
     }
 
-    // Excel export of what Team's Insights is showing right now — same members,
-    // same period, same numbers (read from _teamExport, never recomputed).
-    function _exportTeamInsights() {
+    // Downloads a branded workbook of what Team's Insights is showing right now — same
+    // members, same period, same numbers (read from _teamExport, never recomputed).
+    async function _exportTeamInsights() {
       const x = _teamExport
       if (!x) { Utils.showToast('Team insights are still loading — try again in a moment.', 'error'); return }
-      if (typeof XLSX === 'undefined') { Utils.showToast('The Excel library did not load — refresh the page and try again.', 'error'); return }
-
-      const round1   = n => Math.round(n * 10) / 10
-      const pretty   = s => (s || '').replace(/_/g, ' ')
-      const cap      = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : ''
-      const share    = hrs => x.totals.logged > 0 ? round1(hrs / x.totals.logged * 100) : 0
-      const nameOf   = id => x.memberById[id]?.name || 'Unknown'
-      const period   = `${Utils.formatDate(x.fromISO)} – ${Utils.formatDate(x.toISO)}`
-      const stamp    = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })
-
-      const wb = XLSX.utils.book_new()
-      const addSheet = (name, rows, widths, filter) => {
-        const ws = XLSX.utils.aoa_to_sheet(rows)
-        ws['!cols'] = widths.map(wch => ({ wch }))
-        if (filter && rows.length > 1) {
-          ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length - 1, c: widths.length - 1 } }) }
-        }
-        XLSX.utils.book_append_sheet(wb, ws, name)
-      }
-
-      addSheet('Summary', [
-        ["Team's Timesheet Insights"],
-        [],
-        ['Period', period],
-        ['Members included', x.memberStats.length],
-        ['Member names', x.memberStats.map(m => m.dr.name || 'Unknown').join(', ')],
-        ['Generated', stamp],
-        ['Generated by', _user.name || ''],
-        [],
-        ['Avg utilization (%)', x.totals.avgUtil],
-        ['Total logged hours', round1(x.totals.logged)],
-        ['Total expected hours', x.totals.expected],
-        ['Total unfilled days', x.totals.unfilled],
-        ['Members on track (85% or more)', x.totals.onTrack],
-        ['Leave taken (days)', x.leave.totalDays],
-        ['Members who took leave', x.leave.membersOnLeave],
-        ['Leave requests still pending', x.leave.pendingCount],
-        [],
-        ['How these are counted'],
-        ['Logged hours', 'Submitted entries only. Drafts, rejected and approved entries are not counted.'],
-        ['Expected hours', '8 hours per working day. Sundays and company holidays are not working days, and a member is counted from their joining date.'],
-        ['Unfilled day', 'A working day older than 7 days with no submitted or approved entry.'],
-        ['Utilization', 'Logged hours divided by expected hours.'],
-        ['Leave taken', 'Approved leave up to today within the period. Every calendar day inside a leave counts (weekends and holidays in between too), the same way the Leave Tracker deducts balance; a half day counts as 0.5. Pending requests are listed separately and are not counted as taken.'],
-        ['Leave and utilization', 'Leave is shown for information only. Expected hours and unfilled days on this screen do not subtract leave days.'],
-      ], [32, 100])
-
-      const leaveOf = m => x.leave.byMember[m.dr.id] || { days: 0, pendingCount: 0, byType: {}, items: [] }
-      addSheet('Members', [
-        ['Member', 'Department', 'Logged hours', 'Expected hours', 'Utilization %', 'Working days', 'Unfilled days', 'Unfilled dates', 'Leave days', 'Leave pending (requests)', 'Leave types'],
-        ...x.memberStats.map(m => [
-          m.dr.name || 'Unknown', pretty(m.dr.department), round1(m.logged), m.expected, m.util, m.wdCount, m.unfilled, m.unfilledDates.join(', '),
-          leaveOf(m).days, leaveOf(m).pendingCount, Object.entries(leaveOf(m).byType).map(([t, n]) => `${t} ${n}`).join(', '),
-        ]),
-      ], [26, 20, 13, 14, 13, 13, 13, 60, 11, 22, 36], true)
-
-      const leaveRows = [['Member', 'Leave type', 'From', 'To', 'Days in period', 'Status']]
-      x.memberStats.forEach(m => {
-        leaveOf(m).items.forEach(i => leaveRows.push([m.dr.name || 'Unknown', i.type, i.from, i.to, i.days, cap(i.status)]))
-      })
-      addSheet('Leave', leaveRows, [26, 22, 12, 12, 14, 11], true)
-
-      addSheet('3-Month Trend', [
-        ['Month', 'Hours logged'],
-        ...x.trendMonths.map(t => [`${t.label} ${t.year}`, round1(t.hours)]),
-      ], [14, 14])
-
-      addSheet('Top Entities', [
-        ['Entity / client', 'Hours', '% of logged hours'],
-        ...Object.entries(x.entityMap).sort((a, b) => b[1] - a[1]).map(([name, hrs]) => [name, round1(hrs), share(hrs)]),
-      ], [34, 10, 18], true)
-
-      // Client drill-down: level 1+2 as a rollup, level 3 as one row per entry
-      const rollup  = [['Client / project', 'Type', 'Work area', 'Hours', '% of logged hours', 'Entries']]
-      const entries = [['Client / project', 'Work area', 'Employee', 'Date', 'Hours', 'Status', 'Description']]
-      Object.entries(x.drillMap).sort((a, b) => b[1].total - a[1].total).forEach(([client, c]) => {
-        Object.entries(c.sub).sort((a, b) => b[1].total - a[1].total).forEach(([area, a]) => {
-          rollup.push([client, c.isInternal ? 'Internal' : 'Client', area, round1(a.total), share(a.total), a.entries.length])
-          a.entries.slice()
-            .sort((p, q) => p.date.localeCompare(q.date) || nameOf(p.empId).localeCompare(nameOf(q.empId)))
-            .forEach(e => entries.push([client, area, nameOf(e.empId), e.date, Math.round(e.hours * 100) / 100, cap(e.status), e.desc]))
+      const btn   = document.getElementById('ts-team-export-btn')
+      const label = btn ? btn.innerHTML : ''
+      if (btn) { btn.disabled = true; btn.textContent = 'Preparing…' }
+      try {
+        const [ExcelJS, logo] = await Promise.all([_loadExcelJS(), _fetchBrandLogo()])
+        const wb = _buildTeamExportWorkbook(ExcelJS, x, {
+          todayISO: _toISO(new Date()), lockDays: _editLockDays(), isHoliday: _isHoliday,
+          deptLabel: Utils.getDeptLabel, generatedBy: _user.name || '', logo,
+          stamp: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }),
         })
-      })
-      addSheet('Client Drill-down', rollup, [30, 10, 28, 10, 18, 9], true)
-      addSheet('Entries', entries, [30, 28, 24, 12, 8, 11, 70], true)
-
-      XLSX.writeFile(wb, `team-timesheet-insights_${x.fromISO}_to_${x.toISO}.xlsx`)
-      Utils.showToast(`Exported ${entries.length - 1} entries for ${x.memberStats.length} member${x.memberStats.length !== 1 ? 's' : ''}.`, 'success')
+        const buffer = await wb.xlsx.writeBuffer()
+        _downloadBlob(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `team-timesheet-insights_${x.fromISO}_to_${x.toISO}.xlsx`)
+        Utils.showToast(`Exported ${x.memberStats.length} member${x.memberStats.length !== 1 ? 's' : ''}.`, 'success')
+      } catch (err) {
+        console.error('Team insights export failed:', err)
+        Utils.showToast('Export failed: ' + (err?.message || err), 'error')
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = label }
+      }
     }
 
     function _renderTeamInsights(period, selectedIds, customFrom, customTo) {
@@ -2736,7 +3140,7 @@ const Timesheet = (() => {
             .filter(e => e.date >= _toISO(ms) && e.date <= _toISO(me) && e.status === 'submitted')
             .reduce((s, e) => s + parseFloat(e.hours || 0), 0)
         })
-        trendMonths.push({ label: lbl, year: ms.getFullYear(), hours: hrs })
+        trendMonths.push({ label: lbl, year: ms.getFullYear(), month: ms.getMonth(), hours: hrs })
       }
 
       // ── Client drill-down ─────────────────────────────────────
@@ -2882,6 +3286,8 @@ const Timesheet = (() => {
           onTrack: memberStats.filter(m => m.util >= 85).length,
         },
         leave: { byMember: leaveByMember, totalDays: totalLeaveDays, pendingCount: totalPendingLv, membersOnLeave },
+        // every entry in the period, all statuses — the export shows approved/draft/rejected too
+        entriesByMember: Object.fromEntries(selectedMembers.map(dr => [dr.id, (_teamAllEntries[dr.id] || []).filter(e => e.date >= fromISO && e.date <= toISO)])),
       }
 
       body.innerHTML = `
