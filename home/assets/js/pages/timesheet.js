@@ -13,6 +13,7 @@ const Timesheet = (() => {
   let _internalProjects  = []   // active internal projects with their work areas
   let _directReports     = []   // employees whose manager_id === _user.id
   let _isManager         = false
+  let _insightsTeam      = []   // reporting subtree — drives Team's Insights
   let _subordinateIds    = new Set() // employees actually in this user's reporting chain — used to gate approve/reject actions
   let _myLeaves          = []   // user's approved leave requests
   let _myWfhs            = []   // user's approved WFH requests
@@ -121,6 +122,9 @@ const Timesheet = (() => {
       _directReports = subs || []
     }
     _isManager = _directReports.length > 0
+    // Insights: only people who actually manage a team (reporting subtree) get Team's Insights,
+    // and it lists that team — not the whole company, even for approvers.
+    _insightsTeam = (subs || []).filter(e => e.status !== 'inactive')
 
     // Hide the Team tab if the user is neither an approver nor a reporting manager
     if (!_p.can_approve && !_isManager) {
@@ -2658,7 +2662,7 @@ const Timesheet = (() => {
 
     if (!content) return
 
-    const canSeeTeam = (_p.can_approve || _isManager) && _directReports.length > 0
+    const canSeeTeam = _insightsTeam.length > 0
 
     content.innerHTML = `
       <div class="ts-insights-root">
@@ -2686,7 +2690,7 @@ const Timesheet = (() => {
 
         ${canSeeTeam ? `
         <div id="ts-insights-team" class="ts-insights-panel" style="display:none;">
-          <div class="ts-insights-filters" style="margin-bottom:12px;flex-wrap:nowrap;gap:10px;">
+          <div class="ts-insights-filters" style="margin-bottom:12px;flex-wrap:wrap;gap:10px;align-items:center;">
             <div class="ts-member-dropdown-wrap" style="position:relative;">
               <button id="ts-member-trigger" class="ts-member-trigger" type="button">
                 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -2718,7 +2722,7 @@ const Timesheet = (() => {
               </div>
             </div>
             ${_user.role === 'super_admin' ? `
-            <button id="ts-team-export-btn" class="btn btn--ghost btn--sm" type="button" style="flex-shrink:0;display:inline-flex;align-items:center;gap:6px;" title="Download the selected members' numbers for the chosen period as an Excel file">
+            <button id="ts-team-export-btn" class="btn btn--ghost btn--sm" type="button" style="flex-shrink:0;margin-left:auto;display:inline-flex;align-items:center;gap:6px;" title="Download the selected members' numbers for the chosen period as an Excel file">
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Export
             </button>` : ''}
@@ -2734,7 +2738,7 @@ const Timesheet = (() => {
     let _teamAllEntries = {}  // keyed by employee id
     let _teamExport     = null // numbers behind the last render, read by the Excel export
     let _teamLeave      = []   // approved + pending leave for the loaded range, all members
-    let _teamSelectedIds = new Set(_directReports.map(dr => dr.id))
+    let _teamSelectedIds = new Set(_insightsTeam.map(dr => dr.id))
     let _teamPeriod = 'this-month'
     let _teamCustomFrom = null
     let _teamCustomTo   = null
@@ -2742,9 +2746,9 @@ const Timesheet = (() => {
     async function _loadTeamData(fromISO, toISO) {
       const [results, leaveRes] = await Promise.all([
         Promise.all(
-          _directReports.map(dr => API.getTimesheetEntries(dr.id, fromISO, toISO).then(r => ({ id: dr.id, entries: r.data || [] })))
+          _insightsTeam.map(dr => API.getTimesheetEntries(dr.id, fromISO, toISO).then(r => ({ id: dr.id, entries: r.data || [] })))
         ),
-        API.getLeaveForEmployeesInRange(_directReports.map(dr => dr.id), fromISO, toISO),
+        API.getLeaveForEmployeesInRange(_insightsTeam.map(dr => dr.id), fromISO, toISO),
       ])
       results.forEach(({ id, entries }) => { _teamAllEntries[id] = entries })
       _teamLeave = leaveRes.data || []
@@ -2779,10 +2783,10 @@ const Timesheet = (() => {
     function _updateTriggerLabel() {
       const lbl = document.getElementById('ts-member-trigger-label')
       if (!lbl) return
-      const total = _directReports.length
+      const total = _insightsTeam.length
       const sel   = _teamSelectedIds.size
       lbl.textContent = sel === total ? 'All members' : sel === 1
-        ? (_directReports.find(d => _teamSelectedIds.has(d.id))?.name || '1 member')
+        ? (_insightsTeam.find(d => _teamSelectedIds.has(d.id))?.name || '1 member')
         : `${sel} members`
     }
 
@@ -2796,7 +2800,7 @@ const Timesheet = (() => {
 
       function _buildMemberRows(filter = '') {
         const q = filter.toLowerCase()
-        const filtered = _directReports.filter(dr => !q || (dr.name || '').toLowerCase().includes(q))
+        const filtered = _insightsTeam.filter(dr => !q || (dr.name || '').toLowerCase().includes(q))
         membersList.innerHTML = filtered.map(dr => {
           const checked = _teamSelectedIds.has(dr.id)
           const dept    = dr.department ? dr.department.replace(/_/g, ' ') : ''
@@ -2860,16 +2864,16 @@ const Timesheet = (() => {
 
       function _updateSelectAllLabel() {
         if (!_saBtn) return
-        const allSelected = _directReports.every(dr => _teamSelectedIds.has(dr.id))
+        const allSelected = _insightsTeam.every(dr => _teamSelectedIds.has(dr.id))
         _saBtn.textContent = allSelected ? 'Deselect all' : 'Select all'
         _saBtn.style.color = allSelected ? '#DC2626' : '#0F4799'
       }
       _saBtn?.addEventListener('click', () => {
-        const allSelected = _directReports.every(dr => _teamSelectedIds.has(dr.id))
+        const allSelected = _insightsTeam.every(dr => _teamSelectedIds.has(dr.id))
         if (allSelected) {
           _teamSelectedIds.clear()
         } else {
-          _directReports.forEach(dr => _teamSelectedIds.add(dr.id))
+          _insightsTeam.forEach(dr => _teamSelectedIds.add(dr.id))
         }
         _updateTriggerLabel()
         _updateSelectAllLabel()
@@ -2977,7 +2981,7 @@ const Timesheet = (() => {
       const fromISO = _toISO(fromDate)
       const toISO   = _toISO(toDate)
 
-      const selectedMembers = _directReports.filter(dr => selectedIds.has(dr.id))
+      const selectedMembers = _insightsTeam.filter(dr => selectedIds.has(dr.id))
       const body = document.getElementById('ts-insights-team-body')
       if (!body) return
 
@@ -3534,9 +3538,9 @@ const Timesheet = (() => {
         myLeave.pendingCount ? `<span style="color:#D97706;">${myLeave.pendingCount} pending</span>` : '',
       ].filter(Boolean).join(' · ') || 'No leave in this period'
 
-      // Entries in period (submitted + approved = logged)
+      // Logged hours count Submitted entries only; an Approved day still counts as filled
       const periodEntries = entries.filter(e => e.date >= fromISO && e.date <= toISO)
-      const loggedEntries = periodEntries.filter(e => ['submitted', 'approved'].includes(e.status))
+      const loggedEntries = periodEntries.filter(e => e.status === 'submitted')
 
       // ── Expected hours ────────────────────────────────────────
       let expectedHours    = 0
@@ -3562,7 +3566,7 @@ const Timesheet = (() => {
       const cutoff = new Date(today)
       cutoff.setDate(cutoff.getDate() - _editLockDays())
       cutoff.setHours(23, 59, 59, 999)
-      const filledDates = new Set(loggedEntries.map(e => e.date))
+      const filledDates = new Set(periodEntries.filter(e => ['submitted', 'approved'].includes(e.status)).map(e => e.date))
       const missedDays  = []
       const missCur     = new Date(effectiveFrom)
       while (missCur <= toDate) {
@@ -3579,7 +3583,7 @@ const Timesheet = (() => {
       const prevMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1)
       const prevMonthEnd   = new Date(today.getFullYear(), today.getMonth(), 0)
       const prevHours      = entries
-        .filter(e => e.date >= _toISO(prevMonthStart) && e.date <= _toISO(prevMonthEnd) && ['submitted', 'approved'].includes(e.status))
+        .filter(e => e.date >= _toISO(prevMonthStart) && e.date <= _toISO(prevMonthEnd) && e.status === 'submitted')
         .reduce((s, e) => s + parseFloat(e.hours || 0), 0)
       const prevLabel = prevMonthStart.toLocaleDateString('en-IN', { month: 'long' })
 
@@ -3620,7 +3624,7 @@ const Timesheet = (() => {
         const me = new Date(toDate.getFullYear(), toDate.getMonth() - i + 1, 0)
         const lbl = ms.toLocaleDateString('en-IN', { month: 'short' })
         const hrs = allEntries
-          .filter(e => e.date >= _toISO(ms) && e.date <= _toISO(me) && ['submitted', 'approved'].includes(e.status))
+          .filter(e => e.date >= _toISO(ms) && e.date <= _toISO(me) && e.status === 'submitted')
           .reduce((s, e) => s + parseFloat(e.hours || 0), 0)
         const hasData = !joinDate || joinDate <= me
         trendMonths.push({ label: lbl, hours: hasData ? hrs : null })
