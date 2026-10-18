@@ -315,6 +315,31 @@ const Timesheet = (() => {
   function _isWfhDay(iso, wfhs) {
     return wfhs.some(w => iso >= w.start_date && iso <= w.end_date)
   }
+
+  // Leave inside [fromISO, toISO], for the "Leave Taken" cards in Insights.
+  //  • Only days up to today count — leave booked for next week hasn't been taken yet.
+  //  • Approved = taken. Pending is tallied separately and never added to the total.
+  //  • Days follow the leave policy (same as the Leave Tracker balance): every calendar
+  //    day inside a leave counts, weekends/holidays in between included; a half day is 0.5.
+  function _leaveInRange(leaves, fromISO, toISO) {
+    const todayISO = _toISO(new Date())
+    const capISO   = toISO < todayISO ? toISO : todayISO
+    const out = { days: 0, byType: {}, pendingDays: 0, pendingCount: 0, items: [] }
+    ;(leaves || []).forEach(l => {
+      if (l.status !== 'approved' && l.status !== 'pending') return
+      const s = l.start_date > fromISO ? l.start_date : fromISO
+      const e = l.end_date   < capISO  ? l.end_date   : capISO
+      if (s > e) return
+      const n    = l.is_half_day ? 0.5 : Math.round((new Date(e + 'T00:00:00') - new Date(s + 'T00:00:00')) / 86400000) + 1
+      const type = l.leave_types?.name || 'Leave'
+      if (l.status === 'approved') { out.days += n; out.byType[type] = (out.byType[type] || 0) + n }
+      else                         { out.pendingDays += n; out.pendingCount++ }
+      out.items.push({ type, from: s, to: e, days: n, status: l.status })
+    })
+    return out
+  }
+  function _fmtLeaveDays(n) { return Number.isInteger(n) ? String(n) : n.toFixed(1) }
+  const _LEAVE_CARD_TIP = 'Approved leave up to today within the period. Every calendar day inside a leave counts (weekends and holidays in between too), the same way the Leave Tracker deducts balance; a half day counts as 0.5. Pending requests are shown separately and are not counted as taken.'
   // Approved client visit covering this date (or null)
   function _clientVisitForDay(iso, cvs) {
     return (cvs || []).find(c => iso >= c.start_date && iso <= c.end_date) || null
@@ -2268,16 +2293,21 @@ const Timesheet = (() => {
     let _teamDataLoaded = false
     let _teamAllEntries = {}  // keyed by employee id
     let _teamExport     = null // numbers behind the last render, read by the Excel export
+    let _teamLeave      = []   // approved + pending leave for the loaded range, all members
     let _teamSelectedIds = new Set(_directReports.map(dr => dr.id))
     let _teamPeriod = 'this-month'
     let _teamCustomFrom = null
     let _teamCustomTo   = null
 
     async function _loadTeamData(fromISO, toISO) {
-      const results = await Promise.all(
-        _directReports.map(dr => API.getTimesheetEntries(dr.id, fromISO, toISO).then(r => ({ id: dr.id, entries: r.data || [] })))
-      )
+      const [results, leaveRes] = await Promise.all([
+        Promise.all(
+          _directReports.map(dr => API.getTimesheetEntries(dr.id, fromISO, toISO).then(r => ({ id: dr.id, entries: r.data || [] })))
+        ),
+        API.getLeaveForEmployeesInRange(_directReports.map(dr => dr.id), fromISO, toISO),
+      ])
       results.forEach(({ id, entries }) => { _teamAllEntries[id] = entries })
+      _teamLeave = leaveRes.data || []
     }
 
     content.querySelectorAll('.ts-insights-tab').forEach(btn => {
@@ -2499,18 +2529,33 @@ const Timesheet = (() => {
         ['Total expected hours', x.totals.expected],
         ['Total unfilled days', x.totals.unfilled],
         ['Members on track (85% or more)', x.totals.onTrack],
+        ['Leave taken (days)', x.leave.totalDays],
+        ['Members who took leave', x.leave.membersOnLeave],
+        ['Leave requests still pending', x.leave.pendingCount],
         [],
         ['How these are counted'],
         ['Logged hours', 'Submitted entries only. Drafts, rejected and approved entries are not counted.'],
         ['Expected hours', '8 hours per working day. Sundays and company holidays are not working days, and a member is counted from their joining date.'],
         ['Unfilled day', 'A working day older than 7 days with no submitted or approved entry.'],
         ['Utilization', 'Logged hours divided by expected hours.'],
+        ['Leave taken', 'Approved leave up to today within the period. Every calendar day inside a leave counts (weekends and holidays in between too), the same way the Leave Tracker deducts balance; a half day counts as 0.5. Pending requests are listed separately and are not counted as taken.'],
+        ['Leave and utilization', 'Leave is shown for information only. Expected hours and unfilled days on this screen do not subtract leave days.'],
       ], [32, 100])
 
+      const leaveOf = m => x.leave.byMember[m.dr.id] || { days: 0, pendingCount: 0, byType: {}, items: [] }
       addSheet('Members', [
-        ['Member', 'Department', 'Logged hours', 'Expected hours', 'Utilization %', 'Working days', 'Unfilled days', 'Unfilled dates'],
-        ...x.memberStats.map(m => [m.dr.name || 'Unknown', pretty(m.dr.department), round1(m.logged), m.expected, m.util, m.wdCount, m.unfilled, m.unfilledDates.join(', ')]),
-      ], [26, 20, 13, 14, 13, 13, 13, 60], true)
+        ['Member', 'Department', 'Logged hours', 'Expected hours', 'Utilization %', 'Working days', 'Unfilled days', 'Unfilled dates', 'Leave days', 'Leave pending (requests)', 'Leave types'],
+        ...x.memberStats.map(m => [
+          m.dr.name || 'Unknown', pretty(m.dr.department), round1(m.logged), m.expected, m.util, m.wdCount, m.unfilled, m.unfilledDates.join(', '),
+          leaveOf(m).days, leaveOf(m).pendingCount, Object.entries(leaveOf(m).byType).map(([t, n]) => `${t} ${n}`).join(', '),
+        ]),
+      ], [26, 20, 13, 14, 13, 13, 13, 60, 11, 22, 36], true)
+
+      const leaveRows = [['Member', 'Leave type', 'From', 'To', 'Days in period', 'Status']]
+      x.memberStats.forEach(m => {
+        leaveOf(m).items.forEach(i => leaveRows.push([m.dr.name || 'Unknown', i.type, i.from, i.to, i.days, cap(i.status)]))
+      })
+      addSheet('Leave', leaveRows, [26, 22, 12, 12, 14, 11], true)
 
       addSheet('3-Month Trend', [
         ['Month', 'Hours logged'],
@@ -2603,6 +2648,14 @@ const Timesheet = (() => {
       const avgUtil       = totalExpected > 0 ? Math.round((totalLogged / totalExpected) * 100) : 0
       const utilCls       = avgUtil >= 85 ? 'stat-value--good' : avgUtil >= 60 ? 'stat-value--warn' : 'stat-value--bad'
 
+      // ── Leave taken (approved days up to today; pending kept separate) ──
+      const leaveByMember = {}
+      selectedMembers.forEach(dr => { leaveByMember[dr.id] = _leaveInRange(_teamLeave.filter(l => l.employee_id === dr.id), fromISO, toISO) })
+      const leaveVals      = Object.values(leaveByMember)
+      const totalLeaveDays = leaveVals.reduce((s, l) => s + l.days, 0)
+      const totalPendingLv = leaveVals.reduce((s, l) => s + l.pendingCount, 0)
+      const membersOnLeave = leaveVals.filter(l => l.days > 0).length
+
       // ── Top entities (combined) ───────────────────────────
       const entityMap = {}
       selectedMembers.forEach(dr => {
@@ -2644,6 +2697,14 @@ const Timesheet = (() => {
         const unfilledCell = unfilled > 0
           ? `<button class="ts-unfilled-btn" data-dates="${Utils.escapeHtml(JSON.stringify(unfilledDates))}" data-name="${Utils.escapeHtml(dr.name || '')}" style="font-size:12px;font-weight:500;color:#DC2626;font-variant-numeric:tabular-nums;background:none;border:none;cursor:pointer;padding:0;font-family:inherit;text-decoration:underline dotted;text-underline-offset:2px;">${unfilled}</button>`
           : `<span style="font-size:12px;font-weight:500;color:#059669;font-variant-numeric:tabular-nums;">0</span>`
+        const lv       = leaveByMember[dr.id]
+        const leaveTip = [
+          ...Object.entries(lv.byType).map(([t, n]) => `${t}: ${_fmtLeaveDays(n)}`),
+          lv.pendingCount ? `${lv.pendingCount} pending approval` : '',
+        ].filter(Boolean).join(' · ')
+        const leaveCell = (lv.days > 0 || lv.pendingCount > 0)
+          ? `<span title="${Utils.escapeHtml(leaveTip)}" style="font-size:12px;font-weight:500;font-variant-numeric:tabular-nums;">${_fmtLeaveDays(lv.days)}${lv.pendingCount ? `<span style="color:#D97706;font-size:11px;"> +${lv.pendingCount} pending</span>` : ''}</span>`
+          : `<span style="font-size:12px;color:var(--text-muted);">—</span>`
         return `
           <tr style="border-bottom:1px solid var(--border);">
             <td style="padding:7px 12px;">
@@ -2659,6 +2720,7 @@ const Timesheet = (() => {
               <span style="font-size:12px;font-weight:600;color:${uCls};font-variant-numeric:tabular-nums;">${util}%</span>
             </td>
             <td style="padding:7px 12px;text-align:right;">${unfilledCell}</td>
+            <td style="padding:7px 12px;text-align:right;white-space:nowrap;">${leaveCell}</td>
           </tr>`
       }).join('')
 
@@ -2819,10 +2881,11 @@ const Timesheet = (() => {
           logged: totalLogged, expected: totalExpected, unfilled: totalUnfilled, avgUtil,
           onTrack: memberStats.filter(m => m.util >= 85).length,
         },
+        leave: { byMember: leaveByMember, totalDays: totalLeaveDays, pendingCount: totalPendingLv, membersOnLeave },
       }
 
       body.innerHTML = `
-        <div class="grid-4 mb-4">
+        <div class="grid-5 mb-4">
           <div class="stat-card">
             <div class="stat-label">Avg Utilization</div>
             <div class="stat-value ${utilCls}" style="font-variant-numeric:tabular-nums;">${avgUtil}%</div>
@@ -2842,6 +2905,11 @@ const Timesheet = (() => {
             <div class="stat-label">Members On Track</div>
             <div class="stat-value stat-value--good" style="font-variant-numeric:tabular-nums;">${memberStats.filter(m => m.util >= 85).length}</div>
             <div class="stat-delta">of ${selectedMembers.length} ≥ 85% utilization</div>
+          </div>
+          <div class="stat-card" title="${Utils.escapeHtml(_LEAVE_CARD_TIP)}">
+            <div class="stat-label">Leave Taken</div>
+            <div class="stat-value" style="font-variant-numeric:tabular-nums;">${_fmtLeaveDays(totalLeaveDays)}<span style="font-size:13px;font-weight:500;color:var(--text-muted);"> day${totalLeaveDays === 1 ? '' : 's'}</span></div>
+            <div class="stat-delta">${membersOnLeave} of ${selectedMembers.length} member${selectedMembers.length !== 1 ? 's' : ''}${totalPendingLv ? ` · <span style="color:#D97706;">${totalPendingLv} pending</span>` : ''}</div>
           </div>
         </div>
 
@@ -2863,13 +2931,14 @@ const Timesheet = (() => {
               <div class="ts-chart-title" style="margin-bottom:0;">Member Breakdown</div>
             </div>
             <div style="overflow-x:auto;">
-              <table style="width:100%;border-collapse:collapse;min-width:380px;">
+              <table style="width:100%;border-collapse:collapse;min-width:440px;">
                 <thead>
                   <tr style="border-bottom:1px solid var(--border);">
                     <th style="padding:7px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Member</th>
                     <th style="padding:7px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Logged</th>
                     <th style="padding:7px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Util%</th>
                     <th style="padding:7px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Unfilled</th>
+                    <th style="padding:7px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;" title="Leave days taken in this period">Leave</th>
                   </tr>
                 </thead>
                 <tbody>${tableRows}</tbody>
@@ -3085,6 +3154,13 @@ const Timesheet = (() => {
       const joinDate      = _user.joining_date ? new Date(_user.joining_date + 'T00:00:00') : null
       const effectiveFrom = joinDate && joinDate > fromDate ? joinDate : fromDate
 
+      // Leave taken in this period (approved; pending shown separately)
+      const myLeave  = _leaveInRange(_myLeaves, fromISO, toISO)
+      const leaveSub = [
+        Object.entries(myLeave.byType).map(([t, n]) => `${Utils.escapeHtml(t)} ${_fmtLeaveDays(n)}`).join(' · '),
+        myLeave.pendingCount ? `<span style="color:#D97706;">${myLeave.pendingCount} pending</span>` : '',
+      ].filter(Boolean).join(' · ') || 'No leave in this period'
+
       // Entries in period (submitted + approved = logged)
       const periodEntries = entries.filter(e => e.date >= fromISO && e.date <= toISO)
       const loggedEntries = periodEntries.filter(e => ['submitted', 'approved'].includes(e.status))
@@ -3181,7 +3257,7 @@ const Timesheet = (() => {
       if (!body) return
 
       body.innerHTML = `
-        <div class="grid-4 mb-4">
+        <div class="grid-5 mb-4">
           <div class="stat-card">
             <div class="stat-label">Utilization Rate</div>
             <div class="stat-value ${utilCls}" style="font-variant-numeric:tabular-nums;">${utilRate}%</div>
@@ -3201,6 +3277,11 @@ const Timesheet = (() => {
             <div class="stat-label">${prevLabel}</div>
             <div class="stat-value" style="color:var(--text-muted);font-variant-numeric:tabular-nums;">${prevHours.toFixed(1)}h</div>
             <div class="stat-delta">Previous month</div>
+          </div>
+          <div class="stat-card" title="${Utils.escapeHtml(_LEAVE_CARD_TIP)}">
+            <div class="stat-label">Leave Taken</div>
+            <div class="stat-value" style="font-variant-numeric:tabular-nums;">${_fmtLeaveDays(myLeave.days)}<span style="font-size:13px;font-weight:500;color:var(--text-muted);"> day${myLeave.days === 1 ? '' : 's'}</span></div>
+            <div class="stat-delta">${leaveSub}</div>
           </div>
         </div>
 

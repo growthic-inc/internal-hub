@@ -1523,6 +1523,18 @@ const API = (() => {
     return { leaves: lr.data || [], wfhs: wfh.data || [], clientVisits: cv.data || [] }
   }
 
+  // Approved + pending leave overlapping a date range for a set of employees, in one
+  // query — feeds the "Leave Taken" cards in Timesheet Insights.
+  async function getLeaveForEmployeesInRange(employeeIds, startISO, endISO) {
+    if (!employeeIds || !employeeIds.length) return { data: [], error: null }
+    return supabase.from('leave_requests')
+      .select('employee_id, start_date, end_date, days, is_half_day, half_day_period, status, leave_types(name)')
+      .in('employee_id', employeeIds)
+      .in('status', ['approved', 'pending'])
+      .lte('start_date', endISO).gte('end_date', startISO)
+      .order('start_date')
+  }
+
   async function getPendingCorrections(approverId) {
     return supabase
       .from('leave_requests')
@@ -2183,7 +2195,7 @@ const API = (() => {
     getLeaveTypes, createLeaveType, updateLeaveType, deleteLeaveType,
     getExpenseTypes, createExpenseType, updateExpenseType, deleteExpenseType,
     getLeaveCredits, getAllLeaveCredits, addLeaveCredit, deleteLeaveCredit,
-    getMyLeaveRequests, getPendingLeaveApprovals, getHRLeaveQueue, getAllLeaveRequests,
+    getMyLeaveRequests, getPendingLeaveApprovals, getHRLeaveQueue, getAllLeaveRequests, getLeaveForEmployeesInRange,
     getApprovalHistoryLeave, getApprovalHistoryWfh,
     createLeaveRequest, createLeaveRequestsBulk, updateLeaveRequest,
     getBulkLeaveOccupancy, getPendingCorrections,
