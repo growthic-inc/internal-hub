@@ -71,7 +71,13 @@ const Auth = (() => {
       return null
     }
 
-    if (window.Sentry) Sentry.setUser({ id: String(data.id), email: data.email, username: data.name })
+    // Monitoring is optional: the Sentry loader may still be a stub (no setUser yet),
+    // blocked, or rate-limited. It must never stop the app from loading.
+    try {
+      if (window.Sentry && typeof window.Sentry.setUser === 'function') {
+        window.Sentry.setUser({ id: String(data.id), email: data.email, username: data.name })
+      }
+    } catch (_) { /* ignore */ }
 
     // Portal Access — which departmental portals (HRMS, and future ones)
     // this employee has been explicitly granted, independent of department.
