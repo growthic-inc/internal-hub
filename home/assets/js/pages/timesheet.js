@@ -3107,24 +3107,24 @@ const Timesheet = (() => {
           lv.pendingCount ? `${lv.pendingCount} pending approval` : '',
         ].filter(Boolean).join(' · ')
         const leaveCell = (lv.days > 0 || lv.pendingCount > 0)
-          ? `<span title="${Utils.escapeHtml(leaveTip)}" style="font-size:12px;font-weight:500;font-variant-numeric:tabular-nums;">${_fmtLeaveDays(lv.days)}${lv.pendingCount ? `<span style="color:#D97706;font-size:11px;"> +${lv.pendingCount} pending</span>` : ''}</span>`
+          ? `<span title="${Utils.escapeHtml(leaveTip)}" style="font-size:12px;font-weight:500;font-variant-numeric:tabular-nums;">${_fmtLeaveDays(lv.days)}${lv.pendingCount ? `<span style="color:#D97706;font-size:10.5px;font-weight:600;"> +${lv.pendingCount}</span>` : ''}</span>`
           : `<span style="font-size:12px;color:var(--text-muted);">—</span>`
         return `
           <tr style="border-bottom:1px solid var(--border);">
-            <td style="padding:7px 12px;">
+            <td style="padding:7px 6px;">
               <div style="display:flex;align-items:center;gap:8px;">
                 ${img}
                 <div style="min-width:0;">
-                  <div style="font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${Utils.escapeHtml(dr.name || 'Unknown')}</div>
+                  <div title="${Utils.escapeHtml(dr.name || 'Unknown')}" style="font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px;">${Utils.escapeHtml(dr.name || 'Unknown')}</div>
                 </div>
               </div>
             </td>
-            <td style="padding:7px 12px;text-align:right;font-variant-numeric:tabular-nums;font-size:12px;">${logged.toFixed(1)}h</td>
-            <td style="padding:7px 12px;text-align:right;">
+            <td style="padding:7px 6px;text-align:right;font-variant-numeric:tabular-nums;font-size:12px;">${logged.toFixed(1)}h</td>
+            <td style="padding:7px 6px;text-align:right;">
               <span style="font-size:12px;font-weight:600;color:${uCls};font-variant-numeric:tabular-nums;">${util}%</span>
             </td>
-            <td style="padding:7px 12px;text-align:right;">${unfilledCell}</td>
-            <td style="padding:7px 12px;text-align:right;white-space:nowrap;">${leaveCell}</td>
+            <td style="padding:7px 6px;text-align:right;">${unfilledCell}</td>
+            <td style="padding:7px 6px;text-align:right;white-space:nowrap;">${leaveCell}</td>
           </tr>`
       }).join('')
 
@@ -3337,14 +3337,14 @@ const Timesheet = (() => {
               <div class="ts-chart-title" style="margin-bottom:0;">Member Breakdown</div>
             </div>
             <div style="overflow-x:auto;">
-              <table style="width:100%;border-collapse:collapse;min-width:440px;">
+              <table style="width:100%;border-collapse:collapse;min-width:340px;">
                 <thead>
                   <tr style="border-bottom:1px solid var(--border);">
-                    <th style="padding:7px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Member</th>
-                    <th style="padding:7px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Logged</th>
-                    <th style="padding:7px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Util%</th>
-                    <th style="padding:7px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Unfilled</th>
-                    <th style="padding:7px 12px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;" title="Leave days taken in this period">Leave</th>
+                    <th style="padding:7px 6px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Member</th>
+                    <th style="padding:7px 6px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Logged</th>
+                    <th style="padding:7px 6px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Util%</th>
+                    <th style="padding:7px 6px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Unfilled</th>
+                    <th style="padding:7px 6px;text-align:right;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;" title="Leave days taken in this period. An amber +N means N requests are still pending approval.">Leave</th>
                   </tr>
                 </thead>
                 <tbody>${tableRows}</tbody>
