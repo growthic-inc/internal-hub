@@ -3504,7 +3504,7 @@ const Timesheet = (() => {
         const [yr, mo] = toVal.split('-').map(Number)
         const toISO   = _toISO(new Date(yr, mo, 0))
         const { data } = await API.getTimesheetEntries(_user.id, fromISO, toISO)
-        _renderMyInsights('custom', data || [], new Date(fromISO), new Date(yr, mo - 1, 1), new Date(yr, mo, 0))
+        _renderMyInsights('custom', data || [], new Date(fromISO + 'T00:00:00'), new Date(yr, mo, 0))
       })
     }
 
