@@ -357,12 +357,6 @@ const Timesheet = (() => {
     }
     return _excelJsPromise
   }
-  async function _fetchBrandLogo() {
-    try {
-      const res = await fetch('/assets/img/logo.jpg')
-      return res.ok ? { buffer: await res.arrayBuffer(), extension: 'jpeg' } : null
-    } catch (_) { return null }   // the export just goes without the logo
-  }
   function _downloadBlob(blob, filename) {
     const url = URL.createObjectURL(blob)
     const a   = document.createElement('a')
@@ -378,12 +372,11 @@ const Timesheet = (() => {
      free SheetJS build can't write fills, frozen rows, conditional formats or
      print setup. */
   function _buildTeamExportWorkbook(ExcelJS, x, ctx) {
-    const BRAND = 'FF0F4799', BRAND_LIGHT = 'FFEEF2FF', SKY_BG = 'FFCFF0FC', WHITE = 'FFFFFFFF'
+    const BRAND = 'FF0F4799', BRAND_LIGHT = 'FFEEF2FF'
     const AMBER_BG = 'FFFEF3C7', AMBER_FG = 'FF92400E'
     const RED_BG = 'FFFEE2E2', RED_FG = 'FF991B1B'
     const GREEN_BG = 'FFDCFCE7', GREEN_FG = 'FF166534'
     const GREY_BG = 'FFF1F5F9', GREY_FG = 'FF475569'
-    const INPUT_BG = 'FFFEF9C3'
     const HRS = '0.0', PCT = '0.0%', DATEF = 'dd mmm yyyy', MONF = 'mmm yyyy'
     const ON_TRACK = 0.85, CRITICAL = 0.60, FULL_DAY = 8
     const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -557,21 +550,9 @@ const Timesheet = (() => {
 
     // ── Summary ──────────────────────────────────────────────────────────
     widths(wsS, [38, 40])
-    const sum1 = wsS.addRow(['Growthic One', "Team's Timesheet Insights"])
-    sum1.height = 52
-    ;[1, 2].forEach(c => {
-      const cell = sum1.getCell(c)
-      cell.fill = fill(SKY_BG)
-      cell.font = F({ bold: true, size: c === 1 ? 20 : 14, color: { argb: BRAND } })
-      cell.alignment = { vertical: 'middle', horizontal: c === 1 ? 'left' : 'right', indent: c === 1 ? 6 : 1 }
-    })
-    if (ctx.logo) {
-      const id = wb.addImage({ buffer: ctx.logo.buffer, extension: ctx.logo.extension })
-      wsS.addImage(id, { tl: { col: 0.12, row: 0.1 }, ext: { width: 44, height: 44 } })
-    }
-    const bar = wsS.addRow(['', ''])
-    bar.height = 5
-    ;[1, 2].forEach(c => { bar.getCell(c).fill = fill(BRAND) })
+    const titleRow = wsS.addRow(["Team's Timesheet Insights"])
+    titleRow.getCell(1).font = F({ bold: true, size: 14 })
+    titleRow.height = 22
 
     const section = title => {
       const r = wsS.addRow([title, ''])
@@ -589,7 +570,6 @@ const Timesheet = (() => {
       r.getCell(1).alignment = { vertical: 'top', wrapText: true }
       r.getCell(2).alignment = { vertical: 'top', horizontal: 'left', wrapText: true }
       if (fmt) r.getCell(2).numFmt = fmt
-      if (opts.input) { r.getCell(2).fill = fill(INPUT_BG); r.getCell(2).border = { top: { style: 'thin', color: { argb: 'FFD4B106' } }, bottom: { style: 'thin', color: { argb: 'FFD4B106' } }, left: { style: 'thin', color: { argb: 'FFD4B106' } }, right: { style: 'thin', color: { argb: 'FFD4B106' } } } }
       if (opts.height) r.height = opts.height
       return r.number
     }
@@ -610,17 +590,8 @@ const Timesheet = (() => {
     line('Days under expected hours (logged days under 8h)', totalShort, '0')
     line('Avg hours per logged day', loggedDays > 0 ? totalLogged / loggedDays : 0, HRS)
     const rOnTrackCount = line('Members on track', null, '0')
-    wsS.addRow([])
-
-    section('Hours by approval state')
-    line('Submitted hours (pending approval)', num(totalPending), HRS)
-    line('Approved hours (not counted as logged)', num(totalApproved), HRS)
-    line('Approved share of submitted + approved', totalPending + totalApproved > 0 ? totalApproved / (totalPending + totalApproved) : 0, PCT)
-    wsS.addRow([])
-
-    section('Utilization thresholds (edit to re-grade members)')
-    const rThrOn   = line('On-track threshold', ON_TRACK, PCT, { input: true, bold: true })
-    const rThrCrit = line('Critical threshold', CRITICAL, PCT, { input: true, bold: true })
+    line('Top work area', topArea ? topArea[0] : '—')
+    line('Top work area share of logged hours', topArea && totalLogged > 0 ? topArea[1] / totalLogged : 0, PCT)
     wsS.addRow([])
 
     section('Leave')
@@ -630,17 +601,13 @@ const Timesheet = (() => {
     line('Avg utilization excluding leave', totalExLeave > 0 ? totalLogged / totalExLeave : 0, PCT)
     wsS.addRow([])
 
-    section('Top work area')
-    line('Top work area', topArea ? topArea[0] : '—', null, { bold: true })
-    line('Share of logged hours', topArea && totalLogged > 0 ? topArea[1] / totalLogged : 0, PCT)
-    wsS.addRow([])
-
     section('How these are counted')
     const note = (label, text) => line(label, text, null, { bold: true, height: Math.max(18, 15 * Math.ceil(text.length / 44)) })
     note('Logged hours', 'Submitted entries only. Drafts, rejected and approved entries are not counted.')
     note('Expected hours', '8 hours per working day. Sundays and company holidays are not working days, and a member is counted from their joining date. Leave is not subtracted.')
     note('Unfilled day', `A working day older than ${ctx.lockDays} days with no submitted or approved entry.`)
     note('Utilization', 'Logged hours divided by expected hours.')
+    note('Status', `On track = utilization ${Math.round(ON_TRACK * 100)}% or more. Behind = ${Math.round(CRITICAL * 100)}% to under ${Math.round(ON_TRACK * 100)}%. Critical = under ${Math.round(CRITICAL * 100)}%.`)
     note('Excluding leave', 'Same as utilization, but approved full-day leave removes that day from expected hours (a half day removes 4 hours).')
     note('Daily status', `Filled = 8h or more submitted or approved. Short = some hours but under 8h. Unfilled = nothing submitted or approved on a day older than ${ctx.lockDays} days. Open = nothing yet, but still inside the last ${ctx.lockDays} days. Leave, Holiday and Weekend as recorded.`)
     note('Leave taken', 'Approved leave up to today within the period. Every calendar day inside a leave counts (weekends and holidays in between too), like the Leave Tracker; a half day counts as 0.5. Pending requests are not counted as taken.')
@@ -653,7 +620,7 @@ const Timesheet = (() => {
     widths(wsM, [26, 20, 12, 13, 13, 12, 12, 12, 12, 15, 13, 11, 14, 14, 40])
     wsM.addRow(mHeaders)
     styleHeader(wsM, mHeaders.length)
-    const statusFormula = r => `IF(E${r}>=Summary!$B$${rThrOn},"On track",IF(E${r}>=Summary!$B$${rThrCrit},"Behind","Critical"))`
+    const statusFormula = r => `IF(E${r}>=${ON_TRACK},"On track",IF(E${r}>=${CRITICAL},"Behind","Critical"))`
     mem.forEach(m => {
       const r = wsM.rowCount + 1
       put(wsM, [
@@ -2972,10 +2939,10 @@ const Timesheet = (() => {
       const label = btn ? btn.innerHTML : ''
       if (btn) { btn.disabled = true; btn.textContent = 'Preparing…' }
       try {
-        const [ExcelJS, logo] = await Promise.all([_loadExcelJS(), _fetchBrandLogo()])
+        const ExcelJS = await _loadExcelJS()
         const wb = _buildTeamExportWorkbook(ExcelJS, x, {
           todayISO: _toISO(new Date()), lockDays: _editLockDays(), isHoliday: _isHoliday,
-          deptLabel: Utils.getDeptLabel, generatedBy: _user.name || '', logo,
+          deptLabel: Utils.getDeptLabel, generatedBy: _user.name || '',
           stamp: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }),
         })
         const buffer = await wb.xlsx.writeBuffer()
