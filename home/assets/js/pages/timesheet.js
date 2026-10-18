@@ -124,8 +124,8 @@ const Timesheet = (() => {
     _isManager = _directReports.length > 0
     // Insights: managers (anyone with a reporting subtree) get Team's Insights listing that team;
     // approvers without a team do not.
-    // Super admins are the exception: they see every active employee.
-    if (_user.role === 'super_admin') {
+    // Super admins, and anyone granted "View Team's Insights" in Access Control, see every active employee.
+    if (_user.role === 'super_admin' || App.hasAccess('timesheet', 'view_team_insights', 'view_only')) {
       const { data: everyone } = await API.getEmployees()
       _insightsTeam = (everyone || []).filter(e => e.id !== _user.id && e.status !== 'inactive')
     } else {
@@ -3897,5 +3897,6 @@ ModuleRegistry.register({
     log_entry:          'Log Time Entry',
     submit_timesheet:   'Submit Timesheet',
     approve_timesheets: 'Approve Team Timesheets',
+    view_team_insights: "View Team's Insights (all employees)",
   },
 })
