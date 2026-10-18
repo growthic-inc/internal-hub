@@ -2501,7 +2501,7 @@ const Timesheet = (() => {
         ['Members on track (85% or more)', x.totals.onTrack],
         [],
         ['How these are counted'],
-        ['Logged hours', 'Submitted and approved entries only. Drafts and rejected entries are not counted.'],
+        ['Logged hours', 'Submitted entries only. Drafts, rejected and approved entries are not counted.'],
         ['Expected hours', '8 hours per working day. Sundays and company holidays are not working days, and a member is counted from their joining date.'],
         ['Unfilled day', 'A working day older than 7 days with no submitted or approved entry.'],
         ['Utilization', 'Logged hours divided by expected hours.'],
@@ -2576,8 +2576,10 @@ const Timesheet = (() => {
         teamCutoff.setDate(teamCutoff.getDate() - _editLockDays())
         teamCutoff.setHours(23, 59, 59, 999)
         // Logged hours and dates only count from effective start — same window as expected
+        // Logged hours count Submitted entries only. A day that has an approved entry
+        // still counts as filled (loggedDates), so it is never flagged as unfilled.
         const activeEntries = drEntries.filter(e => e.date >= effFromISO && ['submitted', 'approved'].includes(e.status))
-        const logged = activeEntries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+        const logged = activeEntries.filter(e => e.status === 'submitted').reduce((s, e) => s + parseFloat(e.hours || 0), 0)
         const loggedDates = new Set(activeEntries.map(e => e.date))
         let expected = 0, wdCount = 0, unfilled = 0
         const unfilledDates = []
@@ -2604,7 +2606,7 @@ const Timesheet = (() => {
       // ── Top entities (combined) ───────────────────────────
       const entityMap = {}
       selectedMembers.forEach(dr => {
-        const drEntries = (_teamAllEntries[dr.id] || []).filter(e => e.date >= fromISO && e.date <= toISO && ['submitted', 'approved'].includes(e.status))
+        const drEntries = (_teamAllEntries[dr.id] || []).filter(e => e.date >= fromISO && e.date <= toISO && e.status === 'submitted')
         drEntries.forEach(e => {
           const name = e.work_type === 'internal'
             ? (e.internal_entity?.entity_name || e.internal_project?.name || 'Internal')
@@ -2669,7 +2671,7 @@ const Timesheet = (() => {
         let hrs = 0
         selectedMembers.forEach(dr => {
           hrs += (_teamAllEntries[dr.id] || [])
-            .filter(e => e.date >= _toISO(ms) && e.date <= _toISO(me) && ['submitted', 'approved'].includes(e.status))
+            .filter(e => e.date >= _toISO(ms) && e.date <= _toISO(me) && e.status === 'submitted')
             .reduce((s, e) => s + parseFloat(e.hours || 0), 0)
         })
         trendMonths.push({ label: lbl, year: ms.getFullYear(), hours: hrs })
@@ -2683,7 +2685,7 @@ const Timesheet = (() => {
       selectedMembers.forEach(dr => { memberById[dr.id] = dr })
 
       selectedMembers.forEach(dr => {
-        const drEntries = (_teamAllEntries[dr.id] || []).filter(e => e.date >= fromISO && e.date <= toISO && ['submitted', 'approved'].includes(e.status))
+        const drEntries = (_teamAllEntries[dr.id] || []).filter(e => e.date >= fromISO && e.date <= toISO && e.status === 'submitted')
         drEntries.forEach(e => {
           const isInt = e.work_type === 'internal'
           const l1    = isInt ? (e.internal_project?.name || 'Internal') : (e.clients?.client_name || 'Unknown Client')
