@@ -467,7 +467,6 @@ const Timesheet = (() => {
         else                           status = d <= cutoffISO ? 'Unfilled' : 'Open'
         if (leaveHalf[d])           notes.push(`Half-day leave (${leaveHalf[d]})`)
         if (leavePend[d])           notes.push('Leave pending approval')
-        if (b.app > 0 && b.sub === 0) notes.push('Approved hours are not counted as logged')
         if (b.draft > 0 && reported === 0) notes.push(`Draft only (${num(b.draft)}h), not submitted`)
         if (b.rej > 0)              notes.push(`Rejected entry (${num(b.rej)}h)`)
         if (status === 'Open')      notes.push(`Within the last ${ctx.lockDays} days — not counted as unfilled yet`)
@@ -482,7 +481,7 @@ const Timesheet = (() => {
         dr, name: dr.name || 'Unknown', dept: deptName(dr.department), logged, expected: m.expected,
         util: m.expected > 0 ? logged / m.expected : 0, wdCount: m.wdCount, unfilled: m.unfilled, unfilledDates: m.unfilledDates,
         shortDays: rows.filter(r => r.status === 'Short').length,
-        loggedDays: rows.filter(r => r.sub > 0).length,
+        loggedDays: rows.filter(r => r.sub + r.app > 0).length,
         approved, pending, leaveDays: lv.days, leavePending: lv.pendingCount, leaveByType: lv.byType, leaveItems: lv.items,
         expectedExLeave, utilExLeave: expectedExLeave > 0 ? logged / expectedExLeave : 0, rows,
       }
@@ -594,7 +593,7 @@ const Timesheet = (() => {
 
     section('Overview')
     line('Avg utilization', totalExpected > 0 ? totalLogged / totalExpected : 0, PCT)
-    line('Total logged hours (submitted)', num(totalLogged), HRS)
+    line('Total logged hours (submitted + approved)', num(totalLogged), HRS)
     line('Total expected hours', totalExpected, HRS)
     line('Total unfilled days', totalUnfilled, '0')
     line('Days under expected hours (logged days under 8h)', totalShort, '0')
@@ -613,7 +612,7 @@ const Timesheet = (() => {
 
     section('How these are counted')
     const note = (label, text) => line(label, text, null, { bold: true, height: Math.max(18, 15 * Math.ceil(text.length / 44)) })
-    note('Logged hours', 'Submitted entries only. Drafts, rejected and approved entries are not counted.')
+    note('Logged hours', 'Submitted and approved entries. Drafts and rejected entries are not counted.')
     note('Expected hours', '8 hours per working day. Sundays and company holidays are not working days, and a member is counted from their joining date. Leave is not subtracted.')
     note('Unfilled day', `A working day older than ${ctx.lockDays} days with no submitted or approved entry.`)
     note('Utilization', 'Logged hours divided by expected hours.')
@@ -688,13 +687,13 @@ const Timesheet = (() => {
     onTrackCell.value = { formula: `COUNTIF(Members!F2:F${mLast},"On track")`, result: mem.filter(m => m.util >= ON_TRACK).length }
 
     // ── Daily ────────────────────────────────────────────────────────────
-    const dHeaders = ['Date', 'Day', 'Member', 'Department', 'Submitted hours (logged)', 'Approved hours', 'Expected hours', 'Gap vs expected', 'Status', 'Note']
+    const dHeaders = ['Date', 'Day', 'Member', 'Department', 'Logged hours (submitted + approved)', 'Of which approved', 'Expected hours', 'Gap vs expected', 'Status', 'Note']
     widths(wsD, [13, 7, 24, 18, 14, 12, 12, 12, 11, 55])
     wsD.addRow(dHeaders)
     styleHeader(wsD, dHeaders.length)
     mem.forEach(m => m.rows.forEach(r => {
       const rn = wsD.rowCount + 1
-      put(wsD, [utc(r.iso), dowOf(r.iso), m.name, m.dept, num(r.sub), num(r.app), r.expected, { formula: `E${rn}-G${rn}`, result: num(r.sub - r.expected) }, r.status, r.note],
+      put(wsD, [utc(r.iso), dowOf(r.iso), m.name, m.dept, num(r.sub + r.app), num(r.app), r.expected, { formula: `E${rn}-G${rn}`, result: num(r.sub + r.app - r.expected) }, r.status, r.note],
         [DATEF, null, null, null, HRS, HRS, HRS, '0.0;[Red]-0.0', null, null])
     }))
     const dLast = wsD.rowCount
@@ -771,7 +770,7 @@ const Timesheet = (() => {
       (clientRank[a.client] ?? 9999) - (clientRank[b.client] ?? 9999) || a.client.localeCompare(b.client) ||
       a.area.localeCompare(b.area) || a.date.localeCompare(b.date) || a.who.localeCompare(b.who))
     entryRows.forEach(e => {
-      put(wsN, [e.client, e.area, e.who, e.dept, utc(e.date), dowOf(e.date), utc(e.date.slice(0, 7) + '-01'), num(e.hours), cap(e.status), e.status === 'submitted' ? 'Yes' : 'No', e.desc],
+      put(wsN, [e.client, e.area, e.who, e.dept, utc(e.date), dowOf(e.date), utc(e.date.slice(0, 7) + '-01'), num(e.hours), cap(e.status), (e.status === 'submitted' || e.status === 'approved') ? 'Yes' : 'No', e.desc],
         [null, null, null, null, DATEF, null, MONF, HRS, null, null, null])
     })
     topAlign(wsN, 11)
@@ -3002,10 +3001,9 @@ const Timesheet = (() => {
         teamCutoff.setDate(teamCutoff.getDate() - _editLockDays())
         teamCutoff.setHours(23, 59, 59, 999)
         // Logged hours and dates only count from effective start — same window as expected
-        // Logged hours count Submitted entries only. A day that has an approved entry
-        // still counts as filled (loggedDates), so it is never flagged as unfilled.
+        // Logged hours = submitted + approved entries (drafts and rejected are not counted).
         const activeEntries = drEntries.filter(e => e.date >= effFromISO && ['submitted', 'approved'].includes(e.status))
-        const logged = activeEntries.filter(e => e.status === 'submitted').reduce((s, e) => s + parseFloat(e.hours || 0), 0)
+        const logged = activeEntries.reduce((s, e) => s + parseFloat(e.hours || 0), 0)
         const loggedDates = new Set(activeEntries.map(e => e.date))
         let expected = 0, wdCount = 0, unfilled = 0
         const unfilledDates = []
@@ -3040,7 +3038,7 @@ const Timesheet = (() => {
       // ── Top entities (combined) ───────────────────────────
       const entityMap = {}
       selectedMembers.forEach(dr => {
-        const drEntries = (_teamAllEntries[dr.id] || []).filter(e => e.date >= fromISO && e.date <= toISO && e.status === 'submitted')
+        const drEntries = (_teamAllEntries[dr.id] || []).filter(e => e.date >= fromISO && e.date <= toISO && ['submitted', 'approved'].includes(e.status))
         drEntries.forEach(e => {
           const name = e.work_type === 'internal'
             ? (e.internal_entity?.entity_name || e.internal_project?.name || 'Internal')
@@ -3114,7 +3112,7 @@ const Timesheet = (() => {
         let hrs = 0
         selectedMembers.forEach(dr => {
           hrs += (_teamAllEntries[dr.id] || [])
-            .filter(e => e.date >= _toISO(ms) && e.date <= _toISO(me) && e.status === 'submitted')
+            .filter(e => e.date >= _toISO(ms) && e.date <= _toISO(me) && ['submitted', 'approved'].includes(e.status))
             .reduce((s, e) => s + parseFloat(e.hours || 0), 0)
         })
         trendMonths.push({ label: lbl, year: ms.getFullYear(), month: ms.getMonth(), hours: hrs })
@@ -3128,7 +3126,7 @@ const Timesheet = (() => {
       selectedMembers.forEach(dr => { memberById[dr.id] = dr })
 
       selectedMembers.forEach(dr => {
-        const drEntries = (_teamAllEntries[dr.id] || []).filter(e => e.date >= fromISO && e.date <= toISO && e.status === 'submitted')
+        const drEntries = (_teamAllEntries[dr.id] || []).filter(e => e.date >= fromISO && e.date <= toISO && ['submitted', 'approved'].includes(e.status))
         drEntries.forEach(e => {
           const isInt = e.work_type === 'internal'
           const l1    = isInt ? (e.internal_project?.name || 'Internal') : (e.clients?.client_name || 'Unknown Client')
@@ -3544,9 +3542,9 @@ const Timesheet = (() => {
         myLeave.pendingCount ? `<span style="color:#D97706;">${myLeave.pendingCount} pending</span>` : '',
       ].filter(Boolean).join(' · ') || 'No leave in this period'
 
-      // Logged hours count Submitted entries only; an Approved day still counts as filled
+      // Logged hours = submitted + approved entries (drafts and rejected are not counted)
       const periodEntries = entries.filter(e => e.date >= fromISO && e.date <= toISO)
-      const loggedEntries = periodEntries.filter(e => e.status === 'submitted')
+      const loggedEntries = periodEntries.filter(e => ['submitted', 'approved'].includes(e.status))
 
       // ── Expected hours ────────────────────────────────────────
       let expectedHours    = 0
@@ -3572,7 +3570,7 @@ const Timesheet = (() => {
       const cutoff = new Date(today)
       cutoff.setDate(cutoff.getDate() - _editLockDays())
       cutoff.setHours(23, 59, 59, 999)
-      const filledDates = new Set(periodEntries.filter(e => ['submitted', 'approved'].includes(e.status)).map(e => e.date))
+      const filledDates = new Set(loggedEntries.map(e => e.date))
       const missedDays  = []
       const missCur     = new Date(effectiveFrom)
       while (missCur <= toDate) {
@@ -3589,7 +3587,7 @@ const Timesheet = (() => {
       const prevMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1)
       const prevMonthEnd   = new Date(today.getFullYear(), today.getMonth(), 0)
       const prevHours      = entries
-        .filter(e => e.date >= _toISO(prevMonthStart) && e.date <= _toISO(prevMonthEnd) && e.status === 'submitted')
+        .filter(e => e.date >= _toISO(prevMonthStart) && e.date <= _toISO(prevMonthEnd) && ['submitted', 'approved'].includes(e.status))
         .reduce((s, e) => s + parseFloat(e.hours || 0), 0)
       const prevLabel = prevMonthStart.toLocaleDateString('en-IN', { month: 'long' })
 
@@ -3630,7 +3628,7 @@ const Timesheet = (() => {
         const me = new Date(toDate.getFullYear(), toDate.getMonth() - i + 1, 0)
         const lbl = ms.toLocaleDateString('en-IN', { month: 'short' })
         const hrs = allEntries
-          .filter(e => e.date >= _toISO(ms) && e.date <= _toISO(me) && e.status === 'submitted')
+          .filter(e => e.date >= _toISO(ms) && e.date <= _toISO(me) && ['submitted', 'approved'].includes(e.status))
           .reduce((s, e) => s + parseFloat(e.hours || 0), 0)
         const hasData = !joinDate || joinDate <= me
         trendMonths.push({ label: lbl, hours: hasData ? hrs : null })
