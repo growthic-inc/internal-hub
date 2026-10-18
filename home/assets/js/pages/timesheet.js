@@ -122,9 +122,15 @@ const Timesheet = (() => {
       _directReports = subs || []
     }
     _isManager = _directReports.length > 0
-    // Insights: only people who actually manage a team (reporting subtree) get Team's Insights,
-    // and it lists that team — not the whole company, even for approvers.
-    _insightsTeam = (subs || []).filter(e => e.status !== 'inactive')
+    // Insights: managers (anyone with a reporting subtree) get Team's Insights listing that team;
+    // approvers without a team do not.
+    // Super admins are the exception: they see every active employee.
+    if (_user.role === 'super_admin') {
+      const { data: everyone } = await API.getEmployees()
+      _insightsTeam = (everyone || []).filter(e => e.id !== _user.id && e.status !== 'inactive')
+    } else {
+      _insightsTeam = (subs || []).filter(e => e.status !== 'inactive')
+    }
 
     // Hide the Team tab if the user is neither an approver nor a reporting manager
     if (!_p.can_approve && !_isManager) {
