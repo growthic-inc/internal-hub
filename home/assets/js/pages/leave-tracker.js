@@ -1471,7 +1471,7 @@ const LeaveTracker = (() => {
         notify_email: true,
       }))
     if (req?.approver_id) {
-      await API.createNotification({
+      API.createNotification({
         recipient_employee_id: req.approver_id,
         type: 'info',
         message: `${_user.name}'s ${label} cancellation is now with People & Culture.`,
@@ -2986,7 +2986,7 @@ const LeaveTracker = (() => {
         e.id !== _user.id
       )
       pcTeam.forEach(e => {
-        await API.createNotification({
+        API.createNotification({
           recipient_employee_id: e.id,
           type: 'info',
           message: `${empName}'s ${label} request has been approved.`,
