@@ -310,6 +310,11 @@ const App = (() => {
     // Find accessible HR items (intersection of HR_GROUP and accessible)
     const hrAccessibleItems = accessible.filter(item => HR_GROUP.includes(item.id))
 
+    // Open by default so Leave & Attendance is visible; stays closed only if the user collapsed it
+    function _hrGroupCollapsed() {
+      try { return localStorage.getItem('hr-group-collapsed') === '1' } catch (e) { return false }
+    }
+
     function _renderHRAccordion() {
       const PEOPLE_SVG    = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`
       const CALENDAR_SVG  = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`
@@ -333,7 +338,7 @@ const App = (() => {
       }).join('')
 
       return `
-        <div class="nav-accordion${hrActive ? ' nav-accordion--open' : ''}">
+        <div class="nav-accordion${(hrActive || !_hrGroupCollapsed()) ? ' nav-accordion--open' : ''}">
           <button class="nav-item nav-accordion-toggle${hrActive ? ' nav-item--active' : ''}" data-accordion="hr-group">
             ${PEOPLE_SVG}
             <span class="nav-label">People</span>
@@ -379,7 +384,8 @@ const App = (() => {
     // Accordion toggle
     nav.querySelectorAll('.nav-accordion-toggle').forEach(btn => {
       btn.addEventListener('click', () => {
-        btn.closest('.nav-accordion').classList.toggle('nav-accordion--open')
+        const open = btn.closest('.nav-accordion').classList.toggle('nav-accordion--open')
+        try { localStorage.setItem('hr-group-collapsed', open ? '0' : '1') } catch (e) {}
       })
     })
 
