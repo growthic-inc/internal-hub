@@ -430,14 +430,10 @@ const LeaveTracker = (() => {
         }
       }
 
-      // Auto half-day for anyone late beyond threshold — best-effort, doesn't
-      // block reporting the attendance upload itself as successful.
-      let halfDaysCreated = 0
-      try {
-        halfDaysCreated = (await _autoMarkLateHalfDays(records, dateFrom, dateTo)).created
-      } catch (err) {
-        console.error('[Late Half-Day]', err)
-      }
+      // Late arrivals no longer auto-create a half-day leave: they only show the
+      // late marker (▲) beside their punch times, and HR adds any leave by hand.
+      // To switch the automatic half-day back on, call
+      // _autoMarkLateHalfDays(records, dateFrom, dateTo) here.
 
       // Log the upload
       await API.insertAttendanceUploadLog({
@@ -455,7 +451,7 @@ const LeaveTracker = (() => {
       const logRes = await API.getAttendanceUploadLog()
       _uploadLog = logRes.data || []
 
-      const msg = `Upload complete — ${matched} day-records saved${halfDaysCreated ? `, ${halfDaysCreated} late half-day${halfDaysCreated === 1 ? '' : 's'} marked` : ''}${skippedEmps > 0 ? `, ${skippedEmps} employee(s) skipped (Bio ID not mapped)` : ''}.`
+      const msg = `Upload complete — ${matched} day-records saved${skippedEmps > 0 ? `, ${skippedEmps} employee(s) skipped (Bio ID not mapped)` : ''}.`
       Utils.showToast(msg, status === 'failed' ? 'error' : 'success')
       _loadAttendanceUploadTab()
 
