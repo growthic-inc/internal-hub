@@ -38,9 +38,17 @@ const LeaveTracker = (() => {
   let _lateEffectiveFrom = ''
   let _uploadLog         = []
 
+  // The effective-from setting used to be a month (YYYY-MM); it is now a full
+  // date (YYYY-MM-DD). A leftover month value counts as the 1st of that month.
+  function _effectiveFromDate() {
+    if (!_lateEffectiveFrom) return ''
+    return _lateEffectiveFrom.length === 7 ? `${_lateEffectiveFrom}-01` : _lateEffectiveFrom
+  }
+
   function _calcLateMinutes(punchIn, recordDate) {
     if (!punchIn || !_lateThreshold) return 0
-    if (_lateEffectiveFrom && recordDate.substring(0, 7) < _lateEffectiveFrom) return 0
+    const effective = _effectiveFromDate()
+    if (effective && recordDate < effective) return 0
     const [ph, pm] = punchIn.split(':').map(Number)
     const [th, tm] = _lateThreshold.split(':').map(Number)
     return Math.max(0, (ph * 60 + pm) - (th * 60 + tm))
@@ -430,10 +438,20 @@ const LeaveTracker = (() => {
         }
       }
 
-      // Late arrivals no longer auto-create a half-day leave: they only show the
-      // late marker (▲) beside their punch times, and HR adds any leave by hand.
-      // To switch the automatic half-day back on, call
-      // _autoMarkLateHalfDays(records, dateFrom, dateTo) here.
+      // Auto half-day for anyone late beyond the threshold — only from the
+      // effective date onwards (days before it are never counted as late, so
+      // they carry late_minutes = 0 and are skipped). Nothing is created until
+      // a full effective date has been saved in Settings, so an old month-only
+      // value can't silently start creating half-days. Best-effort: never
+      // blocks the attendance upload itself from being reported as successful.
+      let halfDaysCreated = 0
+      if (/^\d{4}-\d{2}-\d{2}$/.test(_lateEffectiveFrom)) {
+        try {
+          halfDaysCreated = (await _autoMarkLateHalfDays(records, dateFrom, dateTo)).created
+        } catch (err) {
+          console.error('[Late Half-Day]', err)
+        }
+      }
 
       // Log the upload
       await API.insertAttendanceUploadLog({
@@ -451,7 +469,7 @@ const LeaveTracker = (() => {
       const logRes = await API.getAttendanceUploadLog()
       _uploadLog = logRes.data || []
 
-      const msg = `Upload complete — ${matched} day-records saved${skippedEmps > 0 ? `, ${skippedEmps} employee(s) skipped (Bio ID not mapped)` : ''}.`
+      const msg = `Upload complete — ${matched} day-records saved${halfDaysCreated ? `, ${halfDaysCreated} late half-day${halfDaysCreated === 1 ? '' : 's'} marked` : ''}${skippedEmps > 0 ? `, ${skippedEmps} employee(s) skipped (Bio ID not mapped)` : ''}.`
       Utils.showToast(msg, status === 'failed' ? 'error' : 'success')
       _loadAttendanceUploadTab()
 
@@ -1457,7 +1475,9 @@ const LeaveTracker = (() => {
             <div>
               <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Late Arrival Threshold</div>
               <div style="font-size:20px;font-weight:700;color:var(--text);">${curThreshold} AM</div>
-              ${curEffectiveFrom ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Effective from ${curEffectiveFrom}</div>` : ''}
+              ${curEffectiveFrom.length === 10
+                ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Effective from ${Utils.formatDate(curEffectiveFrom)} — arrivals after this time on or after that date are marked late and get an automatic half-day</div>`
+                : `<div style="font-size:12px;color:#B45309;margin-top:2px;">No effective date set — automatic half-days are off until you set one</div>`}
             </div>
             <div style="margin-left:auto;">
               <button class="btn btn--ghost btn--sm" id="att-settings-edit-btn">Change Threshold</button>
@@ -1471,15 +1491,15 @@ const LeaveTracker = (() => {
                 <input class="form-input" type="time" id="att-new-threshold" value="${curThreshold}" style="width:140px;">
               </div>
               <div class="form-group" style="margin-bottom:0;">
-                <label class="form-label">Effective From Month</label>
-                <input class="form-input" type="month" id="att-new-effective"
-                  value="${curEffectiveFrom || new Date().toISOString().substring(0,7)}" style="width:160px;">
+                <label class="form-label">Effective From Date</label>
+                <input class="form-input" type="date" id="att-new-effective"
+                  value="${curEffectiveFrom.length === 10 ? curEffectiveFrom : (curEffectiveFrom.length === 7 ? curEffectiveFrom + '-01' : _toISO(new Date()))}" style="width:170px;">
               </div>
               <button class="btn btn--primary btn--sm" id="att-settings-save-btn">Save</button>
               <button class="btn btn--ghost btn--sm" id="att-settings-cancel-btn">Cancel</button>
             </div>
             <div style="font-size:12px;color:var(--text-muted);margin-top:10px;">
-              Attendance uploads for months before the effective month will not be affected.
+              Days before the effective date are never counted as late and get no half-day. Records already uploaded are not changed — the rule applies to files uploaded from now on.
             </div>
           </div>
         </div>
@@ -2034,16 +2054,16 @@ const LeaveTracker = (() => {
       const threshold = document.getElementById('att-new-threshold').value.trim()
       const effFrom   = document.getElementById('att-new-effective').value.trim()
       if (!threshold) { errEl.textContent = 'Please set a threshold time.'; errEl.style.display = 'block'; return }
-      if (!effFrom)   { errEl.textContent = 'Please select the effective from month.'; errEl.style.display = 'block'; return }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(effFrom)) { errEl.textContent = 'Please select the effective from date.'; errEl.style.display = 'block'; return }
 
-      if (!confirm(`Set late arrival threshold to ${threshold} AM, effective from ${effFrom}?\n\nExisting uploaded records before ${effFrom} will not be changed.`)) return
+      if (!confirm(`Set late arrival threshold to ${threshold} AM, effective from ${Utils.formatDate(effFrom)}?\n\nFrom that date onwards, anyone arriving after ${threshold} AM is marked late and gets an automatic half-day when their attendance file is uploaded. Days before it are not counted as late. Records already uploaded are not changed.`)) return
 
       const btn = document.getElementById('att-settings-save-btn')
       btn.disabled = true; btn.textContent = 'Saving…'
 
       const [r1, r2] = await Promise.all([
         API.upsertAppSetting('attendance.late_threshold',     threshold, 'attendance', 'Late Arrival Threshold',                     _user.id),
-        API.upsertAppSetting('attendance.late_effective_from', effFrom,  'attendance', 'Late Marking Effective From (YYYY-MM)', _user.id),
+        API.upsertAppSetting('attendance.late_effective_from', effFrom,  'attendance', 'Late Marking Effective From (YYYY-MM-DD)', _user.id),
       ])
 
       btn.disabled = false; btn.textContent = 'Save'
