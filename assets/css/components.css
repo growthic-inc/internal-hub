@@ -7394,6 +7394,59 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 .att-day-tag--present { background: #D1FAE5; color: #065F46; }
 .att-day-tag--absent  { background: #FEE2E2; color: #B91C1C; }
 .att-day-tag--event   { background: #FCE7F3; color: #BE185D; }
+.att-day-tag--source  { background: #E5E7EB; color: #4B5563; }
+
+/* ── HRMS day popup (Leave & Attendance → Team Overview) ──────── */
+.ltd-body { padding: 18px 24px 24px; }
+.ltd-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 2px 14px;
+}
+.ltd-card .att-day-row { padding: 11px 0; }
+.ltd-card .att-day-row > span:last-child:not(:first-child) {
+  margin-left: auto;
+  font-weight: 600;
+  text-align: right;
+}
+.ltd-section { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--border); }
+.ltd-title   { font-size: 14px; font-weight: 700; color: var(--text); margin: 0 0 3px; }
+.ltd-title--danger { color: var(--danger); }
+.ltd-desc    { font-size: 12px; color: var(--text-muted); margin: 0 0 14px; line-height: 1.5; }
+.ltd-field   { margin-bottom: 12px; }
+.ltd-label   { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+.ltd-hint    { font-size: 12px; color: var(--text-muted); margin: -4px 0 12px; line-height: 1.5; }
+.ltd-seg {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.ltd-seg label { position: relative; flex: 1; cursor: pointer; margin: 0; }
+.ltd-seg input { position: absolute; opacity: 0; pointer-events: none; }
+.ltd-seg span {
+  display: block;
+  padding: 9px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: var(--bg);
+  transition: background 0.12s, color 0.12s;
+}
+.ltd-seg label + label span { border-left: 1px solid var(--border); }
+.ltd-seg input:checked + span { background: var(--primary-light, #EAF1FB); color: var(--primary); font-weight: 600; }
+.ltd-seg input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: -2px; }
+.ltd-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.ltd-actions .btn { width: 100%; justify-content: center; }
+.ltd-link {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: var(--danger); align-self: center;
+}
+.ltd-link:hover { text-decoration: underline; }
+.ltd-event { font-size: 13px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.ltd-event:last-of-type { border-bottom: none; }
+.ltd-empty { font-size: 13px; color: var(--text-muted); margin: 0 0 12px; }
 
 /* ── Missed Timesheet Days ─────────────────────────────────── */
 .ts-missed-section {

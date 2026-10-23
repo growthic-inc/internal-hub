@@ -957,7 +957,7 @@ const LeaveTracker = (() => {
       attRows += `<div class="att-day-row"><span class="att-cal-exempt-badge" style="position:static;font-size:11px;padding:2px 8px;border-radius:20px;">✓ Correction Applied</span>${att.exemption_reason ? `<span style="font-size:13px;">${Utils.escapeHtml(att.exemption_reason)}</span>` : ''}</div>`
     }
     if (leave)    attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--leave">${leave.status === 'pending' ? 'Pending Leave' : 'On Leave'}</span><span>${Utils.escapeHtml(leave.name)}${leave.is_half_day ? ' (½ day)' : ''}${Utils.leaveTag(leave)}</span></div>`
-    if (leave)    attRows += `<div class="att-day-row"><span class="att-day-tag">Source</span><span>${Utils.leaveSource(leave) === 'employee' ? 'Employee request' + (leave.reason ? ' — ' + Utils.escapeHtml(leave.reason) : '') : Utils.escapeHtml(leave.reason || Utils.leaveSourceLabel(leave))}</span></div>`
+    if (leave)    attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--source">Source</span><span>${Utils.leaveSource(leave) === 'employee' ? 'Employee request' + (leave.reason ? ' — ' + Utils.escapeHtml(leave.reason) : '') : Utils.escapeHtml(leave.reason || Utils.leaveSourceLabel(leave))}</span></div>`
     if (isWfh)   attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--wfh">WFH</span></div>`
     if (cv)      attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--client-visit">Client Visit</span><span>${Utils.escapeHtml(cv.clients?.client_name || 'Client')}</span></div>`
     if (holiday) attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--holiday">Holiday</span><span>${Utils.escapeHtml(holiday)}</span></div>`
@@ -995,20 +995,28 @@ const LeaveTracker = (() => {
           }).join('')
           const _unpaidType = eligibleTypes.find(t => t.is_unpaid)
           markSection += `
-            <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
-              <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:10px;">Mark as Leave</div>
-              <div id="lt-mark-leave-err" class="alert alert--danger" style="display:none;margin-bottom:10px;font-size:13px;"></div>
-              ${_unpaidType ? `<button class="btn btn--sm btn--danger" id="lt-mark-unpaid-btn" data-unpaid-id="${_unpaidType.id}" style="margin-bottom:12px;">⚡ Mark as Unpaid Leave</button>` : ''}
-              <div style="display:flex;flex-direction:column;gap:10px;">
-                <select id="lt-mark-leave-type" class="form-control" style="font-size:13px;">${opts}</select>
-                <input id="lt-mark-leave-reason" class="form-input" type="text" placeholder="Reason (optional)" style="font-size:13px;">
-                <button class="btn btn--primary btn--sm" id="lt-mark-leave-confirm" style="align-self:flex-start;">Apply Leave</button>
+            <div class="ltd-section">
+              <h4 class="ltd-title">Mark full-day leave</h4>
+              <p class="ltd-desc">Takes the whole day off this employee's leave balance.</p>
+              <div id="lt-mark-leave-err" class="alert alert--danger" style="display:none;margin-bottom:12px;font-size:13px;"></div>
+              <div class="ltd-field">
+                <label class="ltd-label" for="lt-mark-leave-type">Leave type</label>
+                <select id="lt-mark-leave-type" class="form-select">${opts}</select>
+              </div>
+              <div class="ltd-field">
+                <label class="ltd-label" for="lt-mark-leave-reason">Reason <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
+                <input id="lt-mark-leave-reason" class="form-input" type="text" placeholder="Add a short note">
+              </div>
+              <div class="ltd-actions">
+                <button class="btn btn--primary" id="lt-mark-leave-confirm">Apply leave</button>
+                ${_unpaidType ? `<button class="ltd-link" id="lt-mark-unpaid-btn" data-unpaid-id="${_unpaidType.id}">Mark as unpaid leave instead</button>` : ''}
               </div>
             </div>`
         } else {
           markSection += `
-            <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--text-muted);">
-              No leave balance available for this employee.
+            <div class="ltd-section">
+              <h4 class="ltd-title">Mark full-day leave</h4>
+              <p class="ltd-empty">No leave balance available for this employee.</p>
             </div>`
         }
       }
@@ -1031,28 +1039,35 @@ const LeaveTracker = (() => {
           if (!a.is_unpaid && b.is_unpaid) return -1
           return a.name.localeCompare(b.name)
         })
-      const lateHint = state === 'late' && att?.punch_in
-        ? `<div style="font-size:12px;color:#B91C1C;margin-bottom:8px;">Punched in at ${att.punch_in.substring(0,5)} — ${att.late_minutes} min after the threshold.</div>`
-        : ''
       halfDaySection = halfTypes.length ? `
-        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
-          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:8px;">Mark Half-Day</div>
-          ${lateHint}
-          <div id="lt-hd-err" class="alert alert--danger" style="display:none;margin-bottom:8px;font-size:13px;"></div>
-          <div style="display:flex;flex-direction:column;gap:10px;">
-            <select id="lt-hd-type" class="form-control" style="font-size:13px;">
-              ${halfTypes.map(t => `<option value="${t.id}">${Utils.escapeHtml(t.name)}${t.is_unpaid ? ' (Unpaid)' : ' (' + (balMap[t.id] || 0) + ' days remaining)'}</option>`).join('')}
+        <div class="ltd-section">
+          <h4 class="ltd-title">Mark half-day</h4>
+          <p class="ltd-desc">Takes half a day off the leave type you choose.${state === 'late' ? ' It will show as <strong>(Late)</strong> on the calendar.' : ''}</p>
+          <div id="lt-hd-err" class="alert alert--danger" style="display:none;margin-bottom:12px;font-size:13px;"></div>
+          <div class="ltd-field">
+            <label class="ltd-label" for="lt-hd-type">Leave type</label>
+            <select id="lt-hd-type" class="form-select">
+              ${halfTypes.map(t => `<option value="${t.id}">${Utils.escapeHtml(t.name)}${t.is_unpaid ? ' (Unpaid)' : ' — ' + (balMap[t.id] || 0) + ' days left'}</option>`).join('')}
             </select>
-            <div style="display:flex;gap:16px;font-size:13px;">
-              <label style="cursor:pointer;"><input type="radio" name="lt-hd-period" value="morning" checked> Morning</label>
-              <label style="cursor:pointer;"><input type="radio" name="lt-hd-period" value="afternoon"> Afternoon</label>
+          </div>
+          <div class="ltd-field">
+            <span class="ltd-label">Which half</span>
+            <div class="ltd-seg">
+              <label><input type="radio" name="lt-hd-period" value="morning" checked><span>Morning</span></label>
+              <label><input type="radio" name="lt-hd-period" value="afternoon"><span>Afternoon</span></label>
             </div>
-            <input id="lt-hd-note" class="form-input" type="text" placeholder="Note (optional)" style="font-size:13px;">
-            <button class="btn btn--primary btn--sm" id="lt-hd-confirm" style="align-self:flex-start;">Mark Half-Day</button>
+          </div>
+          <div class="ltd-field">
+            <label class="ltd-label" for="lt-hd-note">Note <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
+            <textarea id="lt-hd-note" class="form-textarea" rows="2" style="min-height:64px;" placeholder="Shown to the employee with the half-day"></textarea>
+          </div>
+          <div class="ltd-actions">
+            <button class="btn btn--primary" id="lt-hd-confirm">Mark half-day</button>
           </div>
         </div>` : `
-        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--text-muted);">
-          No leave type has half a day left for this employee, and no unpaid type is set up.
+        <div class="ltd-section">
+          <h4 class="ltd-title">Mark half-day</h4>
+          <p class="ltd-empty">No leave type has half a day left for this employee, and no unpaid type is set up.</p>
         </div>`
     }
 
@@ -1064,13 +1079,16 @@ const LeaveTracker = (() => {
         ? Utils.formatDate(leave.start_date)
         : `${Utils.formatDate(leave.start_date)} – ${Utils.formatDate(leave.end_date)}`
       removeSection = `
-        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
-          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:6px;">Remove Leave</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Cancels the whole request: ${rangeLabel} (${leave.days} day${Number(leave.days) === 1 ? '' : 's'}). The balance is returned and the employee is notified.</div>
-          <div id="lt-remove-err" class="alert alert--danger" style="display:none;margin-bottom:8px;font-size:13px;"></div>
-          <div style="display:flex;flex-direction:column;gap:8px;">
-            <input id="lt-remove-reason" class="form-input" type="text" placeholder="Reason (required)" style="font-size:13px;">
-            <button class="btn btn--danger btn--sm" id="lt-remove-confirm" style="align-self:flex-start;">Remove Leave</button>
+        <div class="ltd-section">
+          <h4 class="ltd-title ltd-title--danger">Remove leave</h4>
+          <p class="ltd-desc">Cancels the whole request: <strong>${rangeLabel}</strong> (${leave.days} day${Number(leave.days) === 1 ? '' : 's'}). The balance is returned and the employee is notified.</p>
+          <div id="lt-remove-err" class="alert alert--danger" style="display:none;margin-bottom:12px;font-size:13px;"></div>
+          <div class="ltd-field">
+            <label class="ltd-label" for="lt-remove-reason">Reason <span style="color:var(--danger);">*</span></label>
+            <input id="lt-remove-reason" class="form-input" type="text" placeholder="Why is this being removed?">
+          </div>
+          <div class="ltd-actions">
+            <button class="btn btn--danger" id="lt-remove-confirm">Remove leave</button>
           </div>
         </div>`
     }
@@ -1101,13 +1119,16 @@ const LeaveTracker = (() => {
         `<option value="${t.id}"${t.id === leave.leave_type_id ? ' selected' : ''}>${Utils.escapeHtml(t.name)}${t.is_unpaid ? ' (Unpaid)' : ''}</option>`
       ).join('')
       changeTypeSection = `
-        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
-          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:6px;">Change Leave Type</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Updates the entire request: ${rangeLabel} (${dayLabel})</div>
-          <div id="lt-change-type-err" class="alert alert--danger" style="display:none;margin-bottom:8px;font-size:13px;"></div>
-          <div style="display:flex;flex-direction:column;gap:8px;">
-            <select id="lt-change-type-select" class="form-control" style="font-size:13px;">${opts}</select>
-            <button class="btn btn--ghost btn--sm" id="lt-change-type-confirm" style="align-self:flex-start;">Save</button>
+        <div class="ltd-section">
+          <h4 class="ltd-title">Change leave type</h4>
+          <p class="ltd-desc">Updates the whole request: ${rangeLabel} (${dayLabel}).</p>
+          <div id="lt-change-type-err" class="alert alert--danger" style="display:none;margin-bottom:12px;font-size:13px;"></div>
+          <div class="ltd-field">
+            <label class="ltd-label" for="lt-change-type-select">Leave type</label>
+            <select id="lt-change-type-select" class="form-select">${opts}</select>
+          </div>
+          <div class="ltd-actions">
+            <button class="btn btn--primary" id="lt-change-type-confirm">Save leave type</button>
           </div>
         </div>`
     }
@@ -1115,30 +1136,30 @@ const LeaveTracker = (() => {
     // Company Events — view what's on file for this date, and quick-create
     // a new one right here instead of switching to Settings.
     const eventsListHtml = (dayEvents && dayEvents.length)
-      ? dayEvents.map(ev => `<div style="font-size:12px;margin-bottom:4px;"><strong>${Utils.escapeHtml(ev.title)}</strong>${_eventDurationLabel(ev) ? ` (${_eventDurationLabel(ev)})` : ''}${ev.description ? ` — ${Utils.escapeHtml(ev.description)}` : ''}</div>`).join('')
-      : '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">No events on this date.</div>'
+      ? dayEvents.map(ev => `<div class="ltd-event"><strong>${Utils.escapeHtml(ev.title)}</strong>${_eventDurationLabel(ev) ? ` (${_eventDurationLabel(ev)})` : ''}${ev.description ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${Utils.escapeHtml(ev.description)}</div>` : ''}</div>`).join('')
+      : '<p class="ltd-empty">No events on this date.</p>'
     const eventSection = `
-      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
-        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:8px;">Company Events</div>
+      <div class="ltd-section">
+        <h4 class="ltd-title">Company events</h4>
         ${eventsListHtml}
-        <button class="btn btn--ghost btn--sm" id="lt-team-day-add-event-btn">+ Create Event</button>
-        <div id="lt-team-day-event-form" style="display:none;margin-top:10px;">
-          <div id="lt-team-evt-err" class="alert alert--danger" style="display:none;margin-bottom:8px;font-size:13px;"></div>
-          <div style="display:flex;flex-direction:column;gap:8px;">
-            <input class="form-input" type="text" id="lt-team-evt-title" placeholder="Event title" style="font-size:13px;">
-            <select class="form-input" id="lt-team-evt-duration" style="font-size:13px;">
-              <option value="full_day">Full Day</option>
-              <option value="first_half">First Half</option>
-              <option value="second_half">Second Half</option>
-              <option value="specific_time">Specific Time</option>
+        <button class="btn btn--ghost btn--sm" id="lt-team-day-add-event-btn" style="padding-left:0;">+ Create event</button>
+        <div id="lt-team-day-event-form" style="display:none;margin-top:14px;">
+          <div id="lt-team-evt-err" class="alert alert--danger" style="display:none;margin-bottom:12px;font-size:13px;"></div>
+          <div class="ltd-field"><input class="form-input" type="text" id="lt-team-evt-title" placeholder="Event title"></div>
+          <div class="ltd-field">
+            <select class="form-select" id="lt-team-evt-duration">
+              <option value="full_day">Full day</option>
+              <option value="first_half">First half</option>
+              <option value="second_half">Second half</option>
+              <option value="specific_time">Specific time</option>
             </select>
-            <div style="display:none;gap:8px;" id="lt-team-evt-time-wrap">
-              <input class="form-input" type="time" id="lt-team-evt-time-start" style="font-size:13px;">
-              <input class="form-input" type="time" id="lt-team-evt-time-end" style="font-size:13px;">
-            </div>
-            <textarea class="form-input" id="lt-team-evt-desc" placeholder="Description (optional)" rows="2" style="font-size:13px;resize:vertical;"></textarea>
-            <button class="btn btn--primary btn--sm" id="lt-team-evt-save-btn" style="align-self:flex-start;">Save Event</button>
           </div>
+          <div style="display:none;gap:8px;margin-bottom:12px;" id="lt-team-evt-time-wrap">
+            <input class="form-input" type="time" id="lt-team-evt-time-start">
+            <input class="form-input" type="time" id="lt-team-evt-time-end">
+          </div>
+          <div class="ltd-field"><textarea class="form-textarea" id="lt-team-evt-desc" placeholder="Description (optional)" rows="2" style="min-height:64px;"></textarea></div>
+          <div class="ltd-actions"><button class="btn btn--primary" id="lt-team-evt-save-btn">Save event</button></div>
         </div>
       </div>`
 
@@ -1146,7 +1167,7 @@ const LeaveTracker = (() => {
     overlay.id        = 'lt-team-day-overlay'
     overlay.className = 'modal-overlay'
     overlay.innerHTML = `
-      <div class="modal" style="max-width:440px;">
+      <div class="modal" style="max-width:460px;">
         <div class="modal-header" style="border-bottom:1px solid var(--border);padding-bottom:14px;margin-bottom:0;">
           <div>
             <h3 class="modal-title" style="font-size:15px;font-weight:700;margin:0;">${Utils.escapeHtml(empName)}</h3>
@@ -1154,8 +1175,8 @@ const LeaveTracker = (() => {
           </div>
           <button class="btn btn--ghost btn--sm" id="lt-team-day-close" style="margin-left:auto;">${CLOSE_SVG}</button>
         </div>
-        <div class="modal-body" style="padding:16px 0 4px;">
-          ${attRows}
+        <div class="modal-body ltd-body">
+          <div class="ltd-card">${attRows}</div>
           ${changeTypeSection}
           ${removeSection}
           ${markSection}
@@ -1196,7 +1217,7 @@ const LeaveTracker = (() => {
       })
       if (error) {
         errEl.style.display = ''; errEl.textContent = error.message
-        saveBtn.disabled = false; saveBtn.textContent = 'Save Event'
+        saveBtn.disabled = false; saveBtn.textContent = 'Save event'
         return
       }
       overlay.remove()
@@ -1228,7 +1249,7 @@ const LeaveTracker = (() => {
         const { error } = await API.updateLeaveRequest(leave.id, { leave_type_id: newTypeId })
         if (error) {
           errEl.style.display = ''; errEl.textContent = error.message || 'Failed to save.'
-          changeTypeBtn.disabled = false; changeTypeBtn.textContent = 'Save'
+          changeTypeBtn.disabled = false; changeTypeBtn.textContent = 'Save leave type'
           return
         }
         overlay.remove()
@@ -1252,7 +1273,7 @@ const LeaveTracker = (() => {
         }))
         if (error) {
           errEl.style.display = ''; errEl.textContent = error.message || 'Failed to save.'
-          halfDayBtn.disabled = false; halfDayBtn.textContent = 'Mark Half-Day'
+          halfDayBtn.disabled = false; halfDayBtn.textContent = 'Mark half-day'
           return
         }
         const typeName = (leaveTypes || _leaveTypes).find(t => t.id === typeId)?.name || 'leave'
@@ -1282,7 +1303,7 @@ const LeaveTracker = (() => {
         })
         if (error) {
           errEl.style.display = ''; errEl.textContent = error.message || 'Failed to remove.'
-          removeBtn.disabled = false; removeBtn.textContent = 'Remove Leave'
+          removeBtn.disabled = false; removeBtn.textContent = 'Remove leave'
           return
         }
         API.createNotification({
@@ -1313,7 +1334,7 @@ const LeaveTracker = (() => {
         })
         if (error) {
           if (errEl) { errEl.style.display = ''; errEl.textContent = error.message || 'Failed to save.' }
-          unpaidBtn.disabled = false; unpaidBtn.textContent = '⚡ Mark as Unpaid Leave'
+          unpaidBtn.disabled = false; unpaidBtn.textContent = 'Mark as unpaid leave instead'
           return
         }
         overlay.remove()
@@ -1348,7 +1369,7 @@ const LeaveTracker = (() => {
         if (error) {
           if (errEl) { errEl.style.display = ''; errEl.textContent = error.message || 'Failed to save leave.' }
           confirmBtn.disabled = false
-          confirmBtn.textContent = 'Apply Leave'
+          confirmBtn.textContent = 'Apply leave'
           return
         }
 
