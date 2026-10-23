@@ -426,7 +426,7 @@ const LeaveTracker = (() => {
       const end = new Date(r.end_date)
       while (d <= end) {
         const iso = _toISO(d)
-        leaveMap[iso] = { type: 'leave', name: r.leave_types?.name || 'Leave', is_half_day: r.is_half_day, half_day_period: r.half_day_period, status: r.status, is_late_half_day: r.is_late_half_day }
+        leaveMap[iso] = { type: 'leave', name: r.leave_types?.name || 'Leave', is_half_day: r.is_half_day, half_day_period: r.half_day_period, status: r.status, is_late_half_day: r.is_late_half_day, reason: r.reason }
         d.setDate(d.getDate() + 1)
       }
     })
@@ -540,7 +540,7 @@ const LeaveTracker = (() => {
         case 'leave':
         case 'leave-pending': {
           cellClass += leave.status === 'pending' ? ' att-cal-cell--leave att-cal-cell--leave-pending' : ' att-cal-cell--leave'
-          const lbl = leave.is_half_day ? `½ ${Utils.escapeHtml(leave.name)}${leave.is_late_half_day ? ' (Late)' : ''}` : Utils.escapeHtml(leave.name)
+          const lbl = (leave.is_half_day ? '½ ' : '') + Utils.escapeHtml(leave.name) + Utils.leaveTag(leave)
           cellContent += `<span class="att-cal-label">${lbl}${leave.status === 'pending' ? ' <em style="font-size:10px;font-style:normal;opacity:0.7;">(Pending)</em>' : ''}</span>`
           break
         }
@@ -683,7 +683,7 @@ const LeaveTracker = (() => {
     // Build the "what's on this day" summary
     const items = []
     if (holiday) items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--holiday">Holiday</span><span>${Utils.escapeHtml(holiday)}</span></div>`)
-    if (leave)   items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--leave">${leave.is_half_day ? 'Half-Day Leave' : 'Leave'}${leave.is_late_half_day ? ' (Late)' : ''}</span><span>${Utils.escapeHtml(leave.name)}</span></div>`)
+    if (leave)   items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--leave">${leave.is_half_day ? 'Half-Day Leave' : 'Leave'}${Utils.leaveTag(leave)}</span><span>${Utils.escapeHtml(leave.name)}</span></div>`)
     if (isWfh)   items.push(`<div class="att-day-row"><span class="att-day-tag att-day-tag--wfh">WFH</span><span>Work From Home</span></div>`)
     if (cv) {
       const dur = cv.duration_type === 'full_day' ? '' : ` (${_cvDurationLabel(cv.duration_type)})`
@@ -1240,7 +1240,7 @@ const LeaveTracker = (() => {
               <td style="white-space:nowrap;">
                 ${r.status === 'pending' ? `<button class="btn btn--xs btn--ghost" data-cancel-leave="${r.id}" style="color:var(--danger);">Cancel</button>` : ''}
                 ${r.status === 'approved' && !r.is_late_half_day ? `<button class="btn btn--xs btn--ghost" data-cancel-request="${r.id}" style="color:var(--warning);">Request Cancel</button>` : ''}
-                ${r.is_late_half_day && !r.correction_status ? `<button class="btn btn--xs btn--ghost" data-request-correction="${r.id}" style="color:var(--warning);">Request Correction</button>` : ''}
+                ${r.is_late_half_day && !r.correction_status && Utils.leaveSource(r) === 'auto' ? `<button class="btn btn--xs btn--ghost" data-request-correction="${r.id}" style="color:var(--warning);">Request Correction</button>` : ''}
               </td>
             </tr>
           `).join('')}

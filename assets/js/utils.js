@@ -343,6 +343,37 @@ const Utils = (() => {
     return { state: 'no-data' }
   }
 
+  /* ── Leave source ─────────────────────────────────────────────
+     Who/what created a leave record, worked out from fields we already
+     store (no separate column). Needs the record's `reason` and
+     `is_late_half_day`.
+       auto     — old automatic late half-day (reason "Auto-marked …")
+       hr_late  — half-day HR marked because of a late arrival
+       hr       — leave HR marked for any other reason
+       employee — applied for by the employee
+     HR-marked records are written with a reason starting "Marked by HR". */
+  function leaveSource(leave) {
+    const reason = String((leave && leave.reason) || '')
+    if (leave && leave.is_late_half_day) return reason.startsWith('Auto-marked') ? 'auto' : 'hr_late'
+    if (reason.startsWith('Marked by HR') || reason.startsWith('Marked as Unpaid Leave by HR')) return 'hr'
+    return 'employee'
+  }
+
+  // Tag shown after the leave name on a calendar cell.
+  function leaveTag(leave) {
+    const s = leaveSource(leave)
+    return (s === 'auto' || s === 'hr_late') ? ' (Late)' : s === 'hr' ? ' (HR)' : ''
+  }
+
+  function leaveSourceLabel(leave) {
+    return {
+      auto:     'Automatic (late arrival)',
+      hr_late:  'Marked by HR for late arrival',
+      hr:       'Marked by HR',
+      employee: 'Employee request',
+    }[leaveSource(leave)]
+  }
+
   return {
     formatDate,
     formatDateShort,
@@ -371,6 +402,9 @@ const Utils = (() => {
     canAccess,
     todayIST,
     computeDayStatus,
+    leaveSource,
+    leaveTag,
+    leaveSourceLabel,
     downloadCSV,
     EMPLOYMENT_TYPE_LABELS,
     WORK_LOCATION_LABELS,

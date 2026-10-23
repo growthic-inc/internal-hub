@@ -672,7 +672,7 @@ const LeaveTracker = (() => {
         leaveMap[iso] = {
           id: r.id, leave_type_id: r.leave_type_id, start_date: r.start_date, end_date: r.end_date, days: r.days,
           name: r.leave_types?.name || 'Leave', is_half_day: r.is_half_day, half_day_period: r.half_day_period, status: r.status,
-          is_late_half_day: r.is_late_half_day,
+          is_late_half_day: r.is_late_half_day, reason: r.reason,
         }
         d.setDate(d.getDate() + 1)
       }
@@ -775,7 +775,7 @@ const LeaveTracker = (() => {
         case 'leave':
         case 'leave-pending': {
           cellClass += leave.status === 'pending' ? ' att-cal-cell--leave att-cal-cell--leave-pending' : ' att-cal-cell--leave'
-          const lbl = leave.is_half_day ? `½ ${Utils.escapeHtml(leave.name)}${leave.is_late_half_day ? ' (Late)' : ''}` : Utils.escapeHtml(leave.name)
+          const lbl = (leave.is_half_day ? '½ ' : '') + Utils.escapeHtml(leave.name) + Utils.leaveTag(leave)
           cellContent += `<span class="att-cal-label">${lbl}${leave.status === 'pending' ? ' <em style="font-size:10px;font-style:normal;opacity:0.7;">(Pending)</em>' : ''}</span>`
           dayState = 'leave'
           break
@@ -892,6 +892,41 @@ const LeaveTracker = (() => {
     })
   }
 
+  // Leave balance per type for a calendar year: credits minus approved leave taken.
+  async function _leaveBalanceMap(empId, year) {
+    const [creditsRes, takenRes] = await Promise.all([
+      API.getLeaveCredits(empId, year),
+      API.getAllLeaveRequests({ status: 'approved', employeeId: empId }),
+    ])
+    const balMap = {}
+    ;(creditsRes.data || []).forEach(c => { balMap[c.leave_type_id] = (balMap[c.leave_type_id] || 0) + Number(c.credited_days) })
+    ;(takenRes.data || []).filter(r => new Date(r.start_date).getFullYear() === year)
+      .forEach(r => { balMap[r.leave_type_id] = (balMap[r.leave_type_id] || 0) - Number(r.days) })
+    return balMap
+  }
+
+  // The approved half-day HR marks from the day popup. A late-arrival half-day
+  // carries is_late_half_day so it reads as "(Late)" on calendars; the reason
+  // always starts "Marked by HR" so its source can be told apart later.
+  function _halfDayRow({ empId, typeId, iso, period, note, approverId, isLate, punchIn }) {
+    const base = isLate
+      ? `Marked by HR — late arrival${punchIn ? ` (in at ${punchIn})` : ''}`
+      : 'Marked by HR'
+    return {
+      employee_id:      empId,
+      leave_type_id:    typeId,
+      start_date:       iso,
+      end_date:         iso,
+      days:             0.5,
+      is_half_day:      true,
+      half_day_period:  period,
+      reason:           base + (note ? ` — ${note}` : ''),
+      status:           'approved',
+      approver_id:      approverId,
+      is_late_half_day: !!isLate,
+    }
+  }
+
   async function _openTeamDayModal({ iso, state, att, leave, isWfh, cv, holiday, dayEvents, empId, leaveTypes }) {
     const existing = document.getElementById('lt-team-day-overlay')
     if (existing) existing.remove()
@@ -921,7 +956,8 @@ const LeaveTracker = (() => {
     if (att?.is_exempted) {
       attRows += `<div class="att-day-row"><span class="att-cal-exempt-badge" style="position:static;font-size:11px;padding:2px 8px;border-radius:20px;">✓ Correction Applied</span>${att.exemption_reason ? `<span style="font-size:13px;">${Utils.escapeHtml(att.exemption_reason)}</span>` : ''}</div>`
     }
-    if (leave)    attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--leave">${leave.status === 'pending' ? 'Pending Leave' : 'On Leave'}</span><span>${Utils.escapeHtml(leave.name)}${leave.is_half_day ? ' (½ day)' : ''}${leave.is_late_half_day ? ' — Late' : ''}</span></div>`
+    if (leave)    attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--leave">${leave.status === 'pending' ? 'Pending Leave' : 'On Leave'}</span><span>${Utils.escapeHtml(leave.name)}${leave.is_half_day ? ' (½ day)' : ''}${Utils.leaveTag(leave)}</span></div>`
+    if (leave)    attRows += `<div class="att-day-row"><span class="att-day-tag">Source</span><span>${Utils.leaveSource(leave) === 'employee' ? 'Employee request' + (leave.reason ? ' — ' + Utils.escapeHtml(leave.reason) : '') : Utils.escapeHtml(leave.reason || Utils.leaveSourceLabel(leave))}</span></div>`
     if (isWfh)   attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--wfh">WFH</span></div>`
     if (cv)      attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--client-visit">Client Visit</span><span>${Utils.escapeHtml(cv.clients?.client_name || 'Client')}</span></div>`
     if (holiday) attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--holiday">Holiday</span><span>${Utils.escapeHtml(holiday)}</span></div>`
@@ -976,6 +1012,67 @@ const LeaveTracker = (() => {
             </div>`
         }
       }
+    }
+
+    // Mark Half-Day — HR picks which leave type it comes off. Any past or
+    // present day that has no leave, WFH or client visit on it (Late days
+    // included — the late arrival is only a remark until HR decides).
+    let halfDaySection = ''
+    const canHalfDay = iso <= _toISO(new Date()) && ['late', 'present', 'partial', 'absent', 'no-data', 'blank'].includes(state)
+    if (canHalfDay) {
+      const balMap = await _leaveBalanceMap(empId, new Date(iso).getFullYear())
+      const halfTypes = (leaveTypes || _leaveTypes)
+        .filter(t => t.is_active && (t.is_unpaid || (balMap[t.id] || 0) >= 0.5))
+        .sort((a, b) => {
+          const aC = a.name.toLowerCase().includes('casual'), bC = b.name.toLowerCase().includes('casual')
+          if (aC && !bC) return -1
+          if (!aC && bC) return 1
+          if (a.is_unpaid && !b.is_unpaid) return 1
+          if (!a.is_unpaid && b.is_unpaid) return -1
+          return a.name.localeCompare(b.name)
+        })
+      const lateHint = state === 'late' && att?.punch_in
+        ? `<div style="font-size:12px;color:#B91C1C;margin-bottom:8px;">Punched in at ${att.punch_in.substring(0,5)} — ${att.late_minutes} min after the threshold.</div>`
+        : ''
+      halfDaySection = halfTypes.length ? `
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:8px;">Mark Half-Day</div>
+          ${lateHint}
+          <div id="lt-hd-err" class="alert alert--danger" style="display:none;margin-bottom:8px;font-size:13px;"></div>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <select id="lt-hd-type" class="form-control" style="font-size:13px;">
+              ${halfTypes.map(t => `<option value="${t.id}">${Utils.escapeHtml(t.name)}${t.is_unpaid ? ' (Unpaid)' : ' (' + (balMap[t.id] || 0) + ' days remaining)'}</option>`).join('')}
+            </select>
+            <div style="display:flex;gap:16px;font-size:13px;">
+              <label style="cursor:pointer;"><input type="radio" name="lt-hd-period" value="morning" checked> Morning</label>
+              <label style="cursor:pointer;"><input type="radio" name="lt-hd-period" value="afternoon"> Afternoon</label>
+            </div>
+            <input id="lt-hd-note" class="form-input" type="text" placeholder="Note (optional)" style="font-size:13px;">
+            <button class="btn btn--primary btn--sm" id="lt-hd-confirm" style="align-self:flex-start;">Mark Half-Day</button>
+          </div>
+        </div>` : `
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--text-muted);">
+          No leave type has half a day left for this employee, and no unpaid type is set up.
+        </div>`
+    }
+
+    // Remove Leave — cancels an approved leave straight away (whole request).
+    let removeSection = ''
+    const canRemove = state === 'leave' && leave?.status === 'approved'
+    if (canRemove) {
+      const rangeLabel = leave.start_date === leave.end_date
+        ? Utils.formatDate(leave.start_date)
+        : `${Utils.formatDate(leave.start_date)} – ${Utils.formatDate(leave.end_date)}`
+      removeSection = `
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:6px;">Remove Leave</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Cancels the whole request: ${rangeLabel} (${leave.days} day${Number(leave.days) === 1 ? '' : 's'}). The balance is returned and the employee is notified.</div>
+          <div id="lt-remove-err" class="alert alert--danger" style="display:none;margin-bottom:8px;font-size:13px;"></div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <input id="lt-remove-reason" class="form-input" type="text" placeholder="Reason (required)" style="font-size:13px;">
+            <button class="btn btn--danger btn--sm" id="lt-remove-confirm" style="align-self:flex-start;">Remove Leave</button>
+          </div>
+        </div>`
     }
 
     // Change Leave Type — applies to the whole request (every date in it),
@@ -1060,7 +1157,9 @@ const LeaveTracker = (() => {
         <div class="modal-body" style="padding:16px 0 4px;">
           ${attRows}
           ${changeTypeSection}
+          ${removeSection}
           ${markSection}
+          ${halfDaySection}
           ${eventSection}
         </div>
       </div>
@@ -1138,6 +1237,64 @@ const LeaveTracker = (() => {
       })
     }
 
+    const halfDayBtn = overlay.querySelector('#lt-hd-confirm')
+    if (halfDayBtn) {
+      halfDayBtn.addEventListener('click', async () => {
+        const typeId = overlay.querySelector('#lt-hd-type')?.value
+        const period = overlay.querySelector('input[name="lt-hd-period"]:checked')?.value || 'morning'
+        const note   = overlay.querySelector('#lt-hd-note')?.value.trim() || ''
+        const errEl  = overlay.querySelector('#lt-hd-err')
+        if (!typeId) return
+        halfDayBtn.disabled = true; halfDayBtn.textContent = 'Saving…'
+        const { data, error } = await API.createLeaveRequest(_halfDayRow({
+          empId, typeId, iso, period, note, approverId: _user.id,
+          isLate: state === 'late', punchIn: att?.punch_in ? att.punch_in.substring(0, 5) : null,
+        }))
+        if (error) {
+          errEl.style.display = ''; errEl.textContent = error.message || 'Failed to save.'
+          halfDayBtn.disabled = false; halfDayBtn.textContent = 'Mark Half-Day'
+          return
+        }
+        const typeName = (leaveTypes || _leaveTypes).find(t => t.id === typeId)?.name || 'leave'
+        API.createNotification({
+          recipient_employee_id: empId, type: 'info', module: 'leave_tracker', record_id: data?.id || null,
+          message: `HR marked a half-day (${typeName}) for you on ${Utils.formatDate(iso)}.`,
+        })
+        overlay.remove()
+        Utils.showToast('Half-day marked.', 'success')
+        _loadTeamAttCal()
+      })
+    }
+
+    const removeBtn = overlay.querySelector('#lt-remove-confirm')
+    if (removeBtn) {
+      removeBtn.addEventListener('click', async () => {
+        const reason = overlay.querySelector('#lt-remove-reason')?.value.trim()
+        const errEl  = overlay.querySelector('#lt-remove-err')
+        if (!reason) { errEl.style.display = ''; errEl.textContent = 'Please give a reason.'; return }
+        if (!confirm(`Remove this ${leave.name}${leave.is_half_day ? ' half-day' : ''} for ${empName}?`)) return
+        errEl.style.display = 'none'
+        removeBtn.disabled = true; removeBtn.textContent = 'Removing…'
+        const { error } = await API.updateLeaveRequest(leave.id, {
+          status: 'cancelled',
+          cancellation_reason: reason,
+          approver_comment: `Removed by ${_user.name}: ${reason}`,
+        })
+        if (error) {
+          errEl.style.display = ''; errEl.textContent = error.message || 'Failed to remove.'
+          removeBtn.disabled = false; removeBtn.textContent = 'Remove Leave'
+          return
+        }
+        API.createNotification({
+          recipient_employee_id: empId, type: 'info', module: 'leave_tracker', record_id: leave.id,
+          message: `HR removed your ${leave.name}${leave.is_half_day ? ' half-day' : ''} on ${Utils.formatDate(leave.start_date)}. Reason: ${reason}`,
+        })
+        overlay.remove()
+        Utils.showToast('Leave removed.', 'success')
+        _loadTeamAttCal()
+      })
+    }
+
     const unpaidBtn = overlay.querySelector('#lt-mark-unpaid-btn')
     if (unpaidBtn) {
       unpaidBtn.addEventListener('click', async () => {
@@ -1183,7 +1340,7 @@ const LeaveTracker = (() => {
           end_date:     iso,
           days:         1,
           is_half_day:  false,
-          reason:       reason || 'Marked by HR',
+          reason:       'Marked by HR' + (reason ? ' — ' + reason : ''),
           status:       'approved',
           approver_id:  _user.id,
         })
