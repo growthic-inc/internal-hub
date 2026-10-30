@@ -58,6 +58,11 @@ const ClientDashboard = (() => {
   function render(user) {
     return `
       <div class="page-inner" style="max-width:1400px;">
+        <div class="tabs" id="db-top-tabs" style="margin-bottom:14px;">
+          <button class="tab-btn tab-btn--active" data-dbtab="performance">Performance</button>
+          <button class="tab-btn" data-dbtab="calendar">Delivery Calendar</button>
+        </div>
+        <div id="db-performance">
         <div class="db-filter-bar" id="db-filter-bar">
           <div class="db-filter-group" style="min-width:200px;">
             <span class="db-filter-label">Client</span>
@@ -127,6 +132,8 @@ const ClientDashboard = (() => {
             <p style="color:var(--text-muted);font-size:14px;">Select a client to view the dashboard</p>
           </div>
         </div>
+        </div>
+        <div id="db-calendar" style="display:none;"></div>
       </div>
     `
   }
@@ -143,6 +150,7 @@ const ClientDashboard = (() => {
     _activeMetrics = _getDefaultActiveMetrics()
     const { data } = await API.getClients()
     _clients = data || []
+    _bindTopTabs()
     _bindClientDropdown()
     _bindFilters()
     if (_p.can_create) {
@@ -157,6 +165,21 @@ const ClientDashboard = (() => {
       document.getElementById('db-fetch-report-btn')?.remove()
       document.getElementById('db-apify-btn')?.remove()
     }
+  }
+
+  /* ── Top tabs: Performance | Delivery Calendar ──────────── */
+  function _bindTopTabs() {
+    document.querySelectorAll('#db-top-tabs .tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.dbtab
+        document.querySelectorAll('#db-top-tabs .tab-btn').forEach(b => b.classList.toggle('tab-btn--active', b === btn))
+        const perf = document.getElementById('db-performance')
+        const cal  = document.getElementById('db-calendar')
+        if (perf) perf.style.display = tab === 'performance' ? '' : 'none'
+        if (cal)  cal.style.display  = tab === 'calendar' ? '' : 'none'
+        if (tab === 'calendar') DeliveryCalendar.mount(cal)
+      })
+    })
   }
 
   /* ── Client dropdown ────────────────────────────────────── */

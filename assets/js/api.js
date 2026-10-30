@@ -1026,6 +1026,48 @@ const API = (() => {
     return res.json()
   }
 
+  /* ── Delivery Calendar (Client Dashboard) ───────────────────── */
+
+  // Reads the writers' Master Sheet through the delivery-calendar Edge Function.
+  // Returns { data: { sheetId, fetchedAt, statuses, clients: [{ gid, name, hidden, deliverables }] }, error }.
+  async function getDeliveryCalendar(refresh = false) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`${Config.SUPABASE_URL}/functions/v1/delivery-calendar`, {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+          'apikey':        Config.SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ refresh }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) return { data: null, error: { message: json.error || `Request failed (${res.status})` } }
+      return { data: json, error: null }
+    } catch (_) {
+      return { data: null, error: { message: 'Could not reach the server. Check your connection and try again.' } }
+    }
+  }
+
+  // Hide / show client tabs for everyone (one shared list, keyed by the Master tab's GID).
+  async function setDeliveryTabsHidden(spreadsheetId, gids, hidden) {
+    return supabase
+      .from('delivery_calendar_tabs')
+      .update({ hidden })
+      .eq('spreadsheet_id', spreadsheetId)
+      .in('gid', gids)
+  }
+
+  // Live updates when anyone changes the shared list. Returns an unsubscribe function.
+  function subscribeDeliveryTabs(onChange) {
+    const channel = supabase
+      .channel('delivery_calendar_tabs_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'delivery_calendar_tabs' }, onChange)
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }
+
   /**
    * Fetch daily metrics for a client+platform in a date window.
    * Returns rows ordered by date ASC.
@@ -2180,6 +2222,7 @@ const API = (() => {
     getDepartmentPermissions, saveDepartmentPermissions,
     getAccessMatrix, getAllDeptAccessMatrix, saveAccessMatrix,
     // Phase 9 — Social Analytics
+    getDeliveryCalendar, setDeliveryTabsHidden, subscribeDeliveryTabs,
     ingestAnalytics, getSocialMetrics, getSocialPosts, getAnalyticsUploadLog, getPersonalPostEngagement,
     getSocialFollowers, getSocialVisitors, getSocialDemographics, uploadAnalyticsToDrive,
     // Phase 8

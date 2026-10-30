@@ -7666,3 +7666,99 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   color: var(--text-muted);
   padding: 4px 0 10px;
 }
+
+/* ── Delivery Calendar (Client Dashboard tab) ───────────────── */
+.dcal-hidden { display: none !important; }
+.dcal-state { padding: 48px 16px; display: flex; flex-direction: column; align-items: flex-start; }
+
+.dcal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.dcal-nav, .dcal-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dcal-range-label { font-size: 15px; font-weight: 600; color: var(--text); margin-right: 4px; }
+.dcal-arrows { display: inline-flex; gap: 4px; }
+.dcal-icon-btn {
+  min-width: 30px; height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg); color: var(--text-secondary); font-size: 16px; line-height: 1; cursor: pointer; font-family: inherit;
+}
+.dcal-icon-btn:hover { background: var(--surface); color: var(--text); }
+.dcal-icon-btn--text { font-size: 12px; font-weight: 500; }
+.dcal-updated { font-size: 12px; color: var(--text-muted); margin-right: 2px; }
+.dcal-hidden-count { color: var(--danger); font-weight: 700; margin-left: 2px; }
+
+.dcal-range-wrap, .dcal-menu-wrap { position: relative; }
+.dcal-range-pop {
+  position: absolute; top: 36px; left: 0; z-index: 30; display: flex; flex-direction: column; gap: 8px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-md);
+  padding: 12px; font-size: 12px; color: var(--text-secondary); min-width: 200px;
+}
+.dcal-range-pop label { display: flex; flex-direction: column; gap: 3px; }
+.dcal-range-pop input { padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); font-family: inherit; }
+
+.dcal-menu {
+  position: absolute; top: 36px; right: 0; z-index: 30; width: 280px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-md); padding: 6px 0;
+}
+.dcal-menu-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px 6px; font-size: 12px; font-weight: 600; color: var(--text); }
+.dcal-menu-head em { font-weight: 400; font-style: normal; color: var(--text-muted); }
+.dcal-link-btn { background: none; border: none; padding: 0; color: var(--primary); font-size: 12px; cursor: pointer; font-family: inherit; }
+.dcal-menu-search { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); font-size: 12px; font-family: inherit; box-sizing: border-box; }
+.dcal-menu-list { max-height: 280px; overflow-y: auto; }
+.dcal-menu-row { display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: 13px; color: var(--text); cursor: pointer; }
+.dcal-menu-row:hover { background: var(--surface); }
+.dcal-menu-row small { margin-left: auto; font-size: 10.5px; color: var(--warning); }
+.dcal-menu-empty { padding: 10px 12px; font-size: 12px; color: var(--text-muted); }
+
+.dcal-legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 4px 0 14px; font-size: 12px; color: var(--text-muted); }
+.dcal-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.dcal-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+/* status colours */
+.dcal-s-green { background: #16a34a; }           .dcal-s-orange { background: #d97706; }
+.dcal-s-red { background: #dc2626; }             .dcal-s-ideation { background: #64748b; }
+.dcal-s-ideation-approved { background: #6366f1; } .dcal-s-content-review { background: #8b5cf6; }
+.dcal-s-content-approved { background: #3b82f6; }  .dcal-s-delivered { background: #0891b2; }
+.dcal-s-client-approved { background: #0d9488; }   .dcal-s-grey { background: #9aa4b2; }
+
+/* month grid */
+.dcal-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
+.dcal-grid { border-collapse: collapse; min-width: 100%; }
+.dcal-grid th, .dcal-grid td { border: 1px solid var(--border); padding: 0; font-size: 12px; text-align: center; }
+.dcal-grid th { background: var(--surface); font-weight: 500; font-size: 11px; color: var(--text-secondary); padding: 6px 2px; min-width: 32px; }
+.dcal-grid .dcal-client-cell { position: sticky; left: 0; z-index: 2; text-align: left; padding: 6px 10px; min-width: 150px; max-width: 190px; background: var(--bg); font-size: 12.5px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dcal-grid thead .dcal-client-cell { background: var(--surface); z-index: 3; font-weight: 600; }
+.dcal-client-link { cursor: pointer; }
+.dcal-client-link:hover { color: var(--primary); text-decoration: underline; }
+.dcal-cell { height: 34px; min-width: 32px; padding: 2px !important; }
+.dcal-off { background: repeating-linear-gradient(45deg, var(--border-light), var(--border-light) 6px, var(--border) 6px, var(--border) 12px) !important; }
+.dcal-today { background: var(--primary-light) !important; box-shadow: inset 2px 0 0 var(--primary), inset -2px 0 0 var(--primary); }
+.dcal-day-head.dcal-today { color: var(--primary); }
+[data-theme="dark"] .dcal-day-head.dcal-today, [data-theme="dark"] .dcal-dd-today .dcal-dd-num { color: var(--secondary); }
+.dcal-today-label { font-size: 8.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+.dcal-cell-inner { display: flex; width: 100%; height: 100%; gap: 1px; }
+.dcal-part { flex: 1; border-radius: 3px; font-size: 9px; font-weight: 700; color: #fff; display: flex; align-items: center; justify-content: center; cursor: default; min-height: 28px; }
+
+/* hover tooltip */
+.dcal-tooltip {
+  position: fixed; z-index: 1200; display: none; max-width: 300px; pointer-events: none;
+  background: #1e293b; color: #f1f5f9; border-radius: 6px; padding: 8px 10px; font-size: 12px; line-height: 1.45; box-shadow: var(--shadow-lg);
+}
+.dcal-tooltip b { display: block; margin-bottom: 3px; }
+.dcal-tt-warn { display: block; color: #fbbf24; margin-bottom: 3px; }
+
+/* per-client month view */
+.dcal-dd-controls { display: flex; align-items: center; gap: 6px; }
+.dcal-dd-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.dcal-dd-head { font-size: 11px; font-weight: 600; text-align: center; color: var(--text-muted); padding: 4px 0; }
+.dcal-dd-day { min-height: 74px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px; font-size: 11px; background: var(--bg); }
+.dcal-dd-blank { border: none; background: transparent; }
+.dcal-dd-num { font-weight: 600; color: var(--text-muted); margin-bottom: 3px; }
+.dcal-dd-today .dcal-dd-num { color: var(--primary); }
+.dcal-dd-today { border-color: var(--primary); }
+.dcal-dd-item { color: #fff; border-radius: 3px; padding: 2px 5px; margin-bottom: 2px; font-size: 10.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcal-dd-item a { color: #fff; text-decoration: underline; }
+.dcal-dd-empty { font-size: 12px; color: var(--text-muted); margin: 10px 0 0; }
+
+@media (max-width: 700px) {
+  .dcal-grid .dcal-client-cell { min-width: 110px; max-width: 130px; }
+  .dcal-menu { right: auto; left: 0; }
+  .dcal-dd-day { min-height: 56px; }
+}
