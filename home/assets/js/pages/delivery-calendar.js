@@ -163,12 +163,12 @@ const DeliveryCalendar = (() => {
         </div>
         <div class="dcal-actions">
           <span class="dcal-updated" title="Data is read from the Master Sheet and refreshed about every minute">Updated ${esc(updated)}</span>
-          <button class="btn btn--ghost btn--sm" id="dcal-legend-toggle">${_legendVisible ? 'Hide legend' : 'Show legend'}</button>
+          <button class="dcal-btn" id="dcal-legend-toggle">${_legendVisible ? 'Hide legend' : 'Show legend'}</button>
           <div class="dcal-menu-wrap">
-            <button class="btn btn--ghost btn--sm" id="dcal-menu-btn">Clients${hiddenN ? ` <span class="dcal-hidden-count">${hiddenN} hidden</span>` : ''} ▾</button>
+            <button class="dcal-btn" id="dcal-menu-btn">Clients${hiddenN ? ` <span class="dcal-hidden-count">· ${hiddenN} hidden</span>` : ''} ▾</button>
             <div class="dcal-menu dcal-hidden" id="dcal-menu"></div>
           </div>
-          <button class="btn btn--ghost btn--sm" id="dcal-sync">Sync now</button>
+          <button class="dcal-btn" id="dcal-sync">Sync now</button>
         </div>
       </div>
       ${_legendVisible ? _legendHtml() : ''}
@@ -182,13 +182,14 @@ const DeliveryCalendar = (() => {
   }
 
   function _legendHtml() {
-    const item = (cls, label) => `<span><i class="dcal-dot dcal-s-${cls}"></i>${label}</span>`
+    const item = (cls, abbr, name) => `<span title="${name}"><i class="dcal-dot dcal-s-${cls}"></i>${abbr}</span>`
     return `<div class="dcal-legend">
-      ${item('ideation', 'ID = Ideation')}${item('ideation-approved', 'IA = Ideation Approved')}
-      ${item('content-review', 'CR = Content Review')}${item('content-approved', 'CA = Content Approved')}
-      ${item('delivered', 'DL = Delivered')}${item('client-approved', 'CLA = Client Approved')}
-      ${item('green', '✓ = Posted')}${item('orange', 'RW = Rework')}${item('red', 'RJ = Rejected')}
-      ${item('grey', '? = status text not recognised (hover to see what was typed)')}
+      ${item('ideation', 'ID', 'Ideation')}${item('ideation-approved', 'IA', 'Ideation Approved')}
+      ${item('content-review', 'CR', 'Content Review')}${item('content-approved', 'CA', 'Content Approved')}
+      ${item('delivered', 'DL', 'Delivered')}${item('client-approved', 'CLA', 'Client Approved')}
+      ${item('green', '✓', 'Posted')}${item('orange', 'RW', 'Rework')}${item('red', 'RJ', 'Rejected')}
+      ${item('grey', '?', 'Status text not recognised — hover the badge to see what was typed')}
+      <span class="dcal-legend-note">Hover a status for details · click a client for its month view</span>
     </div>`
   }
 
@@ -208,7 +209,8 @@ const DeliveryCalendar = (() => {
     days.forEach((d, i) => {
       const off = d.getDay() === OFF_DAY, isToday = sameDay(d, today)
       const showMonth = d.getDate() === 1 || i === 0
-      html += `<th class="dcal-day-head${off ? ' dcal-off' : ''}${isToday ? ' dcal-today' : ''}">${showMonth ? d.toLocaleString('en-IN', { month: 'short' }) + ' ' : ''}${d.getDate()}${isToday ? '<div class="dcal-today-label">Today</div>' : ''}</th>`
+      const wd = isToday ? 'Today' : d.toLocaleDateString('en-IN', { weekday: 'short' })
+      html += `<th class="dcal-day-head${off ? ' dcal-off' : ''}${isToday ? ' dcal-today' : ''}"><span class="dcal-wd">${wd}</span><span class="dcal-dn">${showMonth ? `<span class="dcal-mn">${d.toLocaleString('en-IN', { month: 'short' })}</span> ` : ''}${d.getDate()}</span></th>`
     })
     html += `</tr></thead><tbody>`
 
@@ -221,7 +223,7 @@ const DeliveryCalendar = (() => {
         const its = byDate[key] || []
         html += `<td class="dcal-cell${off ? ' dcal-off' : ''}${isToday ? ' dcal-today' : ''}">`
         if (its.length) {
-          html += `<div class="dcal-cell-inner">` + its.map(it => {
+          html += `<div class="dcal-cell-inner${its.length > 1 ? ' dcal-multi' : ''}">` + its.map(it => {
             _items.push({ it, client: c })
             return `<div class="dcal-part dcal-s-${it.statusColor}" data-k="${_items.length - 1}">${it.statusColor === 'green' ? '✓' : esc(it.statusAbbr)}</div>`
           }).join('') + `</div>`

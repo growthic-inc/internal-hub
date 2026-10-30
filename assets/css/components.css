@@ -7671,9 +7671,9 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 .dcal-hidden { display: none !important; }
 .dcal-state { padding: 48px 16px; display: flex; flex-direction: column; align-items: flex-start; }
 
-.dcal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
-.dcal-nav, .dcal-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.dcal-range-label { font-size: 15px; font-weight: 600; color: var(--text); margin-right: 4px; }
+.dcal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px 20px; flex-wrap: wrap; margin-bottom: 14px; }
+.dcal-nav, .dcal-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dcal-range-label { font-size: 16px; font-weight: 600; color: var(--text); margin-right: 6px; letter-spacing: -0.2px; }
 .dcal-arrows { display: inline-flex; gap: 4px; }
 .dcal-icon-btn {
   min-width: 30px; height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius);
@@ -7682,7 +7682,10 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 .dcal-icon-btn:hover { background: var(--surface); color: var(--text); }
 .dcal-icon-btn--text { font-size: 12px; font-weight: 500; }
 .dcal-updated { font-size: 12px; color: var(--text-muted); margin-right: 2px; }
-.dcal-hidden-count { color: var(--danger); font-weight: 700; margin-left: 2px; }
+.dcal-hidden-count { color: var(--text-muted); font-weight: 500; margin-left: 2px; }
+.dcal-btn { height: 32px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text-secondary); font-size: 12.5px; font-weight: 500; font-family: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.dcal-btn:hover:not(:disabled) { background: var(--surface); color: var(--text); }
+.dcal-btn:disabled { opacity: .6; cursor: default; }
 
 .dcal-range-wrap, .dcal-menu-wrap { position: relative; }
 .dcal-range-pop {
@@ -7707,9 +7710,10 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 .dcal-menu-row small { margin-left: auto; font-size: 10.5px; color: var(--warning); }
 .dcal-menu-empty { padding: 10px 12px; font-size: 12px; color: var(--text-muted); }
 
-.dcal-legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 4px 0 14px; font-size: 12px; color: var(--text-muted); }
-.dcal-legend span { display: inline-flex; align-items: center; gap: 5px; }
-.dcal-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.dcal-legend { display: flex; gap: 6px 14px; flex-wrap: wrap; align-items: center; margin: 0 0 14px; font-size: 11.5px; color: var(--text-muted); }
+.dcal-legend span { display: inline-flex; align-items: center; gap: 5px; cursor: default; }
+.dcal-legend .dcal-legend-note { margin-left: auto; font-style: italic; }
+.dcal-dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
 
 /* status colours */
 .dcal-s-green { background: #16a34a; }           .dcal-s-orange { background: #d97706; }
@@ -7719,22 +7723,29 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 .dcal-s-client-approved { background: #0d9488; }   .dcal-s-grey { background: #9aa4b2; }
 
 /* month grid */
-.dcal-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
-.dcal-grid { border-collapse: collapse; min-width: 100%; }
-.dcal-grid th, .dcal-grid td { border: 1px solid var(--border); padding: 0; font-size: 12px; text-align: center; }
-.dcal-grid th { background: var(--surface); font-weight: 500; font-size: 11px; color: var(--text-secondary); padding: 6px 2px; min-width: 32px; }
-.dcal-grid .dcal-client-cell { position: sticky; left: 0; z-index: 2; text-align: left; padding: 6px 10px; min-width: 150px; max-width: 190px; background: var(--bg); font-size: 12.5px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dcal-grid thead .dcal-client-cell { background: var(--surface); z-index: 3; font-weight: 600; }
+.dcal-scroll { overflow: auto; max-height: calc(100vh - 290px); min-height: 220px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); }
+.dcal-grid { border-collapse: separate; border-spacing: 0; min-width: 100%; }
+.dcal-grid th, .dcal-grid td { padding: 0; text-align: center; border-bottom: 1px solid var(--border-light); }
+.dcal-grid tbody tr:last-child td { border-bottom: none; }
+.dcal-grid th { position: sticky; top: 0; z-index: 3; background: var(--surface); font-weight: 500; color: var(--text-secondary); padding: 8px 2px 7px; min-width: 40px; border-bottom: 1px solid var(--border); line-height: 1.25; }
+.dcal-grid .dcal-client-cell { position: sticky; left: 0; z-index: 2; text-align: left; padding: 0 14px; min-width: 190px; max-width: 230px; background: var(--bg); font-size: 13px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-right: 1px solid var(--border); }
+.dcal-grid thead .dcal-client-cell { background: var(--surface); z-index: 4; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary); }
 .dcal-client-link { cursor: pointer; }
-.dcal-client-link:hover { color: var(--primary); text-decoration: underline; }
-.dcal-cell { height: 34px; min-width: 32px; padding: 2px !important; }
-.dcal-off { background: repeating-linear-gradient(45deg, var(--border-light), var(--border-light) 6px, var(--border) 6px, var(--border) 12px) !important; }
-.dcal-today { background: var(--primary-light) !important; box-shadow: inset 2px 0 0 var(--primary), inset -2px 0 0 var(--primary); }
-.dcal-day-head.dcal-today { color: var(--primary); }
-[data-theme="dark"] .dcal-day-head.dcal-today, [data-theme="dark"] .dcal-dd-today .dcal-dd-num { color: var(--secondary); }
-.dcal-today-label { font-size: 8.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
-.dcal-cell-inner { display: flex; width: 100%; height: 100%; gap: 1px; }
-.dcal-part { flex: 1; border-radius: 3px; font-size: 9px; font-weight: 700; color: #fff; display: flex; align-items: center; justify-content: center; cursor: default; min-height: 28px; }
+.dcal-client-link:hover { color: var(--primary); }
+.dcal-wd { display: block; font-size: 9.5px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.dcal-dn { display: block; font-size: 12.5px; font-weight: 600; color: var(--text); }
+.dcal-mn { color: var(--text-muted); font-weight: 500; }
+.dcal-cell { height: 52px; min-width: 40px; padding: 5px 4px !important; vertical-align: middle; }
+.dcal-off { background: repeating-linear-gradient(45deg, transparent, transparent 7px, var(--border-light) 7px, var(--border-light) 14px) !important; }
+.dcal-grid th.dcal-off { background: var(--surface) !important; }
+.dcal-grid th.dcal-off .dcal-dn { color: var(--text-muted); }
+.dcal-today { background: var(--primary-light) !important; }
+.dcal-grid th.dcal-today { box-shadow: inset 0 3px 0 var(--primary); }
+.dcal-grid th.dcal-today .dcal-dn, .dcal-grid th.dcal-today .dcal-wd { color: var(--primary); }
+.dcal-cell-inner { display: flex; flex-direction: column; gap: 3px; width: 100%; height: 100%; justify-content: center; }
+.dcal-part { width: 100%; height: 100%; max-height: 38px; border-radius: 7px; font-size: 10px; font-weight: 700; letter-spacing: .02em; color: #fff; display: flex; align-items: center; justify-content: center; cursor: default; }
+.dcal-multi .dcal-part { height: 20px; max-height: none; border-radius: 5px; font-size: 9px; }
+.dcal-multi { height: auto; }
 
 /* hover tooltip */
 .dcal-tooltip {
@@ -7758,7 +7769,8 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 .dcal-dd-empty { font-size: 12px; color: var(--text-muted); margin: 10px 0 0; }
 
 @media (max-width: 700px) {
-  .dcal-grid .dcal-client-cell { min-width: 110px; max-width: 130px; }
+  .dcal-grid .dcal-client-cell { min-width: 120px; max-width: 140px; padding: 0 10px; }
+  .dcal-scroll { max-height: calc(100vh - 230px); }
   .dcal-menu { right: auto; left: 0; }
   .dcal-dd-day { min-height: 56px; }
 }
