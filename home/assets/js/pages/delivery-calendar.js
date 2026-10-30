@@ -91,6 +91,7 @@ const DeliveryCalendar = (() => {
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') document.getElementById('dcal-dd-overlay')?.remove()
     })
+    window.addEventListener('resize', () => { if (_alive()) _fitHeight() })
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState !== 'visible' || !_alive() || !_data) return
       if (Date.now() - new Date(_data.fetchedAt).getTime() > STALE_MS) _load(false, true)
@@ -176,9 +177,19 @@ const DeliveryCalendar = (() => {
     `
 
     _renderGrid()
+    _fitHeight()
     _bindToolbar()
     _syncMenu()
     if (scrollLeft != null) { const el = _root.querySelector('.dcal-scroll'); if (el) el.scrollLeft = scrollLeft }
+  }
+
+  // The grid scrolls inside its own box; size that box to the space actually left on screen
+  // (down to the bottom edge) instead of a guessed height, so there is no dead gap below it.
+  function _fitHeight() {
+    const el = _root?.querySelector('.dcal-scroll')
+    if (!el) return
+    const top = el.getBoundingClientRect().top
+    el.style.maxHeight = Math.max(260, window.innerHeight - top - 20) + 'px'
   }
 
   function _legendHtml() {

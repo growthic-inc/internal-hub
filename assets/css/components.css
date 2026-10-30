@@ -7723,7 +7723,7 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 .dcal-s-client-approved { background: #0d9488; }   .dcal-s-grey { background: #9aa4b2; }
 
 /* month grid */
-.dcal-scroll { overflow: auto; max-height: calc(100vh - 290px); min-height: 220px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); }
+.dcal-scroll { overflow: auto; max-height: calc(100vh - 220px); min-height: 220px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); }
 .dcal-grid { border-collapse: separate; border-spacing: 0; min-width: 100%; }
 .dcal-grid th, .dcal-grid td { padding: 0; text-align: center; border-bottom: 1px solid var(--border-light); }
 .dcal-grid tbody tr:last-child td { border-bottom: none; }
@@ -7770,7 +7770,6 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 
 @media (max-width: 700px) {
   .dcal-grid .dcal-client-cell { min-width: 120px; max-width: 140px; padding: 0 10px; }
-  .dcal-scroll { max-height: calc(100vh - 230px); }
   .dcal-menu { right: auto; left: 0; }
   .dcal-dd-day { min-height: 56px; }
 }
