@@ -500,9 +500,13 @@ const LeaveTracker = (() => {
       let cellClass = 'att-cal-cell att-cal-cell--clickable'
       let cellContent = `<span class="att-cal-day">${d}</span>`
 
-      const dayStatus = Utils.computeDayStatus(iso, { holiday, leave, isWfh, cv, attendance: att, todayISO: today })
+      const dayStatus = Utils.computeDayStatus(iso, { holiday, leave, isWfh, cv, attendance: att, todayISO: today, joiningDate: _user?.joining_date })
 
       switch (dayStatus.state) {
+        case 'prejoin':
+          cellClass += ' att-cal-cell--no-data'
+          cellContent += `<span class="att-cal-label" style="opacity:.6;">Not joined</span>`
+          break
         case 'off':
           cellClass += ' att-cal-cell--weekend'
           cellContent += `<span class="att-cal-label">Weekly Off</span>`

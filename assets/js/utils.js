@@ -303,10 +303,11 @@ const Utils = (() => {
        cv:          truthy (object or true) or falsy
        attendance:  raw employee_attendance row, or falsy
        todayISO:    'YYYY-MM-DD' — used to tell "future" from "no data yet"
+       joiningDate: 'YYYY-MM-DD', or falsy — days before it are 'prejoin'
      }
      Returns { state, ...extra } — state is one of:
-     off | holiday | leave | leave-pending | wfh | cv | present | late |
-     partial | absent | blank | future | no-data
+     prejoin | off | holiday | leave | leave-pending | wfh | cv | present |
+     late | partial | absent | blank | future | no-data
      A still-pending Leave doesn't hide an existing WFH/Client Visit —
      both stand until the Leave is actually decided, so those cases
      return the WFH/CV state plus a `pendingLeave` field the caller can
@@ -315,8 +316,12 @@ const Utils = (() => {
      distinct from `no-data` (no row at all) so callers don't mislabel
      "not punched in yet" as "no record". */
   function computeDayStatus(iso, ctx) {
-    const { holiday, leave, isWfh, cv, attendance, todayISO } = ctx || {}
+    const { holiday, leave, isWfh, cv, attendance, todayISO, joiningDate } = ctx || {}
     const isSunday = new Date(iso + 'T00:00:00').getDay() === 0
+
+    // Before the person joined there is nothing to record. The machine report
+    // lists everyone for the whole month, so those days arrive as "absent".
+    if (joiningDate && iso < joiningDate) return { state: 'prejoin' }
 
     if (isSunday) return { state: 'off' }
     if (holiday)  return { state: 'holiday', label: holiday }

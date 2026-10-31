@@ -370,7 +370,8 @@ const LeaveTracker = (() => {
       // Fetch employee bio_id map
       const { data: empData } = await API.getEmployeesWithBioId()
       const bioMap = {}
-      ;(empData || []).forEach(e => { bioMap[e.bio_id] = e.id })
+      const joinedOn = {}   // employee id -> joining date (YYYY-MM-DD)
+      ;(empData || []).forEach(e => { bioMap[e.bio_id] = e.id; joinedOn[e.id] = e.joining_date || '' })
 
       let matched = 0, skipped = 0, skippedEmps = 0
       const records = []
@@ -387,6 +388,10 @@ const LeaveTracker = (() => {
           const punches = (cell === '' || cell == null) ? [] : splitPunches(cell)
 
           if (!punches.length) {
+            // The machine report lists everyone for the whole month, so a new
+            // joiner's days before they joined arrive blank — they were never
+            // absent, so save nothing for them.
+            if (joinedOn[empId] && recDate < joinedOn[empId]) continue
             // No punch data for this day — mark as absent so calendar shows "Absent"
             // not blank "No Data". Calendar rendering checks Sunday/Holiday/Leave first,
             // so those days still display correctly regardless of is_absent.
@@ -649,6 +654,7 @@ const LeaveTracker = (() => {
     wrap.innerHTML = '<p class="loading-text" style="padding:16px 0;">Loading…</p>'
 
     const month  = _teamAttMonth
+    const _teamEmp = _employees.find(e => e.id === _teamAttEmpId)
     const mStart = _toISO(month)
     const mEnd   = _toISO(new Date(month.getFullYear(), month.getMonth() + 1, 0))
 
@@ -733,9 +739,14 @@ const LeaveTracker = (() => {
       let cellContent = `<span class="att-cal-day">${day}</span>`
       let dayState    = 'future'
 
-      const dayStatus = Utils.computeDayStatus(iso, { holiday, leave, isWfh, cv, attendance: att, todayISO: today })
+      const dayStatus = Utils.computeDayStatus(iso, { holiday, leave, isWfh, cv, attendance: att, todayISO: today, joiningDate: _teamEmp?.joining_date })
 
       switch (dayStatus.state) {
+        case 'prejoin':
+          cellClass += ' att-cal-cell--no-data'
+          cellContent += `<span class="att-cal-label" style="opacity:.6;">Not joined</span>`
+          dayState = 'prejoin'
+          break
         case 'off':
           cellClass += ' att-cal-cell--weekend'
           cellContent += `<span class="att-cal-label">Weekly Off</span>`
@@ -942,7 +953,9 @@ const LeaveTracker = (() => {
 
     // Attendance row
     let attRows = ''
-    if (att && !att.is_absent && att.punch_in) {
+    if (state === 'prejoin') {
+      attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--source">Before joining</span><span>Joined ${emp?.joining_date ? Utils.formatDate(emp.joining_date) : '—'}</span></div>`
+    } else if (att && !att.is_absent && att.punch_in) {
       const isLate = att.late_minutes > 0
       attRows += `
         <div class="att-day-row"><span class="att-day-tag att-day-tag--present${isLate ? '" style="background:#FEE2E2;color:#B91C1C;' : ''}">Punch In${isLate ? ' · Late ' + att.late_minutes + ' min' : ''}</span><span>${att.punch_in.substring(0,5)}</span></div>

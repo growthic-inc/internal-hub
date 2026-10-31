@@ -370,9 +370,11 @@ const HomeModule = (() => {
       cv: cvMap[iso],
       attendance: attMap[iso],
       todayISO,
+      joiningDate: _user?.joining_date,
     })
 
     switch (dayStatus.state) {
+      case 'prejoin': return { state: 'future',  chip: '',        title: 'Before joining' }
       case 'off':     return { state: 'off',     chip: 'Off',     title: 'Weekly Off' }
       case 'holiday': return { state: 'holiday', chip: 'Holiday', title: dayStatus.label }
       case 'leave':

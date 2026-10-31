@@ -2186,7 +2186,7 @@ const API = (() => {
 
   async function getEmployeesWithBioId() {
     return supabase.from('employees')
-      .select('id, name, bio_id')
+      .select('id, name, bio_id, joining_date')
       .not('bio_id', 'is', null)
       .eq('status', 'active')
   }
