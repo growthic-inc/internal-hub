@@ -25,50 +25,16 @@ const HRMSApp = (() => {
 
   let _activeRoute = NAV[0]?.id || 'payroll'
 
-  /* ── Access matrix — deliberately stricter than Growthic One's App.hasAccess.
-     Only super_admin bypasses. Everyone else — including role='admin' — is
-     checked against their department's actual access_matrix row every time.
-     Getting into /hrms via Portal Access only opens the front door; each
-     module still enforces its own rule independently. ── */
-  const ACCESS_LEVELS = {
-    no_access:   0,
-    view_only:   1,
-    can_upload:  2,
-    can_edit:    3,
-    can_manage:  4,
-    can_approve: 5,
-  }
-
-  let _matrix = null // null = super_admin bypass; otherwise { [module]: { [feature]: level } }
-
-  async function _loadAccessMatrix() {
-    if (_currentUser.role === 'super_admin') {
-      _matrix = null
-      return
-    }
-    if (!_currentUser.department_id) {
-      _matrix = {}
-      return
-    }
-    const knownFeatures = {}
-    ModuleRegistry.getAll().forEach(m => {
-      knownFeatures[m.key] = new Set(Object.keys(m.features || {}))
-    })
-    const { data } = await API.getAccessMatrix(_currentUser.department_id)
-    _matrix = {}
-    ;(data || []).forEach(row => {
-      if (!knownFeatures[row.module])                   return
-      if (!knownFeatures[row.module].has(row.feature))  return
-      if (!_matrix[row.module]) _matrix[row.module] = {}
-      _matrix[row.module][row.feature] = row.access_level
-    })
-  }
-
-  function hasAccess(module, feature, minLevel = 'view_only') {
-    if (_matrix === null) return true // super_admin only
-    const level = _matrix[module]?.[feature]
-    if (!level) return false
-    return (ACCESS_LEVELS[level] || 0) >= (ACCESS_LEVELS[minLevel] || 0)
+  /* ── Access — Portal Access is the permission ─────────────────────────
+     Anyone who got through the Portal Access gate in init() (a super_admin,
+     or an employee granted HRMS) can use every HRMS module; there is no
+     second per-department matrix to configure. Rules that belong to a
+     specific role stay inside their own modules (e.g. Payroll is People &
+     Culture / Super Admin, marking a reimbursement paid is Finance / Super
+     Admin, Knowledge Labs is Admin / Super Admin). hasAccess() is kept so
+     the existing call sites in the page files keep working. ── */
+  function hasAccess() {
+    return true
   }
 
   /* ── Boot ───────────────────────────────────────────────── */
@@ -100,11 +66,6 @@ const HRMSApp = (() => {
         const { data } = await API.getDepartments()
         if (data) Utils.setDeptCache(data)
       } catch (_) {}
-
-      // 4b. Load this user's real per-module access — Portal Access only
-      //     got them through the front door; each module still checks its
-      //     own rule from here on.
-      await _loadAccessMatrix()
 
       // 5. Render chrome
       _renderSidebar()
