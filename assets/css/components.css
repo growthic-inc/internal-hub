@@ -7447,6 +7447,21 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 .ltd-event { font-size: 13px; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .ltd-event:last-of-type { border-bottom: none; }
 .ltd-empty { font-size: 13px; color: var(--text-muted); margin: 0 0 12px; }
+.ltd-details > summary {
+  display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer; list-style: none;
+  font-size: 14px; font-weight: 700; color: var(--text);
+}
+.ltd-details > summary::-webkit-details-marker { display: none; }
+.ltd-details > summary::after {
+  content: ''; width: 8px; height: 8px; margin-right: 4px;
+  border-right: 2px solid var(--text-muted); border-bottom: 2px solid var(--text-muted);
+  transform: rotate(45deg); transition: transform 0.15s;
+}
+.ltd-details[open] > summary::after { transform: rotate(225deg); }
+.ltd-details[open] > summary { margin-bottom: 4px; }
+.ltd-row { display: flex; gap: 10px; }
+.ltd-row > .ltd-field { flex: 1; }
 
 /* ── Missed Timesheet Days ─────────────────────────────────── */
 .ts-missed-section {

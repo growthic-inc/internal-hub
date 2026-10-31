@@ -1608,7 +1608,7 @@ const API = (() => {
         .eq('employee_id', employeeId)
         .in('status', ['approved', 'pending']),
       supabase.from('wfh_requests')
-        .select('start_date, end_date')
+        .select('id, start_date, end_date, days, reason')
         .eq('employee_id', employeeId)
         .eq('status', 'approved'),
       supabase.from('client_visit_requests')

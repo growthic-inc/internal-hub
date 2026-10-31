@@ -688,7 +688,7 @@ const LeaveTracker = (() => {
     wfhs.forEach(r => {
       let d = new Date(r.start_date)
       const end = new Date(r.end_date)
-      while (d <= end) { wfhMap[_toISO(d)] = true; d.setDate(d.getDate() + 1) }
+      while (d <= end) { wfhMap[_toISO(d)] = r; d.setDate(d.getDate() + 1) }
     })
 
     const clientVisitMap = {}
@@ -893,6 +893,7 @@ const LeaveTracker = (() => {
           att:          attMap[iso],
           leave:        leaveMap[iso],
           isWfh:        !!wfhMap[iso],
+          wfh:          wfhMap[iso],
           cv:           clientVisitMap[iso],
           holiday:      holidayMap[iso],
           dayEvents:    eventMap[iso] || [],
@@ -938,7 +939,55 @@ const LeaveTracker = (() => {
     }
   }
 
-  async function _openTeamDayModal({ iso, state, att, leave, isWfh, cv, holiday, dayEvents, empId, leaveTypes }) {
+  const _dayCount = (start, end) =>
+    Math.round((new Date(end + 'T00:00:00') - new Date(start + 'T00:00:00')) / 86400000) + 1
+
+  const _rangeText = (start, end) =>
+    start === end ? `on ${Utils.formatDate(start)}` : `from ${Utils.formatDate(start)} to ${Utils.formatDate(end)}`
+
+  // WFH HR adds for someone: approved straight away (HR's call, no monthly-quota check).
+  function _wfhRow({ empId, start, end, note, approverId }) {
+    return {
+      employee_id: empId,
+      start_date:  start,
+      end_date:    end,
+      days:        _dayCount(start, end),
+      reason:      'Added by HR' + (note ? ` — ${note}` : ''),
+      work_plan:   note || 'Added by HR',
+      status:      'approved',
+      approver_id: approverId,
+    }
+  }
+
+  function _clientVisitRow({ empId, clientId, entityId, duration, start, end, note, approverId }) {
+    const half = duration !== 'full_day'
+    return {
+      employee_id:   empId,
+      client_id:     clientId,
+      entity_id:     entityId || null,
+      duration_type: duration,
+      start_date:    start,
+      end_date:      half ? start : end,
+      days:          half ? 0.5 : _dayCount(start, end),
+      reason:        'Added by HR' + (note ? ` — ${note}` : ''),
+      status:        'approved',
+      approver_id:   approverId,
+    }
+  }
+
+  // Anything already on these dates (leave of any status, WFH, client visit)?
+  // Adding a WFH / client visit on top is refused so HR removes the clash first
+  // — that way the Leave > Client Visit > WFH order never has to guess.
+  function _findClash(existing, start, end) {
+    const hit = rows => (rows || []).find(r => start <= r.end_date && r.start_date <= end)
+    const lv = hit(existing.leaves), cv = hit(existing.clientVisits), w = hit(existing.wfhs)
+    if (lv) return `This employee already has ${lv.status === 'pending' ? 'pending ' : ''}leave ${_rangeText(lv.start_date, lv.end_date)}. Remove or decide it first.`
+    if (cv) return `This employee already has a client visit ${_rangeText(cv.start_date, cv.end_date)}. Remove it first.`
+    if (w)  return `This employee already has WFH ${_rangeText(w.start_date, w.end_date)}. Remove it first.`
+    return null
+  }
+
+  async function _openTeamDayModal({ iso, state, att, leave, isWfh, wfh, cv, holiday, dayEvents, empId, leaveTypes }) {
     const existing = document.getElementById('lt-team-day-overlay')
     if (existing) existing.remove()
 
@@ -971,7 +1020,7 @@ const LeaveTracker = (() => {
     }
     if (leave)    attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--leave">${leave.status === 'pending' ? 'Pending Leave' : 'On Leave'}</span><span>${Utils.escapeHtml(leave.name)}${leave.is_half_day ? ' (½ day)' : ''}${Utils.leaveTag(leave)}</span></div>`
     if (leave)    attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--source">Source</span><span>${Utils.leaveSource(leave) === 'employee' ? 'Employee request' + (leave.reason ? ' — ' + Utils.escapeHtml(leave.reason) : '') : Utils.escapeHtml(leave.reason || Utils.leaveSourceLabel(leave))}</span></div>`
-    if (isWfh)   attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--wfh">WFH</span></div>`
+    if (isWfh)   attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--wfh">WFH</span>${wfh?.reason ? `<span style="font-weight:400;color:var(--text-secondary);">${Utils.escapeHtml(wfh.reason)}</span>` : ''}</div>`
     if (cv)      attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--client-visit">Client Visit</span><span>${Utils.escapeHtml(cv.clients?.client_name || 'Client')}</span></div>`
     if (holiday) attRows += `<div class="att-day-row"><span class="att-day-tag att-day-tag--holiday">Holiday</span><span>${Utils.escapeHtml(holiday)}</span></div>`
 
@@ -1106,6 +1155,83 @@ const LeaveTracker = (() => {
         </div>`
     }
 
+    // Remove WFH / Remove client visit — cancels the whole request, with a reason.
+    const _removeBox = (title, summary, idPrefix, btnLabel) => `
+        <div class="ltd-section">
+          <h4 class="ltd-title ltd-title--danger">${title}</h4>
+          <p class="ltd-desc">${summary} The employee is notified.</p>
+          <div id="${idPrefix}-err" class="alert alert--danger" style="display:none;margin-bottom:12px;font-size:13px;"></div>
+          <div class="ltd-field">
+            <label class="ltd-label" for="${idPrefix}-reason">Reason <span style="color:var(--danger);">*</span></label>
+            <input id="${idPrefix}-reason" class="form-input" type="text" placeholder="Why is this being removed?">
+          </div>
+          <div class="ltd-actions"><button class="btn btn--danger" id="${idPrefix}-confirm">${btnLabel}</button></div>
+        </div>`
+    let removeWfhSection = '', removeCvSection = ''
+    if (wfh && state === 'wfh') {
+      removeWfhSection = _removeBox('Remove WFH',
+        `Cancels the whole request: <strong>${wfh.start_date === wfh.end_date ? Utils.formatDate(wfh.start_date) : Utils.formatDate(wfh.start_date) + ' – ' + Utils.formatDate(wfh.end_date)}</strong> (${wfh.days || _dayCount(wfh.start_date, wfh.end_date)} day${Number(wfh.days || _dayCount(wfh.start_date, wfh.end_date)) === 1 ? '' : 's'}).`,
+        'lt-wfh-rm', 'Remove WFH')
+    }
+    if (cv && state === 'client-visit') {
+      const cvDays = cv.duration_type !== 'full_day' ? 0.5 : _dayCount(cv.start_date, cv.end_date)
+      removeCvSection = _removeBox('Remove client visit',
+        `Cancels the whole visit to <strong>${Utils.escapeHtml(cv.clients?.client_name || 'the client')}</strong>: ${cv.start_date === cv.end_date ? Utils.formatDate(cv.start_date) : Utils.formatDate(cv.start_date) + ' – ' + Utils.formatDate(cv.end_date)} (${cvDays} day${cvDays === 1 ? '' : 's'}).`,
+        'lt-cv-rm', 'Remove client visit')
+    }
+
+    // Add WFH / Add client visit — for a day with no leave, WFH or client visit on it.
+    let addWfhSection = '', addCvSection = ''
+    const canAddWfhCv = ['present', 'late', 'partial', 'absent', 'no-data', 'blank', 'future'].includes(state) && !leave && !wfh && !cv
+    if (canAddWfhCv) {
+      addWfhSection = `
+        <details class="ltd-section ltd-details" id="lt-addwfh">
+          <summary>Add WFH</summary>
+          <p class="ltd-desc">Marks the employee as working from home. It is approved straight away, and the monthly WFH quota is not checked.</p>
+          <div id="lt-wfh-err" class="alert alert--danger" style="display:none;margin-bottom:12px;font-size:13px;"></div>
+          <div class="ltd-row">
+            <div class="ltd-field"><span class="ltd-label">From</span><input class="form-input" type="date" value="${iso}" disabled></div>
+            <div class="ltd-field"><label class="ltd-label" for="lt-wfh-until">Until</label><input class="form-input" type="date" id="lt-wfh-until" value="${iso}" min="${iso}"></div>
+          </div>
+          <div class="ltd-field">
+            <label class="ltd-label" for="lt-wfh-note">Note <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
+            <input class="form-input" type="text" id="lt-wfh-note" placeholder="e.g. Forgot to apply">
+          </div>
+          <div class="ltd-actions"><button class="btn btn--primary" id="lt-wfh-add">Add WFH</button></div>
+        </details>`
+      addCvSection = `
+        <details class="ltd-section ltd-details" id="lt-addcv">
+          <summary>Add client visit</summary>
+          <p class="ltd-desc">Records a client visit for the employee. It is approved straight away.</p>
+          <div id="lt-cv-err" class="alert alert--danger" style="display:none;margin-bottom:12px;font-size:13px;"></div>
+          <div class="ltd-field">
+            <label class="ltd-label" for="lt-cv-client">Client</label>
+            <select id="lt-cv-client" class="form-select"><option value="">Loading clients…</option></select>
+          </div>
+          <div class="ltd-field" id="lt-cv-entity-wrap" style="display:none;">
+            <label class="ltd-label" for="lt-cv-entity">Entity</label>
+            <select id="lt-cv-entity" class="form-select"></select>
+          </div>
+          <div class="ltd-field">
+            <label class="ltd-label" for="lt-cv-duration">Duration</label>
+            <select id="lt-cv-duration" class="form-select">
+              <option value="full_day">Full day</option>
+              <option value="first_half">First half</option>
+              <option value="second_half">Second half</option>
+            </select>
+          </div>
+          <div class="ltd-row">
+            <div class="ltd-field"><span class="ltd-label">From</span><input class="form-input" type="date" value="${iso}" disabled></div>
+            <div class="ltd-field" id="lt-cv-until-wrap"><label class="ltd-label" for="lt-cv-until">Until</label><input class="form-input" type="date" id="lt-cv-until" value="${iso}" min="${iso}"></div>
+          </div>
+          <div class="ltd-field">
+            <label class="ltd-label" for="lt-cv-note">Note <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
+            <input class="form-input" type="text" id="lt-cv-note" placeholder="e.g. Meeting at the client's office">
+          </div>
+          <div class="ltd-actions"><button class="btn btn--primary" id="lt-cv-add">Add client visit</button></div>
+        </details>`
+    }
+
     // Change Leave Type — applies to the whole request (every date in it),
     // not just the day clicked. Hard-blocks the save if the new type doesn't
     // have enough balance to cover the request's day count.
@@ -1192,8 +1318,12 @@ const LeaveTracker = (() => {
           <div class="ltd-card">${attRows}</div>
           ${changeTypeSection}
           ${removeSection}
+          ${removeWfhSection}
+          ${removeCvSection}
           ${markSection}
           ${halfDaySection}
+          ${addWfhSection}
+          ${addCvSection}
           ${eventSection}
         </div>
       </div>
@@ -1270,6 +1400,110 @@ const LeaveTracker = (() => {
         _loadTeamAttCal()
       })
     }
+
+    const showErr = (id, msg) => { const el = overlay.querySelector(id); if (el) { el.style.display = ''; el.textContent = msg } }
+    const notifyEmp = (recordId, message) => API.createNotification({
+      recipient_employee_id: empId, type: 'info', module: 'leave_tracker', record_id: recordId || null, message,
+    })
+
+    // ── Add WFH ──
+    overlay.querySelector('#lt-wfh-add')?.addEventListener('click', async e => {
+      const btn   = e.currentTarget
+      const until = overlay.querySelector('#lt-wfh-until').value || iso
+      const note  = overlay.querySelector('#lt-wfh-note').value.trim()
+      if (until < iso) return showErr('#lt-wfh-err', 'The end date cannot be before the start date.')
+      btn.disabled = true; btn.textContent = 'Checking…'
+      const clash = _findClash(await API.getApprovedLeaveForEmployee(empId), iso, until)
+      if (clash) { showErr('#lt-wfh-err', clash); btn.disabled = false; btn.textContent = 'Add WFH'; return }
+      btn.textContent = 'Saving…'
+      const { data, error } = await API.createWfhRequest(_wfhRow({ empId, start: iso, end: until, note, approverId: _user.id }))
+      if (error) { showErr('#lt-wfh-err', error.message || 'Failed to save.'); btn.disabled = false; btn.textContent = 'Add WFH'; return }
+      notifyEmp(data?.id, `HR added WFH for you ${_rangeText(iso, until)}.`)
+      overlay.remove()
+      Utils.showToast('WFH added.', 'success')
+      _loadTeamAttCal()
+    })
+
+    // ── Add client visit (clients load the first time the section is opened) ──
+    const addCv = overlay.querySelector('#lt-addcv')
+    if (addCv) {
+      let clients = []
+      let loaded = false
+      const clientSel = overlay.querySelector('#lt-cv-client')
+      const entityWrap = overlay.querySelector('#lt-cv-entity-wrap')
+      const entitySel  = overlay.querySelector('#lt-cv-entity')
+      addCv.addEventListener('toggle', async () => {
+        if (!addCv.open || loaded) return
+        loaded = true
+        const { data } = await API.getClients()
+        clients = data || []
+        clientSel.innerHTML = '<option value="">Select a client…</option>' +
+          clients.map(c => `<option value="${c.id}">${Utils.escapeHtml(c.client_name)}</option>`).join('')
+      })
+      clientSel.addEventListener('change', async () => {
+        entityWrap.style.display = 'none'; entitySel.innerHTML = ''
+        if (!clientSel.value) return
+        const { data: full } = await API.getClient(clientSel.value)
+        const seen = new Set()
+        const ents = (full?.client_entities || []).filter(x => !seen.has(x.id) && seen.add(x.id))
+        if (ents.length) {
+          entitySel.innerHTML = ents.map(x => `<option value="${x.id}">${Utils.escapeHtml(x.entity_name)}</option>`).join('')
+          entityWrap.style.display = ''
+        }
+      })
+      overlay.querySelector('#lt-cv-duration').addEventListener('change', e => {
+        const half = e.target.value !== 'full_day'
+        overlay.querySelector('#lt-cv-until-wrap').style.display = half ? 'none' : ''
+        if (half) overlay.querySelector('#lt-cv-until').value = iso
+      })
+      overlay.querySelector('#lt-cv-add').addEventListener('click', async e => {
+        const btn      = e.currentTarget
+        const clientId = clientSel.value
+        const duration = overlay.querySelector('#lt-cv-duration').value
+        const half     = duration !== 'full_day'
+        const until    = half ? iso : (overlay.querySelector('#lt-cv-until').value || iso)
+        const note     = overlay.querySelector('#lt-cv-note').value.trim()
+        const entityId = entityWrap.style.display === 'none' ? null : entitySel.value
+        if (!clientId)       return showErr('#lt-cv-err', 'Please select a client.')
+        if (until < iso)     return showErr('#lt-cv-err', 'The end date cannot be before the start date.')
+        btn.disabled = true; btn.textContent = 'Checking…'
+        const clash = _findClash(await API.getApprovedLeaveForEmployee(empId), iso, until)
+        if (clash) { showErr('#lt-cv-err', clash); btn.disabled = false; btn.textContent = 'Add client visit'; return }
+        btn.textContent = 'Saving…'
+        const { data, error } = await API.createClientVisit(_clientVisitRow({
+          empId, clientId, entityId, duration, start: iso, end: until, note, approverId: _user.id,
+        }))
+        if (error) { showErr('#lt-cv-err', error.message || 'Failed to save.'); btn.disabled = false; btn.textContent = 'Add client visit'; return }
+        const clientName = clients.find(c => c.id === clientId)?.client_name || 'a client'
+        notifyEmp(data?.id, `HR added a client visit (${clientName}) for you ${_rangeText(iso, until)}.`)
+        overlay.remove()
+        Utils.showToast('Client visit added.', 'success')
+        _loadTeamAttCal()
+      })
+    }
+
+    // ── Remove WFH / Remove client visit ──
+    const wireRemove = (prefix, label, record, update) => {
+      overlay.querySelector(`#${prefix}-confirm`)?.addEventListener('click', async e => {
+        const btn    = e.currentTarget
+        const reason = overlay.querySelector(`#${prefix}-reason`).value.trim()
+        if (!reason) return showErr(`#${prefix}-err`, 'Please give a reason.')
+        if (!confirm(`Remove this ${label} for ${empName}?`)) return
+        btn.disabled = true; btn.textContent = 'Removing…'
+        const { error } = await update(record.id, {
+          status: 'cancelled',
+          cancellation_reason: reason,
+          approver_comment: `Removed by ${_user.name}: ${reason}`,
+        })
+        if (error) { showErr(`#${prefix}-err`, error.message || 'Failed to remove.'); btn.disabled = false; btn.textContent = `Remove ${label}`; return }
+        notifyEmp(record.id, `HR removed your ${label} ${_rangeText(record.start_date, record.end_date)}. Reason: ${reason}`)
+        overlay.remove()
+        Utils.showToast(`${label[0].toUpperCase()}${label.slice(1)} removed.`, 'success')
+        _loadTeamAttCal()
+      })
+    }
+    wireRemove('lt-wfh-rm', 'WFH', wfh, API.updateWfhRequest)
+    wireRemove('lt-cv-rm', 'client visit', cv, API.updateClientVisit)
 
     const halfDayBtn = overlay.querySelector('#lt-hd-confirm')
     if (halfDayBtn) {
