@@ -3,11 +3,12 @@
    Scope: /hrms/
    Strategy:
    - Navigation (HTML): network-first, cache fallback
-   - Static assets (JS/CSS): cache-first, populate on miss
+   - JS/CSS: network-first, cache fallback (offline only)
+   - Other static assets: cache-first, populate on miss
    - Supabase API + external: always network (no caching)
    ============================================================ */
 
-const CACHE = 'growthic-hrms-v25'
+const CACHE = 'growthic-hrms-v26'
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -46,6 +47,24 @@ self.addEventListener('fetch', e => {
           caches.match(req)
             .then(r => r || caches.match('/hrms'))
         )
+    )
+    return
+  }
+
+  // Code files (JS / CSS): network-first, so a deploy is picked up on the very next load.
+  // The saved copy is only an offline fallback. (Cache-first here is what made every
+  // release need two reloads: the first visit ran the old saved files.)
+  if (req.destination === 'script' || req.destination === 'style' || /\.(js|css)$/.test(url.pathname)) {
+    e.respondWith(
+      fetch(req)
+        .then(res => {
+          if (res.ok) {
+            const copy = res.clone()
+            caches.open(CACHE).then(c => c.put(req, copy))
+          }
+          return res
+        })
+        .catch(() => caches.match(req))
     )
     return
   }

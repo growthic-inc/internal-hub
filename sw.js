@@ -2,12 +2,13 @@
    Growthic One — Service Worker
    Strategy:
    - Navigation (HTML): network-first, cache fallback
-   - Static assets (JS/CSS/images): cache-first, then network
+   - JS/CSS: network-first, cache fallback (offline only)
+   - Other static assets (images, fonts): cache-first, then network
    - Supabase API + external: always network (no caching)
    - Push notifications: show + handle tap to open correct page
    ============================================================ */
 
-const CACHE = 'growthic-v123'
+const CACHE = 'growthic-v125'
 
 // ── Install: precache the two shell pages ─────────────────────
 self.addEventListener('install', e => {
@@ -55,7 +56,25 @@ self.addEventListener('fetch', e => {
     return
   }
 
-  // Static assets: cache-first, populate on miss
+  // Code files (JS / CSS): network-first, so a deploy is picked up on the very next load.
+  // The saved copy is only an offline fallback. (Cache-first here is what made every
+  // release need two reloads: the first visit ran the old saved files.)
+  if (req.destination === 'script' || req.destination === 'style' || /\.(js|css)$/.test(url.pathname)) {
+    e.respondWith(
+      fetch(req)
+        .then(res => {
+          if (res.ok) {
+            const copy = res.clone()
+            caches.open(CACHE).then(c => c.put(req, copy))
+          }
+          return res
+        })
+        .catch(() => caches.match(req))
+    )
+    return
+  }
+
+  // Other static assets (images, fonts): cache-first, populate on miss
   e.respondWith(
     caches.match(req).then(cached => {
       if (cached) return cached
