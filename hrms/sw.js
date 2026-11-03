@@ -8,7 +8,7 @@
    - Supabase API + external: always network (no caching)
    ============================================================ */
 
-const CACHE = 'growthic-hrms-v26'
+const CACHE = 'growthic-hrms-v27'
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -55,8 +55,11 @@ self.addEventListener('fetch', e => {
   // The saved copy is only an offline fallback. (Cache-first here is what made every
   // release need two reloads: the first visit ran the old saved files.)
   if (req.destination === 'script' || req.destination === 'style' || /\.(js|css)$/.test(url.pathname)) {
+    // cache:'no-cache' makes the browser re-check with the server even when the host
+    // sends a long Cache-Control max-age (the shared host sends 7 days). Unchanged
+    // files come back as a tiny 304, changed files come back fresh.
     e.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-cache' })
         .then(res => {
           if (res.ok) {
             const copy = res.clone()
