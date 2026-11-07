@@ -853,6 +853,23 @@ const HomeModule = (() => {
   }
 
   function _renderMyBadges(earnedBadges) {
+  /* ── Section: Quarterly Champions (latest published quarter) ──
+     Reads the same champion badges as the Hall of Fame page; hidden
+     until HR has published a quarter (or if the lookup failed). ── */
+  function _renderChampionsCard(championBadges) {
+    const groups = HallOfFameModule.groupByPeriod(championBadges)
+    if (!groups.length) return ''
+    const [period, badges] = groups[0]
+    return `
+      <div class="section-card home-hover-card home-fade-in" style="margin-top:14px;">
+        <div class="section-card-header">
+          <h3>🏆 ${Utils.escapeHtml(HallOfFameModule.periodLabel(period))} Champions</h3>
+          <a class="champ-link" href="#hall-of-fame">Hall of Fame →</a>
+        </div>
+        <div class="section-card-body" style="padding-top:22px;">${HallOfFameModule.tilesHtml(badges)}</div>
+      </div>`
+  }
+
     const badges = _filterHomeBadges(earnedBadges)
     const now    = Date.now()
 
@@ -1033,6 +1050,8 @@ const HomeModule = (() => {
       API.getKnowledgeResources(),
       API.getApprovedLeaveForEmployee(user.id),
       API.getUpcomingCompanyEvents(7),
+      _attBannerResult,
+      { data: championBadges },
       _loadAttendanceBannerData(_attWeekStart),
     ])
     _attLeaveData = attLeaveData || { leaves: [], wfhs: [], clientVisits: [] }
@@ -1047,6 +1066,7 @@ const HomeModule = (() => {
           ${_renderWhoIsOut(whoIsOut, whoIsWfh, user.id)}
           ${_renderAnnouncements(announcements || [])}
         </div>
+      API.getChampionBadges(),
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px;">
           <div id="home-att-banner-wrap">${_renderAttendanceBanner()}</div>
           ${_renderMyBadges(myBadges)}
@@ -1054,6 +1074,7 @@ const HomeModule = (() => {
         </div>
       </div>
     `
+      ${_renderChampionsCard(championBadges)}
 
     const el = document.getElementById('home-content')
     if (el) {

@@ -1931,6 +1931,40 @@ const API = (() => {
       .order('awarded_at', { ascending: false })
   }
 
+  /* ── Quarterly Champions ───────────────────────────────────
+     Champions are ordinary badges with a `period` ('2026-Q4') and a
+     `league`, awarded through the same employee_badges table — no
+     separate tables. Badges without a period are never touched here. */
+
+  /** Every champion badge with its winner(s), newest quarter first */
+  async function getChampionBadges() {
+    return supabase
+      .from('badges')
+      .select('*, awards:employee_badges(id, note, awarded_at, awarded_by, employee:employees!employee_id(id, name, profile_image_url, designation, department))')
+      .not('period', 'is', null)
+      .order('period', { ascending: false })
+      .order('league')
+  }
+
+  async function createChampionBadge({ name, description, icon, colour, period, league }) {
+    return supabase
+      .from('badges')
+      .insert({
+        name, description, icon, colour, period, league,
+        category: 'recognition', criteria_type: 'manual', sort_order: 300, active: true,
+      })
+      .select()
+      .single()
+  }
+
+  async function updateChampionBadge(badgeId, data) {
+    return supabase.from('badges').update(data).eq('id', badgeId).not('period', 'is', null)
+  }
+
+  async function deleteChampionBadge(badgeId) {
+    return supabase.from('badges').delete().eq('id', badgeId).not('period', 'is', null)
+  }
+
   /* ── Policy Categories (Phase 7) ──────────────────────────── */
   async function getPolicyCategories() {
     return supabase.from('policy_categories').select('*').order('name')
@@ -2255,6 +2289,7 @@ const API = (() => {
     getAnnouncementReactions, addReaction, removeReaction,
     getBadges, getEmployeeBadges, awardBadge, revokeEmployeeBadge,
     getRecentBadgeAwards, getAllEmployeeBadgeSummary,
+    getChampionBadges, createChampionBadge, updateChampionBadge, deleteChampionBadge,
     getPolicyCategories, addPolicyCategory, deletePolicyCategory,
     getPolicies, createPolicy, updatePolicy, deletePolicy,
     getKnowledgeResources, createKnowledgeResource, updateKnowledgeResource, deleteKnowledgeResource,

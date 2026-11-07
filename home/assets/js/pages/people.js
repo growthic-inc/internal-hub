@@ -525,7 +525,7 @@ const People = (() => {
     const existingIds = new Set((existing || []).map(eb => eb.badge_id))
 
     // Only show manual recognition badges; exclude already-earned ones
-    const catalogue = (allBadges || []).filter(b => b.criteria_type === 'manual' && !existingIds.has(b.id))
+    const catalogue = (allBadges || []).filter(b => b.criteria_type === 'manual' && !b.period && !existingIds.has(b.id))
 
     const catalogueHtml = catalogue.length
       ? catalogue.map(b => `
