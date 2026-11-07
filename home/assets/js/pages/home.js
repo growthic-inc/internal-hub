@@ -840,19 +840,6 @@ const HomeModule = (() => {
       </div>`
   }
 
-  /* ── Section: Your Badges (right column mini-cards) ──────── */
-
-  /** On the home page show only the highest tenure badge + all other categories */
-  function _filterHomeBadges(earnedBadges) {
-    const all     = earnedBadges || []
-    const tenure  = all
-      .filter(eb => eb.badge?.category === 'tenure')
-      .sort((a, b) => (b.badge?.criteria_months || 0) - (a.badge?.criteria_months || 0))
-    const others  = all.filter(eb => eb.badge?.category !== 'tenure')
-    return [...(tenure.length ? [tenure[0]] : []), ...others]
-  }
-
-  function _renderMyBadges(earnedBadges) {
   /* ── Section: Quarterly Champions (latest published quarter) ──
      Reads the same champion badges as the Hall of Fame page; hidden
      until HR has published a quarter (or if the lookup failed). ── */
@@ -870,6 +857,19 @@ const HomeModule = (() => {
       </div>`
   }
 
+  /* ── Section: Your Badges (right column mini-cards) ──────── */
+
+  /** On the home page show only the highest tenure badge + all other categories */
+  function _filterHomeBadges(earnedBadges) {
+    const all     = earnedBadges || []
+    const tenure  = all
+      .filter(eb => eb.badge?.category === 'tenure')
+      .sort((a, b) => (b.badge?.criteria_months || 0) - (a.badge?.criteria_months || 0))
+    const others  = all.filter(eb => eb.badge?.category !== 'tenure')
+    return [...(tenure.length ? [tenure[0]] : []), ...others]
+  }
+
+  function _renderMyBadges(earnedBadges) {
     const badges = _filterHomeBadges(earnedBadges)
     const now    = Date.now()
 
@@ -1037,6 +1037,8 @@ const HomeModule = (() => {
       { data: knowledgeResources },
       attLeaveData,
       { data: bannerEvents },
+      _attBannerResult,
+      { data: championBadges },
     ] = await Promise.all([
       API.getTimesheetEntries(user.id, todayISO, todayISO),
       API.getWhoIsOutToday(),
@@ -1050,9 +1052,8 @@ const HomeModule = (() => {
       API.getKnowledgeResources(),
       API.getApprovedLeaveForEmployee(user.id),
       API.getUpcomingCompanyEvents(7),
-      _attBannerResult,
-      { data: championBadges },
       _loadAttendanceBannerData(_attWeekStart),
+      API.getChampionBadges(),
     ])
     _attLeaveData = attLeaveData || { leaves: [], wfhs: [], clientVisits: [] }
 
@@ -1060,13 +1061,13 @@ const HomeModule = (() => {
       ${_renderHero(user, todayEntries, whoIsOut, whoIsWfh, pendingLeaveCount, pendingTsCount)}
       ${_renderEventBanner(_pickBannerEvents(bannerEvents))}
       ${_renderAttentionCard(todayEntries, pendingLeaveCount, pendingTsCount)}
+      ${_renderChampionsCard(championBadges)}
 
       <div class="home-content-row" style="margin-top:14px;">
         <div style="flex:1.5;min-width:0;display:flex;flex-direction:column;gap:14px;">
           ${_renderWhoIsOut(whoIsOut, whoIsWfh, user.id)}
           ${_renderAnnouncements(announcements || [])}
         </div>
-      API.getChampionBadges(),
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px;">
           <div id="home-att-banner-wrap">${_renderAttendanceBanner()}</div>
           ${_renderMyBadges(myBadges)}
@@ -1074,7 +1075,6 @@ const HomeModule = (() => {
         </div>
       </div>
     `
-      ${_renderChampionsCard(championBadges)}
 
     const el = document.getElementById('home-content')
     if (el) {
