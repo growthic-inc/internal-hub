@@ -24,6 +24,8 @@ const ChampionsModule = (() => {
   let _busy       = false
   const _pendingAnnounce = new Set()   // quarters whose first publish hit errors: announce when a retry succeeds
 
+  let _hSearch    = ''          // history table: text filter
+  let _hQuarter   = ''          // history table: quarter filter ('' = all)
   let _invalid    = -1          // index of the row the last validation complained about
 
   const BADGE_ICON   = '🏆'
@@ -168,7 +170,7 @@ const ChampionsModule = (() => {
       </div>
 
       <div class="chm-hist-title">Published quarters</div>
-      <div class="chm-hist" id="champ-history">${_historyHtml()}</div>`
+      <div id="champ-history">${_historyHtml()}</div>`
 
     _bind()
   }
@@ -252,39 +254,106 @@ const ChampionsModule = (() => {
     if (sug) sug.innerHTML = _suggestHtml()
   }
 
+  /* ── Published data: a spreadsheet-style table ─────────────── */
+  const _fmtDate = (iso) => {
+    const d = iso ? new Date(iso) : null
+    return d && !isNaN(d) ? d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
+  }
+
+  /** Flat rows for the table and the CSV export, after the search / quarter filters */
+  function _historyRows() {
+    const q = _hSearch.trim().toLowerCase()
+    const rows = []
+    _byPeriod().forEach(([key, badges]) => {
+      if (_hQuarter && key !== _hQuarter) return
+      badges.forEach(b => {
+        const a = b.awards?.[0], emp = a?.employee
+        const row = {
+          key, quarter: _label(key), league: b.league || '', name: emp?.name || '',
+          emp, dept: emp?.department ? Utils.getDeptLabel(emp.department) : '',
+          designation: emp?.designation || '', note: a?.note || '', date: _fmtDate(a?.awarded_at),
+        }
+        const hay = `${row.quarter} ${row.league} ${row.name} ${row.dept} ${row.designation} ${row.note}`.toLowerCase()
+        if (!q || hay.includes(q)) rows.push(row)
+      })
+    })
+    return rows
+  }
+
+  function _tableHtml() {
+    const rows = _historyRows()
+    if (!rows.length) return `<div class="chm-empty" style="margin:14px;">No champions match your filters.</div>`
+    const editing = _key(_year, _quarter)
+    const latest  = _byPeriod()[0]?.[0]
+    let prev = null
+
+    return `<div class="chm-table-wrap"><table class="chm-table">
+      <thead><tr>
+        <th>Quarter</th><th>League</th><th>Champion</th><th>Department</th>
+        <th>Reason / reward</th><th>Published on</th><th class="chm-act-h"></th>
+      </tr></thead>
+      <tbody>${rows.map(r => {
+        const first = r.key !== prev; prev = r.key
+        return `
+        <tr${first ? ' class="chm-qstart"' : ''}>
+          <td class="chm-qcell"><b>${_esc(r.quarter)}</b>
+            ${first && r.key === latest ? '<span class="chm-chip">Latest</span>' : ''}
+            ${first && r.key === editing ? '<span class="chm-chip chm-chip--edit">Editing</span>' : ''}</td>
+          <td><span class="champ-tag">${_esc(r.league)}</span></td>
+          <td><span class="chm-who"><span class="champ-avatar">${r.emp ? _avatar(r.emp) : '?'}</span>
+              <span>${r.name ? `<b>${_esc(r.name)}</b>` : '<i>unassigned</i>'}${r.designation ? `<small>${_esc(r.designation)}</small>` : ''}</span></span></td>
+          <td>${r.dept ? _esc(r.dept) : '—'}</td>
+          <td class="chm-note-cell">${r.note ? _esc(r.note) : '<span class="chm-ph">—</span>'}</td>
+          <td class="chm-date">${_esc(r.date)}</td>
+          <td class="chm-act">
+            <button class="btn btn--ghost btn--sm" data-edit="${r.key}" type="button" title="Edit ${_esc(r.quarter)}">Edit</button>
+            <button class="btn btn--ghost btn--sm" data-del="${r.key}" type="button" title="Delete all of ${_esc(r.quarter)}" style="color:var(--danger);">Delete</button>
+          </td>
+        </tr>`
+      }).join('')}
+      </tbody></table></div>`
+  }
+
   function _historyHtml() {
     const groups = _byPeriod()
     if (!groups.length) {
       return `<div class="chm-empty"><div>🏆</div><b>No champions published yet</b>
         Once you publish a quarter, it shows up here and on Growthic One.</div>`
     }
-    const editing = _key(_year, _quarter)
-    return groups.map(([key, badges], idx) => `
-      <div class="chm-q${key === editing ? ' chm-q--on' : ''}">
-        <div class="chm-q-head">
-          <div class="chm-q-title">
-            <b>${_esc(_label(key))}</b>
-            ${idx === 0 ? '<span class="chm-chip">Latest</span>' : ''}
-            ${key === editing ? '<span class="chm-chip chm-chip--edit">Editing</span>' : ''}
-          </div>
-          <span class="chm-q-actions">
-            <button class="btn btn--ghost btn--sm" data-edit="${key}" type="button">Edit</button>
-            <button class="btn btn--ghost btn--sm" data-del="${key}" type="button" style="color:var(--danger);">Delete</button>
-          </span>
+    const total = _historyRows().length
+    return `
+      <div class="section-card">
+        <div class="chm-tools">
+          <input class="form-input chm-search" id="champ-search" type="search" placeholder="Search name, league, reason…"
+                 value="${_esc(_hSearch)}" aria-label="Search champions">
+          <select class="form-select chm-filter" id="champ-hist-q" aria-label="Filter by quarter">
+            <option value="">All quarters</option>
+            ${groups.map(([key]) => `<option value="${key}"${key === _hQuarter ? ' selected' : ''}>${_esc(_label(key))}</option>`).join('')}
+          </select>
+          <span class="chm-count" id="champ-count">${total} champion${total !== 1 ? 's' : ''}</span>
+          <button class="btn btn--ghost btn--sm" id="champ-export" type="button">⬇ Export CSV</button>
         </div>
-        ${badges.map(b => {
-          const a = b.awards?.[0], emp = a?.employee
-          return `
-            <div class="chm-q-row">
-              <span class="champ-avatar">${emp ? _avatar(emp) : '?'}</span>
-              <div class="chm-q-main">
-                <b>${emp ? _esc(emp.name) : '<i>unassigned</i>'}</b>
-                ${a?.note ? `<div class="chm-q-note">“${_esc(a.note)}”</div>` : ''}
-              </div>
-              <span class="champ-tag">${_esc(b.league || '')}</span>
-            </div>`
-        }).join('')}
-      </div>`).join('')
+        <div id="champ-table">${_tableHtml()}</div>
+      </div>`
+  }
+
+  function _refreshTable() {
+    const t = document.getElementById('champ-table'); if (t) t.innerHTML = _tableHtml()
+    const n = _historyRows().length
+    const c = document.getElementById('champ-count'); if (c) c.textContent = `${n} champion${n !== 1 ? 's' : ''}`
+  }
+
+  function _exportCsv() {
+    const rows = _historyRows()
+    if (!rows.length) { Utils.showToast('Nothing to export', 'warning'); return }
+    const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const head = ['Quarter', 'League', 'Champion', 'Department', 'Designation', 'Reason / reward', 'Published on']
+    const csv  = [head, ...rows.map(r => [r.quarter, r.league, r.name, r.dept, r.designation, r.note, r.date])]
+      .map(r => r.map(cell).join(',')).join('\r\n')
+    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url; a.download = `quarterly-champions${_hQuarter ? '-' + _hQuarter : ''}.csv`
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
   }
 
   /* ── Events ────────────────────────────────────────────────── */
@@ -326,6 +395,10 @@ const ChampionsModule = (() => {
     })
 
     document.getElementById('champ-publish')?.addEventListener('click', _publish)
+
+    document.getElementById('champ-search')?.addEventListener('input', (e) => { _hSearch = e.target.value; _refreshTable() })
+    document.getElementById('champ-hist-q')?.addEventListener('change', (e) => { _hQuarter = e.target.value; _refreshTable() })
+    document.getElementById('champ-export')?.addEventListener('click', _exportCsv)
 
     document.getElementById('champ-history')?.addEventListener('click', (e) => {
       const edit = e.target.closest('[data-edit]')
