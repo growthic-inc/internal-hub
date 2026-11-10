@@ -7246,6 +7246,15 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   width: 100%; background: none; border: none; cursor: pointer;
   text-align: left;
 }
+/* A group header is "active" when one of its pages is open. The shared active style
+   (white bg, navy text) is wiped by the toggle's `background: none`, which left navy
+   text on the navy sidebar — an invisible header. Use a soft highlight instead; the
+   open child page keeps the solid white pill. */
+.nav-accordion-toggle.nav-item--active,
+.nav-accordion-toggle.nav-item--active:hover {
+  background: rgba(255,255,255,0.14);
+  color: #fff;
+}
 .nav-accordion-chevron {
   margin-left: auto;
   transition: transform 0.2s;
