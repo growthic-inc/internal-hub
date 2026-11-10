@@ -7802,40 +7802,6 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 }
 
 /* ── Quarterly Champions (HRMS publish page + home card + Hall of Fame) ── */
-.champ-period-row { display: flex; gap: 12px; margin-bottom: 14px; }
-.champ-period-row > div { min-width: 120px; }
-.champ-hint {
-  font-size: 12.5px; color: var(--text-muted); margin-bottom: 14px;
-}
-.champ-hint--info {
-  color: var(--text-secondary); background: var(--warning-light);
-  border: 1px solid var(--warning); border-radius: var(--radius); padding: 8px 12px;
-}
-.champ-rows { display: flex; flex-direction: column; gap: 8px; }
-.champ-row {
-  display: grid; grid-template-columns: 1fr 1.2fr 1.6fr 32px; gap: 8px; align-items: center;
-}
-.champ-row--head {
-  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
-  color: var(--text-muted);
-}
-.champ-row-remove {
-  width: 32px; height: 32px; border: 1px solid var(--border); background: var(--bg);
-  color: var(--text-muted); border-radius: var(--radius); cursor: pointer; font-size: 12px;
-}
-.champ-row-remove:hover { color: var(--danger); border-color: var(--danger); }
-.champ-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
-.champ-hist { padding: 12px 0; border-top: 1px solid var(--border-light); }
-.champ-hist:first-child { border-top: 0; padding-top: 0; }
-.champ-hist-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-.champ-hist-actions { display: flex; gap: 6px; }
-.champ-hist-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
-.champ-hist-list li { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
-.champ-hist-league {
-  font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
-  background: var(--primary-light); color: var(--primary);
-}
-.champ-hist-note { color: var(--text-muted); }
 
 /* Champion tiles — shared by the home card and the Hall of Fame.
    Same compact chip look as "Out & WFH Today": plain surface, thin border,
@@ -7937,8 +7903,145 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 .champ-link { font-size: 12.5px; font-weight: 600; color: var(--primary); text-decoration: none; cursor: pointer; }
 .champ-link:hover { text-decoration: underline; }
 
-@media (max-width: 720px) {
-  .champ-row { grid-template-columns: 1fr; padding: 10px; border: 1px solid var(--border-light); border-radius: var(--radius); }
-  .champ-row--head { display: none; }
-  .champ-row-remove { justify-self: end; }
+/* ── HRMS · Quarterly Champions ─────────────────────────────── */
+.chm-hero {
+  display: flex; align-items: center; gap: 16px; padding: 18px 22px; margin-bottom: 16px;
+  border-radius: var(--radius-lg); color: #fff;
+  background: linear-gradient(135deg, #0a3a87 0%, #0F4799 50%, #1a72c7 100%);
+}
+.chm-hero-icon {
+  width: 48px; height: 48px; flex: none; border-radius: 14px; font-size: 24px;
+  display: grid; place-items: center; background: rgba(255,255,255,0.16);
+}
+.chm-hero h2 { margin: 0; font-size: 17px; font-weight: 700; color: #fff; }
+.chm-hero p  { margin: 3px 0 0; font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.84); max-width: 660px; }
+
+.chm-layout {
+  display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr);
+  gap: 16px; align-items: start; margin-bottom: 28px;
+}
+.chm-block { padding: 18px 20px; border-bottom: 1px solid var(--border-light); }
+.chm-step { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.chm-step-n {
+  width: 22px; height: 22px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  font-size: 12px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #0F4799, #1a72c7);
+}
+.chm-step-t { font-size: 14px; font-weight: 700; color: var(--text); }
+.chm-status {
+  margin-left: auto; font-size: 11.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+  background: var(--surface); color: var(--text-muted); border: 1px solid var(--border);
+}
+.chm-status::before {
+  content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-muted); margin-right: 6px; vertical-align: 1px;
+}
+.chm-status--live { background: var(--success-light); color: var(--success); border-color: transparent; }
+.chm-status--live::before { background: var(--success); }
+
+.chm-period { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.chm-seg {
+  display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+}
+.chm-seg-btn {
+  border: 0; background: transparent; padding: 7px 20px; border-radius: 8px; cursor: pointer;
+  font-size: 13px; font-weight: 600; color: var(--text-secondary); transition: background 0.15s, color 0.15s;
+}
+.chm-seg-btn:hover { color: var(--text); }
+.chm-seg-btn.is-on { background: var(--bg); color: var(--primary); box-shadow: 0 1px 3px rgba(15,23,42,0.14); }
+.chm-year { width: auto; min-width: 104px; }
+.chm-note { margin: 12px 0 0; font-size: 12.5px; color: var(--text-muted); line-height: 1.45; }
+
+.chm-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 12px; }
+.chm-suggest:empty { display: none; }
+.chm-suggest-l { font-size: 12px; color: var(--text-muted); }
+.chm-chip-btn {
+  font-size: 12px; font-weight: 600; padding: 4px 11px; border-radius: 999px; cursor: pointer;
+  background: var(--bg); border: 1px dashed var(--text-muted); color: var(--text-secondary);
+}
+.chm-chip-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+
+.chm-cards { display: flex; flex-direction: column; gap: 12px; }
+.chm-card {
+  padding: 12px 14px 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.chm-card:focus-within {
+  border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+.chm-card--invalid {
+  border-color: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 14%, transparent);
+}
+.chm-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.chm-card-n { font-size: 12px; font-weight: 700; color: var(--text-secondary); letter-spacing: 0.02em; }
+.chm-card-x {
+  width: 26px; height: 26px; border: 0; border-radius: 50%; background: transparent; cursor: pointer;
+  font-size: 12px; color: var(--text-muted);
+}
+.chm-card-x:hover { background: var(--danger-light); color: var(--danger); }
+.chm-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.chm-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.chm-field > span { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.chm-field > span em { font-weight: 400; font-style: normal; color: var(--text-muted); }
+.chm-field--wide { grid-column: 1 / -1; }
+.chm-add {
+  width: 100%; margin-top: 12px; padding: 11px; border: 1.5px dashed var(--border); border-radius: 12px;
+  background: transparent; color: var(--primary); font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.chm-add:hover { border-color: var(--primary); background: var(--primary-light); }
+
+.chm-bar {
+  position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 20px; background: var(--surface); border-top: 1px solid var(--border-light);
+}
+.chm-progress { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+
+.chm-preview { position: sticky; top: 16px; }
+.chm-preview-head { display: flex; flex-direction: column; gap: 2px; padding: 14px 18px; border-bottom: 1px solid var(--border-light); }
+.chm-preview-head b { font-size: 14px; color: var(--text); }
+.chm-preview-head span { font-size: 12px; color: var(--text-muted); }
+.chm-preview-body {
+  padding: 14px 16px 16px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 6%, var(--bg)) 0%, var(--bg) 75%);
+}
+.chm-preview-tiles { display: flex; flex-direction: column; gap: 10px; }
+.chm-ghost { border-style: dashed; opacity: 0.7; }
+.chm-ph { color: var(--text-muted); font-weight: 500; }
+.chm-ph-tag { background: var(--surface); color: var(--text-muted); }
+
+.chm-hist-title {
+  margin: 0 0 12px; font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.chm-hist { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 14px; }
+.chm-q { padding: 14px 16px 6px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.chm-q--on { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent); }
+.chm-q-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.chm-q-title { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--text); }
+.chm-chip {
+  font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; letter-spacing: 0.04em;
+  text-transform: uppercase; background: var(--primary-light); color: var(--primary);
+}
+.chm-chip--edit { background: var(--success-light); color: var(--success); }
+.chm-q-actions { display: flex; gap: 2px; }
+.chm-q-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border-light); }
+.chm-q .champ-avatar { width: 32px; height: 32px; font-size: 11px; border-width: 2px; flex: none; }
+.chm-q-main { flex: 1; min-width: 0; font-size: 13px; color: var(--text); }
+.chm-q-note { margin-top: 1px; font-size: 12px; font-style: italic; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chm-empty {
+  grid-column: 1 / -1; padding: 30px 16px; text-align: center; color: var(--text-muted);
+  border: 1.5px dashed var(--border); border-radius: var(--radius-lg); font-size: 13px;
+}
+.chm-empty > div { font-size: 28px; margin-bottom: 6px; }
+.chm-empty b { display: block; color: var(--text-secondary); margin-bottom: 2px; }
+
+@media (max-width: 900px) {
+  .chm-layout { grid-template-columns: 1fr; }
+  .chm-preview { position: static; }
+}
+@media (max-width: 520px) {
+  .chm-hero { padding: 16px; }
+  .chm-fields { grid-template-columns: 1fr; }
+  .chm-bar { flex-direction: column; align-items: stretch; }
+  .chm-bar .btn { width: 100%; }
 }

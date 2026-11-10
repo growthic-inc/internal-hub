@@ -24,6 +24,8 @@ const ChampionsModule = (() => {
   let _busy       = false
   const _pendingAnnounce = new Set()   // quarters whose first publish hit errors: announce when a retry succeeds
 
+  let _invalid    = -1          // index of the row the last validation complained about
+
   const BADGE_ICON   = '🏆'
   const BADGE_COLOUR = '#d97706'
 
@@ -32,6 +34,13 @@ const ChampionsModule = (() => {
   const _label = (key)  => { const [y, q] = key.split('-'); return `${q} ${y}` }
   const _norm  = (s)    => (s || '').trim().replace(/\s+/g, ' ').toLowerCase()
   const _blankRow = ()  => ({ badgeId: null, league: '', employeeId: '', note: '' })
+
+  const _esc    = (v)   => Utils.escapeHtml(v)
+  const _emp    = (id)  => _employees.find(e => e.id === id)
+  const _sub    = (emp) => emp?.department ? Utils.getDeptLabel(emp.department) : ''
+  const _avatar = (emp) => !emp ? '?'
+    : (emp.profile_image_url ? `<img src="${_esc(emp.profile_image_url)}" alt="">` : _esc(Utils.getInitials(emp.name || '')))
+  const _ready  = (r)   => !!(r.league.trim() && r.employeeId)
 
   function _currentQuarter() { return Math.floor(new Date().getMonth() / 3) + 1 }
 
@@ -63,6 +72,7 @@ const ChampionsModule = (() => {
     _rows    = [_blankRow(), _blankRow(), _blankRow()]
     _prefilled = false
     _busy    = false
+    _invalid = -1
 
     const [{ data: emps }, { data: champs }] = await Promise.all([
       API.getEmployees(),
@@ -96,112 +106,193 @@ const ChampionsModule = (() => {
   function _paint() {
     const root = document.getElementById('champ-root')
     if (!root) return
-    const key      = _key(_year, _quarter)
-    const existing = _existingFor(key)
-    const thisYear = new Date().getFullYear()
-    const yearOpts = [...new Set([thisYear - 1, thisYear, thisYear + 1, _year])].sort()
+    const key       = _key(_year, _quarter)
+    const published = _existingFor(key).length > 0
+    const thisYear  = new Date().getFullYear()
+    const yearOpts  = [...new Set([thisYear - 1, thisYear, thisYear + 1, _year])].sort()
 
     root.innerHTML = `
-      <div class="section-card" style="margin-bottom:16px;">
-        <div class="section-card-header">
-          <h3>🏆 Publish quarterly champions</h3>
-        </div>
-        <div class="section-card-body">
-          <div class="champ-period-row">
-            <div>
-              <label class="form-label" for="champ-quarter">Quarter</label>
-              <select class="form-select" id="champ-quarter">
-                ${[1, 2, 3, 4].map(q => `<option value="${q}"${q === _quarter ? ' selected' : ''}>Q${q}</option>`).join('')}
-              </select>
-            </div>
-            <div>
-              <label class="form-label" for="champ-year">Year</label>
-              <select class="form-select" id="champ-year">
-                ${yearOpts.map(y => `<option value="${y}"${y === _year ? ' selected' : ''}>${y}</option>`).join('')}
-              </select>
-            </div>
-          </div>
-
-          ${existing.length ? `
-            <div class="champ-hint champ-hint--info">
-              ${_label(key)} is already published. Changes you make here update it —
-              swapping a winner replaces their badge.
-            </div>` : `
-            <div class="champ-hint">
-              Nothing is saved or announced until you click <b>Publish</b>.
-            </div>`}
-
-          <div class="champ-rows" id="champ-rows">
-            <div class="champ-row champ-row--head">
-              <span>League</span><span>Champion</span><span>Reason / reward</span><span></span>
-            </div>
-            ${_rows.map((r, i) => _rowHtml(r, i)).join('')}
-          </div>
-
-          <div class="champ-actions">
-            <button class="btn btn--ghost" id="champ-add-row" type="button">+ Add another league</button>
-            <button class="btn btn--primary" id="champ-publish" type="button">
-              ${existing.length ? 'Update champions' : 'Publish champions'}
-            </button>
-          </div>
-          <div id="champ-error" class="alert alert-danger" style="display:none;margin-top:12px;"></div>
+      <div class="chm-hero">
+        <div class="chm-hero-icon">🏆</div>
+        <div>
+          <h2>Celebrate this quarter's champions</h2>
+          <p>Pick one winner per league. They're notified straight away, and everyone sees them on
+             the Growthic One home page and in the Hall of Fame.</p>
         </div>
       </div>
 
-      <div class="section-card">
-        <div class="section-card-header"><h3>Published quarters</h3></div>
-        <div class="section-card-body" id="champ-history">${_historyHtml()}</div>
-      </div>`
+      <div class="chm-layout">
+        <div class="section-card chm-form">
+          <div class="chm-block">
+            <div class="chm-step">
+              <span class="chm-step-n">1</span><span class="chm-step-t">Choose the quarter</span>
+              <span class="chm-status${published ? ' chm-status--live' : ''}">${published ? 'Published' : 'Draft'}</span>
+            </div>
+            <div class="chm-period">
+              <div class="chm-seg" id="champ-quarter" role="group" aria-label="Quarter">
+                ${[1, 2, 3, 4].map(q => `<button type="button" class="chm-seg-btn${q === _quarter ? ' is-on' : ''}" data-q="${q}" aria-pressed="${q === _quarter}">Q${q}</button>`).join('')}
+              </div>
+              <select class="form-select chm-year" id="champ-year" aria-label="Year">
+                ${yearOpts.map(y => `<option value="${y}"${y === _year ? ' selected' : ''}>${y}</option>`).join('')}
+              </select>
+            </div>
+            <p class="chm-note">${published
+              ? `${_esc(_label(key))} is already published. Changes you make here update it, and swapping a winner replaces their badge.`
+              : `Nothing is saved or announced until you press Publish.`}</p>
+          </div>
+
+          <div class="chm-block" style="border-bottom:0;">
+            <div class="chm-step"><span class="chm-step-n">2</span><span class="chm-step-t">Pick the winners</span></div>
+            <div class="chm-suggest" id="champ-suggest">${_suggestHtml()}</div>
+            <div class="chm-cards" id="champ-rows">${_rows.map((r, i) => _cardHtml(r, i)).join('')}</div>
+            <button class="chm-add" id="champ-add-row" type="button">+ Add another league</button>
+          </div>
+
+          <div id="champ-error" class="alert alert-danger" style="display:none;margin:0 20px 14px;"></div>
+
+          <div class="chm-bar">
+            <span class="chm-progress" id="champ-progress">${_progressText()}</span>
+            <button class="btn btn--primary" id="champ-publish" type="button">
+              ${published ? 'Update champions' : 'Publish champions'}
+            </button>
+          </div>
+        </div>
+
+        <aside class="section-card chm-preview">
+          <div class="chm-preview-head">
+            <b>Preview</b>
+            <span>${_esc(_label(key))} · how it looks on Growthic One</span>
+          </div>
+          <div class="chm-preview-body" id="champ-preview-body">${_previewHtml()}</div>
+        </aside>
+      </div>
+
+      <div class="chm-hist-title">Published quarters</div>
+      <div class="chm-hist" id="champ-history">${_historyHtml()}</div>`
 
     _bind()
   }
 
-  function _rowHtml(r, i) {
-    const opts = _employees.map(e =>
-      `<option value="${e.id}"${e.id === r.employeeId ? ' selected' : ''}>${Utils.escapeHtml(e.name)}</option>`
-    ).join('')
+  function _cardHtml(r, i) {
+    const opts = _employees.map(e => {
+      const dept = _sub(e)
+      return `<option value="${e.id}"${e.id === r.employeeId ? ' selected' : ''}>${_esc(e.name)}${dept ? ` · ${_esc(dept)}` : ''}</option>`
+    }).join('')
     return `
-      <div class="champ-row" data-i="${i}">
-        <input class="form-input" data-f="league" placeholder="e.g. Sales League"
-               value="${Utils.escapeHtml(r.league)}" maxlength="60">
-        <select class="form-select" data-f="employeeId">
-          <option value="">Select employee…</option>${opts}
-        </select>
-        <input class="form-input" data-f="note" placeholder="e.g. Closed 12 deals — voucher ₹5,000"
-               value="${Utils.escapeHtml(r.note)}" maxlength="200">
-        <button class="champ-row-remove" data-remove="${i}" type="button" title="Remove" aria-label="Remove row">✕</button>
+      <div class="chm-card" id="champ-row-${i}" data-i="${i}">
+        <div class="chm-card-top">
+          <span class="chm-card-n">🏆 Winner ${i + 1}</span>
+          <button class="chm-card-x" data-remove="${i}" type="button" title="Remove" aria-label="Remove winner ${i + 1}">✕</button>
+        </div>
+        <div class="chm-fields">
+          <label class="chm-field"><span>League</span>
+            <input class="form-input" data-f="league" placeholder="e.g. Sales League"
+                   value="${_esc(r.league)}" maxlength="60"></label>
+          <label class="chm-field"><span>Champion</span>
+            <select class="form-select" data-f="employeeId">
+              <option value="">Select employee…</option>${opts}
+            </select></label>
+          <label class="chm-field chm-field--wide"><span>Reason or reward <em>(optional)</em></span>
+            <input class="form-input" data-f="note" placeholder="e.g. Closed 12 deals, ₹5,000 voucher"
+                   value="${_esc(r.note)}" maxlength="200"></label>
+        </div>
       </div>`
+  }
+
+  /** "Used before" chips — leagues from earlier quarters that aren't in the form yet */
+  function _suggestHtml() {
+    const typed = new Set(_rows.map(r => _norm(r.league)).filter(Boolean))
+    const seen  = new Set(), list = []
+    _champions.slice().sort((a, b) => b.period.localeCompare(a.period)).forEach(b => {
+      const n = _norm(b.league)
+      if (!n || seen.has(n)) return
+      seen.add(n)
+      if (!typed.has(n)) list.push(b.league)
+    })
+    if (!list.length) return ''
+    return `<span class="chm-suggest-l">Used before:</span>` +
+      list.slice(0, 6).map(l => `<button type="button" class="chm-chip-btn" data-suggest="${_esc(l)}">+ ${_esc(l)}</button>`).join('')
+  }
+
+  function _progressText() {
+    const n = _rows.filter(_ready).length, total = _rows.length
+    if (total && n === total) return `✓ All ${total} winner${total !== 1 ? 's' : ''} ready to publish`
+    return `${n} of ${total} winner${total !== 1 ? 's' : ''} ready`
+  }
+
+  /** Live preview — same chips people will see on Growthic One */
+  function _previewHtml() {
+    return `<div class="chm-preview-tiles">${_rows.map(r => {
+      const emp    = _emp(r.employeeId)
+      const league = r.league.trim().replace(/\s+/g, ' ')
+      const note   = (r.note || '').trim()
+      const sub    = _sub(emp)
+      return `
+        <div class="champ-tile${!emp && !league ? ' chm-ghost' : ''}">
+          <div class="champ-avatar-wrap">
+            <div class="champ-avatar">${_avatar(emp)}</div>
+            <span class="champ-trophy">🏆</span>
+          </div>
+          <div class="champ-main">
+            <div class="champ-name">${emp ? _esc(emp.name) : '<span class="chm-ph">Champion</span>'}</div>
+            ${sub ? `<div class="champ-sub">${_esc(sub)}</div>` : ''}
+          </div>
+          <span class="champ-tag${league ? '' : ' chm-ph-tag'}">${league ? _esc(league) : 'League'}</span>
+          ${note ? `<div class="champ-note">“${_esc(note)}”</div>` : ''}
+        </div>`
+    }).join('')}</div>`
+  }
+
+  function _refreshLive() {
+    const prev = document.getElementById('champ-preview-body')
+    if (prev) prev.innerHTML = _previewHtml()
+    const prog = document.getElementById('champ-progress')
+    if (prog) prog.textContent = _progressText()
+    const sug = document.getElementById('champ-suggest')
+    if (sug) sug.innerHTML = _suggestHtml()
   }
 
   function _historyHtml() {
     const groups = _byPeriod()
     if (!groups.length) {
-      return `<p style="margin:0;font-size:13px;color:var(--text-muted);">No quarters published yet.</p>`
+      return `<div class="chm-empty"><div>🏆</div><b>No champions published yet</b>
+        Once you publish a quarter, it shows up here and on Growthic One.</div>`
     }
-    return groups.map(([key, badges]) => `
-      <div class="champ-hist">
-        <div class="champ-hist-head">
-          <b>${Utils.escapeHtml(_label(key))}</b>
-          <span class="champ-hist-actions">
+    const editing = _key(_year, _quarter)
+    return groups.map(([key, badges], idx) => `
+      <div class="chm-q${key === editing ? ' chm-q--on' : ''}">
+        <div class="chm-q-head">
+          <div class="chm-q-title">
+            <b>${_esc(_label(key))}</b>
+            ${idx === 0 ? '<span class="chm-chip">Latest</span>' : ''}
+            ${key === editing ? '<span class="chm-chip chm-chip--edit">Editing</span>' : ''}
+          </div>
+          <span class="chm-q-actions">
             <button class="btn btn--ghost btn--sm" data-edit="${key}" type="button">Edit</button>
             <button class="btn btn--ghost btn--sm" data-del="${key}" type="button" style="color:var(--danger);">Delete</button>
           </span>
         </div>
-        <ul class="champ-hist-list">
-          ${badges.map(b => {
-            const a = b.awards?.[0]
-            return `<li><span class="champ-hist-league">${Utils.escapeHtml(b.league || '')}</span>
-              <span>${a?.employee ? Utils.escapeHtml(a.employee.name) : '<i>unassigned</i>'}</span>
-              ${a?.note ? `<span class="champ-hist-note">${Utils.escapeHtml(a.note)}</span>` : ''}</li>`
-          }).join('')}
-        </ul>
+        ${badges.map(b => {
+          const a = b.awards?.[0], emp = a?.employee
+          return `
+            <div class="chm-q-row">
+              <span class="champ-avatar">${emp ? _avatar(emp) : '?'}</span>
+              <div class="chm-q-main">
+                <b>${emp ? _esc(emp.name) : '<i>unassigned</i>'}</b>
+                ${a?.note ? `<div class="chm-q-note">“${_esc(a.note)}”</div>` : ''}
+              </div>
+              <span class="champ-tag">${_esc(b.league || '')}</span>
+            </div>`
+        }).join('')}
       </div>`).join('')
   }
 
   /* ── Events ────────────────────────────────────────────────── */
   function _bind() {
-    document.getElementById('champ-quarter')?.addEventListener('change', (e) => {
-      _quarter = Number(e.target.value); _syncRowsToPeriod(); _paint()
+    document.getElementById('champ-quarter')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-q]')
+      if (!btn) return
+      _quarter = Number(btn.dataset.q); _syncRowsToPeriod(); _paint()
     })
     document.getElementById('champ-year')?.addEventListener('change', (e) => {
       _year = Number(e.target.value); _syncRowsToPeriod(); _paint()
@@ -215,12 +306,25 @@ const ChampionsModule = (() => {
       if (!btn) return
       _rows.splice(Number(btn.dataset.remove), 1)
       if (!_rows.length) _rows.push(_blankRow())
+      _invalid = -1
       _paint()
     })
 
     document.getElementById('champ-add-row')?.addEventListener('click', () => {
-      _rows.push(_blankRow()); _paint()
+      _rows.push(_blankRow()); _invalid = -1; _paint()
     })
+
+    // "Used before" chips: drop the league into the first empty row, or add one
+    document.getElementById('champ-suggest')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-suggest]')
+      if (!btn) return
+      const league = btn.dataset.suggest
+      const empty  = _rows.find(r => !r.league.trim())
+      if (empty) empty.league = league
+      else _rows.push({ ..._blankRow(), league })
+      _paint()
+    })
+
     document.getElementById('champ-publish')?.addEventListener('click', _publish)
 
     document.getElementById('champ-history')?.addEventListener('click', (e) => {
@@ -238,10 +342,23 @@ const ChampionsModule = (() => {
   }
 
   function _onField(e) {
-    const rowEl = e.target.closest('.champ-row[data-i]')
+    const rowEl = e.target.closest('.chm-card[data-i]')
     const f     = e.target.dataset.f
     if (!rowEl || !f) return
-    _rows[Number(rowEl.dataset.i)][f] = e.target.value
+    const i = Number(rowEl.dataset.i)
+    _rows[i][f] = e.target.value
+    if (_invalid === i) { _invalid = -1; rowEl.classList?.remove('chm-card--invalid') }
+    _refreshLive()
+  }
+
+  /** Outline the winner card the last validation complained about */
+  function _flagInvalid() {
+    if (_invalid < 0) return
+    const el = document.getElementById(`champ-row-${_invalid}`)
+    if (el?.classList) {
+      el.classList.add('chm-card--invalid')
+      el.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+    }
   }
 
   function _showError(msg) {
@@ -254,12 +371,13 @@ const ChampionsModule = (() => {
   /* ── Publish / update ──────────────────────────────────────── */
   function _validate() {
     const seenLeague = new Set(), seenEmp = new Set()
+    _invalid = -1
     for (const [i, r] of _rows.entries()) {
       const n = i + 1
-      if (!r.league.trim())  return `Row ${n}: enter the league name.`
-      if (!r.employeeId)     return `Row ${n}: choose the champion.`
-      if (seenLeague.has(_norm(r.league))) return `Row ${n}: the league "${r.league.trim()}" is listed twice.`
-      if (seenEmp.has(r.employeeId))       return `Row ${n}: this person is already a champion in another league this quarter.`
+      if (!r.league.trim())  { _invalid = i; return `Winner ${n}: enter the league name.` }
+      if (!r.employeeId)     { _invalid = i; return `Winner ${n}: choose the champion.` }
+      if (seenLeague.has(_norm(r.league))) { _invalid = i; return `Winner ${n}: the league "${r.league.trim()}" is listed twice.` }
+      if (seenEmp.has(r.employeeId))       { _invalid = i; return `Winner ${n}: this person is already a champion in another league this quarter.` }
       seenLeague.add(_norm(r.league)); seenEmp.add(r.employeeId)
     }
     return null
@@ -269,7 +387,7 @@ const ChampionsModule = (() => {
     if (_busy) return
     _showError('')
     const problem = _validate()
-    if (problem) { _showError(problem); return }
+    if (problem) { _showError(problem); _flagInvalid(); return }
 
     _busy = true
     const btn = document.getElementById('champ-publish')
