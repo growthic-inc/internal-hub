@@ -49,10 +49,80 @@ const HallOfFameModule = (() => {
             <div class="champ-name">${Utils.escapeHtml(emp.name || '')}</div>
             ${sub ? `<div class="champ-sub">${Utils.escapeHtml(sub)}</div>` : ''}
           </div>
-          <span class="champ-tag">${Utils.escapeHtml(b.league || '')}</span>
+          <span class="champ-side">
+            <span class="champ-tag">${Utils.escapeHtml(b.league || '')}</span>
+            <button type="button" class="champ-clap" aria-label="Clap for ${Utils.escapeHtml(emp.name || 'this champion')}" title="Clap">👏</button>
+          </span>
           ${note ? `<div class="champ-note">“${Utils.escapeHtml(note)}”</div>` : ''}
         </div>`
     }).join('')}</div>`
+  }
+
+  /* ── Clap reaction: confetti + floating 👏 on the viewer's own screen.
+     Purely visual — nothing is stored or sent anywhere. ───────────── */
+  const CONFETTI = ['#0F4799', '#1a72c7', '#60a5fa', '#f5c542', '#ec4899', '#14b8a6']
+  let _live = 0
+  const rnd = (a, b) => a + Math.random() * (b - a)
+
+  function celebrate(btn) {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    if (_live > 150) return                                   // keep rapid tapping smooth
+    const r  = btn.getBoundingClientRect()
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2
+    let layer = document.getElementById('champ-fx')
+    if (!layer) {
+      layer = document.createElement('div')
+      layer.id = 'champ-fx'
+      layer.setAttribute('aria-hidden', 'true')
+      layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:9999;overflow:hidden'
+      document.body.appendChild(layer)
+    }
+    const spawn = (el, frames, opts) => {
+      layer.appendChild(el); _live++
+      const anim = el.animate(frames, { fill: 'forwards', ...opts })
+      anim.onfinish = () => { el.remove(); _live-- }
+    }
+
+    // confetti burst, fanning upward from the button
+    for (let i = 0; i < 22; i++) {
+      const p = document.createElement('span')
+      const w = rnd(6, 10), h = Math.random() < 0.5 ? w : rnd(3, 5)
+      p.style.cssText = `position:absolute;left:${cx}px;top:${cy}px;width:${w}px;height:${h}px;` +
+        `background:${CONFETTI[i % CONFETTI.length]};border-radius:${Math.random() < 0.3 ? '50%' : '2px'}`
+      const ang = -Math.PI / 2 + rnd(-0.65, 0.65) * Math.PI
+      const dist = rnd(70, 180)
+      const dx = Math.cos(ang) * dist, dy = Math.sin(ang) * dist, rot = rnd(-540, 540)
+      spawn(p, [
+        { transform: 'translate(0,0) rotate(0deg)', opacity: 1 },
+        { transform: `translate(${dx}px,${dy}px) rotate(${rot}deg)`, opacity: 1, offset: 0.5 },
+        { transform: `translate(${dx * 1.15}px,${dy + 110}px) rotate(${rot * 1.6}deg)`, opacity: 0 },
+      ], { duration: rnd(1000, 1500), easing: 'cubic-bezier(.2,.7,.3,1)' })
+    }
+
+    // floating 👏, rising and swaying like a meeting reaction
+    for (let i = 0; i < 5; i++) {
+      const c = document.createElement('span')
+      c.textContent = '👏'
+      c.style.cssText = `position:absolute;left:${cx + rnd(-18, 18)}px;top:${cy}px;font-size:${rnd(20, 32)}px;line-height:1`
+      const rise = rnd(170, 280), sway = rnd(-40, 40)
+      spawn(c, [
+        { transform: 'translate(-50%,0) scale(.6)', opacity: 0 },
+        { transform: `translate(calc(-50% + ${sway / 2}px),${-rise * 0.25}px) scale(1.1)`, opacity: 1, offset: 0.2 },
+        { transform: `translate(calc(-50% + ${sway}px),${-rise}px) scale(1)`, opacity: 0 },
+      ], { duration: rnd(1300, 1900), delay: i * 70, easing: 'ease-out' })
+    }
+
+    btn.animate([
+      { transform: 'scale(1)' }, { transform: 'scale(1.35) rotate(-12deg)' }, { transform: 'scale(1)' },
+    ], { duration: 280 })
+  }
+
+  // One listener covers every champion card, on Home and on Hall of Fame
+  if (typeof document !== 'undefined' && document.addEventListener) {
+    document.addEventListener('click', e => {
+      const btn = e.target && e.target.closest && e.target.closest('.champ-clap')
+      if (btn) celebrate(btn)
+    })
   }
 
   function render() {
