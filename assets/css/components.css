@@ -7862,10 +7862,6 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
 }
 @media (max-width: 520px) { .champ-tile { min-width: 0; width: 100%; max-width: none; } }
 
-/* Home page: heading row above the same cards the Hall of Fame uses */
-.champ-home { margin-top: 14px; }
-.champ-home-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.champ-home-head h3 { margin: 0; font-size: 15px; font-weight: 700; color: var(--text); }
 .champ-quarter { margin-bottom: 22px; }
 .champ-quarter-title {
   display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; color: var(--text); margin: 0 0 14px;
