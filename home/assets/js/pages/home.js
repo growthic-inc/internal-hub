@@ -848,10 +848,12 @@ const HomeModule = (() => {
     if (!groups.length) return ''
     const [period, badges] = groups[0]
     return `
-      <div class="champ-strip home-fade-in">
-        <span class="champ-strip-title">🏆 ${Utils.escapeHtml(HallOfFameModule.periodLabel(period))}</span>
-        ${HallOfFameModule.stripHtml(badges)}
-        <a class="champ-link" href="#hall-of-fame">All quarters →</a>
+      <div class="champ-home home-fade-in">
+        <div class="champ-home-head">
+          <h3>🏆 ${Utils.escapeHtml(HallOfFameModule.periodLabel(period))} Champions</h3>
+          <a class="champ-link" href="#hall-of-fame">All quarters →</a>
+        </div>
+        ${HallOfFameModule.tilesHtml(badges)}
       </div>`
   }
 

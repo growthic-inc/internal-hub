@@ -55,26 +55,6 @@ const HallOfFameModule = (() => {
     }).join('')}</div>`
   }
 
-  /** One quarter on a single line (home page): small pills, note shown on hover */
-  function stripHtml(badges) {
-    return badges.map(b => {
-      const a   = b.awards[0]
-      const emp = a.employee || {}
-      const avatar = emp.profile_image_url
-        ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" alt="">`
-        : Utils.escapeHtml(Utils.getInitials(emp.name || ''))
-      const note  = (a.note || '').trim().replace(/^["“”']+|["“”']+$/g, '')
-      const first = (emp.name || '').split(' ')[0]
-      const tip   = `${emp.name || ''} — ${b.league || ''}${note ? ': ' + note : ''}`
-      return `
-        <span class="champ-pill" title="${Utils.escapeHtml(tip)}">
-          <span class="champ-avatar">${avatar}</span>
-          <span class="champ-pill-name">${Utils.escapeHtml(first)}</span>
-          <span class="champ-tag">${Utils.escapeHtml(b.league || '')}</span>
-        </span>`
-    }).join('')
-  }
-
   function render() {
     return `
       <div class="page-inner">
@@ -108,7 +88,7 @@ const HallOfFameModule = (() => {
       </section>`).join('')
   }
 
-  return { render, init, tilesHtml, stripHtml, groupByPeriod, periodLabel }
+  return { render, init, tilesHtml, groupByPeriod, periodLabel }
 })()
 
 ModuleRegistry.register({
