@@ -305,58 +305,89 @@ const App = (() => {
 
     const HR_GROUP    = ['people', 'leave-tracker', 'policies']
     const currentRoute = window.location.hash.replace('#', '') || 'home'
-    const hrActive    = HR_GROUP.includes(currentRoute)
+    const ANN_GROUP   = ['announcements', 'hall-of-fame']
 
-    // Find accessible HR items (intersection of HR_GROUP and accessible)
-    const hrAccessibleItems = accessible.filter(item => HR_GROUP.includes(item.id))
-
-    // Open by default so Leave & Attendance is visible; stays closed only if the user collapsed it
-    function _hrGroupCollapsed() {
-      try { return localStorage.getItem('hr-group-collapsed') === '1' } catch (e) { return false }
+    // Open by default; stays closed only if the user collapsed it (remembered per group)
+    function _groupCollapsed(key) {
+      try { return localStorage.getItem(key + '-collapsed') === '1' } catch (e) { return false }
     }
 
-    function _renderHRAccordion() {
-      const PEOPLE_SVG    = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`
-      const CALENDAR_SVG  = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`
-      const POLICY_SVG    = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`
-      const CHEVRON_SVG   = `<svg class="nav-accordion-chevron" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>`
+    const CHEVRON_SVG = `<svg class="nav-accordion-chevron" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>`
 
-      const childItems = [
-        { id: 'people',        label: 'People Directory',     icon: PEOPLE_SVG },
-        { id: 'leave-tracker', label: 'Leave & Attendance',   icon: CALENDAR_SVG },
-        { id: 'policies',      label: 'Policies & Documents', icon: POLICY_SVG },
-      ].filter(ci => accessible.some(a => a.id === ci.id))
-
+    /** One collapsible sidebar group (People, Announcements …) */
+    function _renderAccordion({ key, label, icon, items, dotId }) {
+      const childItems = items.filter(ci => accessible.some(a => a.id === ci.id))
       if (!childItems.length) return ''
+      const groupActive = childItems.some(ci => ci.id === currentRoute)
 
       const children = childItems.map(ci => {
         const isLocked = !_policyAcknowledged && !POLICY_UNLOCKED.has(ci.id)
+        const dot = ci.dot ? `<span class="nav-ann-dot" id="ann-nav-dot" style="display:none;"></span>` : ''
         if (isLocked) {
           return `<div class="nav-item nav-item--child nav-item--policy-locked" data-route="${ci.id}" style="opacity:0.55;cursor:pointer;"><span class="nav-icon">${ci.icon}</span><span class="nav-label">${ci.label}</span>${LOCK_ICON}</div>`
         }
-        return `<a class="nav-item nav-item--child${currentRoute === ci.id ? ' nav-item--active' : ''}" data-route="${ci.id}" href="#${ci.id}"><span class="nav-icon">${ci.icon}</span><span class="nav-label">${ci.label}</span></a>`
+        return `<a class="nav-item nav-item--child${currentRoute === ci.id ? ' nav-item--active' : ''}" data-route="${ci.id}" href="#${ci.id}"><span class="nav-icon">${ci.icon}</span><span class="nav-label">${ci.label}</span>${dot}</a>`
       }).join('')
 
+      // Mirror of the child dot, only visible while the group is collapsed
+      const groupDot = dotId ? `<span class="nav-ann-dot nav-ann-dot--group" id="${dotId}" style="display:none;"></span>` : ''
+
       return `
-        <div class="nav-accordion${(hrActive || !_hrGroupCollapsed()) ? ' nav-accordion--open' : ''}">
-          <button class="nav-item nav-accordion-toggle${hrActive ? ' nav-item--active' : ''}" data-accordion="hr-group">
-            ${PEOPLE_SVG}
-            <span class="nav-label">People</span>
+        <div class="nav-accordion${(groupActive || !_groupCollapsed(key)) ? ' nav-accordion--open' : ''}" data-group="${key}">
+          <button class="nav-item nav-accordion-toggle${groupActive ? ' nav-item--active' : ''}" data-accordion="${key}">
+            ${icon}
+            <span class="nav-label">${label}</span>
+            ${groupDot}
             ${CHEVRON_SVG}
           </button>
           <div class="nav-accordion-children">${children}</div>
         </div>`
     }
 
+    function _renderHRAccordion() {
+      const PEOPLE_SVG    = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`
+      const CALENDAR_SVG  = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`
+      const POLICY_SVG    = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`
+      return _renderAccordion({
+        key: 'hr-group', label: 'People', icon: PEOPLE_SVG,
+        items: [
+          { id: 'people',        label: 'People Directory',     icon: PEOPLE_SVG },
+          { id: 'leave-tracker', label: 'Leave & Attendance',   icon: CALENDAR_SVG },
+          { id: 'policies',      label: 'Policies & Documents', icon: POLICY_SVG },
+        ],
+      })
+    }
+
+    function _renderAnnAccordion() {
+      const SEND_16   = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>`
+      const SEND_14   = SEND_16.replace('width="16" height="16"', 'width="14" height="14"')
+      const TROPHY_14 = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3"/><path d="M7 5H4v2a3 3 0 0 0 3 3"/></svg>`
+      return _renderAccordion({
+        key: 'ann-group', label: 'Announcements', icon: SEND_16, dotId: 'ann-nav-dot-group',
+        items: [
+          { id: 'announcements', label: 'Latest Announcements', icon: SEND_14, dot: true },
+          { id: 'hall-of-fame',  label: 'Hall of Fame',         icon: TROPHY_14 },
+        ],
+      })
+    }
+
     let htmlParts = []
     let hrRendered = false
+    let annRendered = false
 
     for (const item of accessible) {
-      // HR group items are rendered inside accordion — skip individual rendering
+      // Grouped items are rendered inside their accordion — skip individual rendering
       if (HR_GROUP.includes(item.id)) {
         if (!hrRendered) {
           htmlParts.push(_renderHRAccordion())
           hrRendered = true
+        }
+        continue
+      }
+      if (ANN_GROUP.includes(item.id)) {
+        if (!annRendered) {
+          htmlParts.push(_renderAnnAccordion())
+          annRendered = true
         }
         continue
       }
@@ -374,7 +405,6 @@ const App = (() => {
           <a class="nav-item" data-route="${item.id}" href="#${item.id}">
             <span class="nav-icon">${item.icon}</span>
             <span class="nav-label">${item.label}</span>
-            ${item.id === 'announcements' ? `<span class="nav-ann-dot" id="ann-nav-dot" style="display:none;"></span>` : ''}
           </a>`)
       }
     }
@@ -385,7 +415,7 @@ const App = (() => {
     nav.querySelectorAll('.nav-accordion-toggle').forEach(btn => {
       btn.addEventListener('click', () => {
         const open = btn.closest('.nav-accordion').classList.toggle('nav-accordion--open')
-        try { localStorage.setItem('hr-group-collapsed', open ? '0' : '1') } catch (e) {}
+        try { localStorage.setItem(btn.dataset.accordion + '-collapsed', open ? '0' : '1') } catch (e) {}
       })
     })
 
@@ -420,16 +450,14 @@ const App = (() => {
       const latestAt  = new Date(data[0].created_at).getTime()
       const lastSeen  = Number(localStorage.getItem('ann_last_seen') || 0)
       if (latestAt > lastSeen) {
-        const dot = document.getElementById('ann-nav-dot')
-        if (dot) dot.style.display = 'block'
+        document.querySelectorAll('#ann-nav-dot, #ann-nav-dot-group').forEach(d => { d.style.display = 'block' })
       }
     } catch (_) {}
   }
 
   function _markAnnouncementsSeen() {
     localStorage.setItem('ann_last_seen', Date.now())
-    const dot = document.getElementById('ann-nav-dot')
-    if (dot) dot.style.display = 'none'
+    document.querySelectorAll('#ann-nav-dot, #ann-nav-dot-group').forEach(d => { d.style.display = 'none' })
   }
 
   function _updateNotifBadge(count) {
@@ -681,11 +709,12 @@ const App = (() => {
       el.classList.toggle('nav-item--active', el.dataset.route === route)
     })
 
-    // Expand HR accordion when navigating to a child route
-    const HR_NAV_GROUP = ['people', 'leave-tracker', 'policies']
-    if (HR_NAV_GROUP.includes(route)) {
-      document.querySelector('.nav-accordion')?.classList.add('nav-accordion--open')
-    }
+    // Highlight a group's header and open it when one of its children is the current page
+    document.querySelectorAll('.nav-accordion').forEach(acc => {
+      const hasActive = !!acc.querySelector('.nav-item--child.nav-item--active')
+      acc.querySelector('.nav-accordion-toggle')?.classList.toggle('nav-item--active', hasActive)
+      if (hasActive) acc.classList.add('nav-accordion--open')
+    })
 
     const titleEl = document.getElementById('page-title')
     if (titleEl) titleEl.textContent = navItem.label

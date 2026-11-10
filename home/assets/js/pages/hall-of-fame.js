@@ -58,23 +58,48 @@ const HallOfFameModule = (() => {
     }).join('')}</div>`
   }
 
-  /* ── Clap reaction: confetti + floating 👏 on the viewer's own screen.
-     Purely visual — nothing is stored or sent anywhere. ───────────── */
-  const CONFETTI = ['#0F4799', '#1a72c7', '#60a5fa', '#f5c542', '#ec4899', '#14b8a6']
+  /** Larger centred cards — the showcase for the latest quarter on the Hall of Fame page */
+  function spotlightHtml(badges) {
+    return `<div class="hof-spot-grid">${badges.map(b => {
+      const a   = b.awards[0]
+      const emp = a.employee || {}
+      const avatar = emp.profile_image_url
+        ? `<img src="${Utils.escapeHtml(emp.profile_image_url)}" alt="">`
+        : Utils.escapeHtml(Utils.getInitials(emp.name || ''))
+      const note = (a.note || '').trim().replace(/^["“”']+|["“”']+$/g, '')
+      const sub  = emp.designation || (emp.department ? Utils.getDeptLabel(emp.department) : '')
+      return `
+        <div class="champ-spot">
+          <span class="champ-tag">${Utils.escapeHtml(b.league || '')}</span>
+          <div class="champ-avatar-wrap">
+            <div class="champ-avatar">${avatar}</div>
+            <span class="champ-trophy">🏆</span>
+          </div>
+          <div class="champ-spot-name">${Utils.escapeHtml(emp.name || '')}</div>
+          ${sub ? `<div class="champ-spot-role">${Utils.escapeHtml(sub)}</div>` : ''}
+          <div class="champ-spot-note">${note ? `“${Utils.escapeHtml(note)}”` : ''}</div>
+          <button type="button" class="champ-clap" aria-label="Clap for ${Utils.escapeHtml(emp.name || 'this champion')}" title="Clap">👏</button>
+        </div>`
+    }).join('')}</div>`
+  }
+
+  /* ── Clap reaction: a full-screen celebration on the viewer's own screen,
+     like a reaction in a meeting — confetti rains over the whole page and 👏
+     float up from the bottom. Purely visual; nothing is sent anywhere. ──── */
+  const CONFETTI = ['#0F4799', '#1a72c7', '#60a5fa', '#f5c542', '#ec4899', '#14b8a6', '#8b5cf6']
   let _live = 0
   const rnd = (a, b) => a + Math.random() * (b - a)
 
   function celebrate(btn) {
     if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    if (_live > 150) return                                   // keep rapid tapping smooth
-    const r  = btn.getBoundingClientRect()
-    const cx = r.left + r.width / 2, cy = r.top + r.height / 2
+    if (_live > 220) return                                   // keep rapid tapping smooth
+    const vw = window.innerWidth, vh = window.innerHeight
     let layer = document.getElementById('champ-fx')
     if (!layer) {
       layer = document.createElement('div')
       layer.id = 'champ-fx'
       layer.setAttribute('aria-hidden', 'true')
-      layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:9999;overflow:hidden'
+      layer.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483000;overflow:hidden'
       document.body.appendChild(layer)
     }
     const spawn = (el, frames, opts) => {
@@ -83,33 +108,32 @@ const HallOfFameModule = (() => {
       anim.onfinish = () => { el.remove(); _live-- }
     }
 
-    // confetti burst, fanning upward from the button
-    for (let i = 0; i < 22; i++) {
+    // confetti raining across the whole screen
+    for (let i = 0; i < 46; i++) {
       const p = document.createElement('span')
-      const w = rnd(6, 10), h = Math.random() < 0.5 ? w : rnd(3, 5)
-      p.style.cssText = `position:absolute;left:${cx}px;top:${cy}px;width:${w}px;height:${h}px;` +
+      const w = rnd(7, 12), h = Math.random() < 0.5 ? w : rnd(4, 6)
+      const x = rnd(0, vw), sway = rnd(-70, 70), spin = rnd(-720, 720)
+      p.style.cssText = `position:absolute;left:${x}px;top:0;width:${w}px;height:${h}px;` +
         `background:${CONFETTI[i % CONFETTI.length]};border-radius:${Math.random() < 0.3 ? '50%' : '2px'}`
-      const ang = -Math.PI / 2 + rnd(-0.65, 0.65) * Math.PI
-      const dist = rnd(70, 180)
-      const dx = Math.cos(ang) * dist, dy = Math.sin(ang) * dist, rot = rnd(-540, 540)
       spawn(p, [
-        { transform: 'translate(0,0) rotate(0deg)', opacity: 1 },
-        { transform: `translate(${dx}px,${dy}px) rotate(${rot}deg)`, opacity: 1, offset: 0.5 },
-        { transform: `translate(${dx * 1.15}px,${dy + 110}px) rotate(${rot * 1.6}deg)`, opacity: 0 },
-      ], { duration: rnd(1000, 1500), easing: 'cubic-bezier(.2,.7,.3,1)' })
+        { transform: `translate(0,-24px) rotate(0deg)`, opacity: 1 },
+        { transform: `translate(${sway}px,${vh * 0.55}px) rotate(${spin * 0.6}deg)`, opacity: 1, offset: 0.65 },
+        { transform: `translate(${sway * 1.4}px,${vh + 30}px) rotate(${spin}deg)`, opacity: 0.9 },
+      ], { duration: rnd(2200, 3600), delay: rnd(0, 650), easing: 'cubic-bezier(.25,.5,.4,1)' })
     }
 
-    // floating 👏, rising and swaying like a meeting reaction
-    for (let i = 0; i < 5; i++) {
+    // 👏 floating up from the bottom edge, spread across the width
+    for (let i = 0; i < 8; i++) {
       const c = document.createElement('span')
       c.textContent = '👏'
-      c.style.cssText = `position:absolute;left:${cx + rnd(-18, 18)}px;top:${cy}px;font-size:${rnd(20, 32)}px;line-height:1`
-      const rise = rnd(170, 280), sway = rnd(-40, 40)
+      const x = rnd(vw * 0.06, vw * 0.94), size = rnd(28, 48)
+      c.style.cssText = `position:absolute;left:${x}px;top:${vh}px;font-size:${size}px;line-height:1`
+      const rise = rnd(vh * 0.35, vh * 0.8), sway = rnd(-60, 60)
       spawn(c, [
-        { transform: 'translate(-50%,0) scale(.6)', opacity: 0 },
-        { transform: `translate(calc(-50% + ${sway / 2}px),${-rise * 0.25}px) scale(1.1)`, opacity: 1, offset: 0.2 },
+        { transform: 'translate(-50%,0) scale(.5)', opacity: 0 },
+        { transform: `translate(calc(-50% + ${sway / 2}px),${-rise * 0.2}px) scale(1.1)`, opacity: 1, offset: 0.15 },
         { transform: `translate(calc(-50% + ${sway}px),${-rise}px) scale(1)`, opacity: 0 },
-      ], { duration: rnd(1300, 1900), delay: i * 70, easing: 'ease-out' })
+      ], { duration: rnd(1800, 2800), delay: i * 90 + rnd(0, 150), easing: 'ease-out' })
     }
 
     btn.animate([
@@ -151,14 +175,31 @@ const HallOfFameModule = (() => {
         </div></div>`
       return
     }
-    root.innerHTML = groups.map(([key, badges]) => `
-      <section class="champ-quarter">
-        <h3 class="champ-quarter-title">🏆 ${Utils.escapeHtml(periodLabel(key))} Champions</h3>
-        ${tilesHtml(badges)}
-      </section>`).join('')
+    const [latestKey, latestBadges] = groups[0]
+    const older = groups.slice(1)
+    const winners = groups.reduce((n, [, bs]) => n + bs.length, 0)
+
+    root.innerHTML = `
+      <div class="hof-hero">
+        <div class="hof-hero-icon">🏆</div>
+        <div>
+          <h2>Our quarterly champions</h2>
+          <p>Celebrating the people who raised the bar. Give them a clap.</p>
+        </div>
+        <div class="hof-hero-stat"><b>${winners}</b><span>champion${winners !== 1 ? 's' : ''} so far</span></div>
+      </div>
+
+      <div class="hof-section-title">Latest · ${Utils.escapeHtml(periodLabel(latestKey))}</div>
+      ${spotlightHtml(latestBadges)}
+
+      ${older.length ? `<div class="hof-section-title">Previous quarters</div>` + older.map(([key, badges]) => `
+        <div class="section-card champ-quarter">
+          <div class="section-card-header"><h3>🏆 ${Utils.escapeHtml(periodLabel(key))} Champions</h3></div>
+          <div class="section-card-body">${tilesHtml(badges)}</div>
+        </div>`).join('') : ''}`
   }
 
-  return { render, init, tilesHtml, groupByPeriod, periodLabel }
+  return { render, init, tilesHtml, spotlightHtml, groupByPeriod, periodLabel }
 })()
 
 ModuleRegistry.register({

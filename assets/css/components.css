@@ -7251,6 +7251,9 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   transition: transform 0.2s;
 }
 .nav-accordion--open .nav-accordion-chevron { transform: rotate(180deg); }
+/* The group-level nudge dot only matters while the group is collapsed */
+.nav-accordion--open .nav-ann-dot--group { display: none !important; }
+.nav-ann-dot--group { margin-left: auto; margin-right: 6px; }
 .nav-item--child {
   font-size: 13px;
   padding-left: 24px;
@@ -7876,7 +7879,49 @@ a.ct-top-post-title:hover { color: var(--primary); text-decoration: underline; }
   .champ-note { grid-row: 3; }
 }
 
-.champ-quarter { margin-bottom: 22px; }
+.champ-quarter { margin-bottom: 18px; }
+
+/* Hall of Fame page */
+.hof-hero {
+  display: flex; align-items: center; gap: 16px; padding: 20px 24px; margin-bottom: 24px;
+  border-radius: var(--radius-lg); color: #fff;
+  background: linear-gradient(135deg, #0a3a87 0%, #0F4799 50%, #1a72c7 100%);
+}
+.hof-hero-icon {
+  width: 52px; height: 52px; flex: none; border-radius: 14px; font-size: 26px;
+  display: grid; place-items: center; background: rgba(255,255,255,0.16);
+}
+.hof-hero h2 { margin: 0; font-size: 18px; font-weight: 700; color: #fff; }
+.hof-hero p  { margin: 3px 0 0; font-size: 13px; color: rgba(255,255,255,0.82); }
+.hof-hero-stat { margin-left: auto; text-align: right; white-space: nowrap; }
+.hof-hero-stat b { display: block; font-size: 26px; line-height: 1; font-weight: 700; }
+.hof-hero-stat span { font-size: 12px; color: rgba(255,255,255,0.8); }
+.hof-section-title {
+  margin: 0 0 12px; font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.hof-spot-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+  gap: 14px; margin-bottom: 30px;
+}
+.champ-spot {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 20px 16px 16px; border: 1px solid var(--border); border-radius: 16px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 9%, var(--bg)) 0%, var(--bg) 62%);
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.champ-spot:hover { box-shadow: 0 6px 18px rgba(15,71,153,0.12); transform: translateY(-2px); }
+.champ-spot .champ-tag { margin-bottom: 16px; max-width: 100%; }
+.champ-spot .champ-avatar { width: 80px; height: 80px; font-size: 26px; border-width: 3px; }
+.champ-spot .champ-trophy { font-size: 17px; right: -3px; bottom: -2px; }
+.champ-spot-name { margin-top: 14px; font-size: 16px; font-weight: 700; color: var(--text); }
+.champ-spot-role { margin-top: 2px; font-size: 12.5px; color: var(--text-muted); }
+.champ-spot-note { flex: 1; margin: 10px 0 14px; font-size: 13px; font-style: italic; line-height: 1.4; color: var(--text-secondary); }
+.champ-spot .champ-clap { width: 34px; height: 34px; font-size: 16px; }
+@media (max-width: 520px) {
+  .hof-hero { flex-wrap: wrap; padding: 16px; }
+  .hof-hero-stat { margin-left: 0; text-align: left; }
+}
 .champ-quarter-title {
   display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; color: var(--text); margin: 0 0 14px;
 }
