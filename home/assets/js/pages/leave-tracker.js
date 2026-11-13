@@ -1132,10 +1132,14 @@ const LeaveTracker = (() => {
         const timeStart = duration === 'specific_time' ? (document.getElementById('cal-evt-time-start').value || null) : null
         const timeEnd   = duration === 'specific_time' ? (document.getElementById('cal-evt-time-end').value || null)   : null
         if (!title) { errEl.textContent = 'Please enter an event title.'; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Add'; return }
+        // Ask before saving: email everyone about this new event, or just add it?
+        const sendEmail = await Utils.askSendEventEmail(title, Utils.formatDate(dateISO))
+        if (sendEmail === null) { btn.disabled = false; btn.textContent = 'Add'; return }   // cancelled: back to the form
         ;({ error } = await API.createCompanyEvent({
           title, start_date: dateISO, end_date: end, description: desc || null,
           duration_type: duration, start_time: timeStart, end_time: timeEnd,
           created_by: _user.id,
+          ...(sendEmail ? { notify_email: true } : {}),
         }))
       }
 

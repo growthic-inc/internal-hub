@@ -220,6 +220,52 @@ const Utils = (() => {
     if (e.key === 'Escape') closeModal()
   }
 
+  /* ── "Email this event to everyone?" prompt ─────────────────
+     Resolves true (email everyone), false (just add it) or null
+     (cancelled: the caller should go back to its form). It stacks on
+     top of whatever is open, so a form underneath is left untouched. */
+  function askSendEventEmail(eventTitle, dateText) {
+    return new Promise(resolve => {
+      const overlay = document.createElement('div')
+      overlay.className = 'modal-overlay'
+      overlay.id = 'evt-email-ask-overlay'
+      overlay.style.zIndex = '1000'
+      overlay.innerHTML = `
+        <div class="modal">
+          <div class="modal-header">
+            <h3 class="modal-title">Email this event to everyone?</h3>
+          </div>
+          <div class="modal-body">
+            <p style="margin:0 0 10px;font-size:14px;line-height:1.6;">
+              <strong>${escapeHtml(eventTitle || '')}</strong>${dateText ? ' · ' + escapeHtml(dateText) : ''}
+            </p>
+            <p style="margin:0;font-size:13px;line-height:1.6;color:var(--text-muted);">
+              Every active team member will get an email about it. Choose “Just add it” to put it on the calendar without sending any email.
+            </p>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn--ghost" data-ans="cancel">Cancel</button>
+            <button class="btn btn--ghost" data-ans="no">Just add it</button>
+            <button class="btn btn--primary" data-ans="yes">Yes, email everyone</button>
+          </div>
+        </div>`
+      const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); finish(null) } }
+      const finish = (val) => {
+        document.removeEventListener('keydown', onKey, true)
+        overlay.remove()
+        resolve(val)
+      }
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) return finish(null)
+        const ans = e.target.closest('[data-ans]')?.dataset.ans
+        if (ans) finish(ans === 'yes' ? true : ans === 'no' ? false : null)
+      })
+      document.addEventListener('keydown', onKey, true)
+      document.body.appendChild(overlay)
+      overlay.querySelector('[data-ans="yes"]').focus()
+    })
+  }
+
   /* ── Drawer helpers ───────────────────────────────────────── */
   function openDrawer(html) {
     closeDrawer()
@@ -399,6 +445,7 @@ const Utils = (() => {
     showToast,
     openModal,
     closeModal,
+    askSendEventEmail,
     openDrawer,
     closeDrawer,
     el,

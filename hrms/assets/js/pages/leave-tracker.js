@@ -1352,11 +1352,15 @@ const LeaveTracker = (() => {
       if (!title) { errEl.style.display = ''; errEl.textContent = 'Enter an event title.'; return }
 
       errEl.style.display = 'none'
+      // Ask before saving: email everyone about this new event, or just add it?
+      const sendEmail = await Utils.askSendEventEmail(title, Utils.formatDate(iso))
+      if (sendEmail === null) return   // cancelled: stay on the form
       saveBtn.disabled = true; saveBtn.textContent = 'Saving…'
       const { error } = await API.createCompanyEvent({
         title, start_date: iso, end_date: iso, description: desc || null,
         duration_type: duration, start_time: timeStart, end_time: timeEnd,
         created_by: _user.id,
+        ...(sendEmail ? { notify_email: true } : {}),
       })
       if (error) {
         errEl.style.display = ''; errEl.textContent = error.message
@@ -2762,7 +2766,15 @@ const LeaveTracker = (() => {
       if (editId) {
         ;({ error } = await API.updateCompanyEvent(editId, payload))
       } else {
-        ;({ error } = await API.createCompanyEvent({ ...payload, created_by: _user.id }))
+        // New events only (edits never email): ask whether to email everyone about it.
+        const lastDay   = end || start
+        const dateLabel = start === lastDay ? Utils.formatDate(start) : `${Utils.formatDate(start)} – ${Utils.formatDate(lastDay)}`
+        const sendEmail = await Utils.askSendEventEmail(title, dateLabel)
+        if (sendEmail === null) { btn.disabled = false; return }   // cancelled: stay on the form
+        ;({ error } = await API.createCompanyEvent({
+          ...payload, created_by: _user.id,
+          ...(sendEmail ? { notify_email: true } : {}),
+        }))
       }
 
       btn.disabled = false
