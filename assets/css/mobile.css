@@ -554,3 +554,30 @@
   .home-hero { padding: 18px 16px; max-width: 100%; box-sizing: border-box; }
   .home-hero * { max-width: 100%; overflow-wrap: anywhere; }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   MOBILE MODALS (≤ 768px) — bottom sheets with a pinned footer
+══════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .modal, .modal--lg {
+    max-height: 92vh;
+    max-height: 92dvh;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Header + action buttons stay reachable while the form scrolls */
+  .modal-header {
+    position: sticky; top: 0; z-index: 2;
+    background: var(--bg);
+    padding-bottom: 12px; margin-bottom: 4px;
+  }
+  .modal-footer {
+    position: sticky; bottom: 0; z-index: 2;
+    background: var(--bg);
+    margin-top: 12px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    box-shadow: 0 -6px 12px -8px rgba(15, 23, 42, 0.18);
+  }
+  .modal-footer .btn { flex: 1 1 auto; min-height: 44px; }
+  .modal-close { min-width: 40px; min-height: 40px; }
+}

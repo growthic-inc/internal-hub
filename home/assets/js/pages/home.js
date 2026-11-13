@@ -110,8 +110,13 @@ const HomeModule = (() => {
     const firstName   = Utils.escapeHtml((user.name || '').split(' ')[0])
     const totalHours  = (todayEntries || []).reduce((s, e) => s + Number(e.hours || 0), 0)
     const draftCount  = (todayEntries || []).filter(e => e.status === 'draft').length
-    const outCount    = (whoIsOut || []).filter(r => r.employees && r.employees.id !== user.id).length
-    const wfhCount    = (whoIsWfh || []).filter(r => r.employees && r.employees.id !== user.id).length
+    // Count people, not requests: one person can have several overlapping
+    // approved requests today, and OOO takes priority over WFH (same rule as
+    // the Out & WFH Today card below).
+    const outIds      = new Set((whoIsOut || []).map(r => r.employees?.id).filter(id => id && id !== user.id))
+    const wfhIds      = new Set((whoIsWfh || []).map(r => r.employees?.id).filter(id => id && id !== user.id && !outIds.has(id)))
+    const outCount    = outIds.size
+    const wfhCount    = wfhIds.size
     const pendingTotal = (pendingLeaveCount || 0) + (pendingTsCount || 0)
 
     const hoursLabel = totalHours
@@ -598,14 +603,22 @@ const HomeModule = (() => {
   /* ── Section: Who's out today ─────────────────────────────── */
 
   function _renderWhoIsOut(outRows, wfhRows, currentUserId) {
-    const oooList = (outRows || [])
+    // One chip per person — someone can have more than one approved request
+    // covering today (e.g. a week plus a single day), which would otherwise
+    // show them twice and inflate the count.
+    const uniqueById = list => {
+      const seen = new Set()
+      return list.filter(emp => !seen.has(emp.id) && seen.add(emp.id))
+    }
+
+    const oooList = uniqueById((outRows || [])
       .map(r => r.employees)
-      .filter(emp => emp && emp.id !== currentUserId)
+      .filter(emp => emp && emp.id !== currentUserId))
 
     const oooIds = new Set(oooList.map(emp => emp.id))
-    const wfhList = (wfhRows || [])
+    const wfhList = uniqueById((wfhRows || [])
       .map(r => r.employees)
-      .filter(emp => emp && emp.id !== currentUserId && !oooIds.has(emp.id))
+      .filter(emp => emp && emp.id !== currentUserId && !oooIds.has(emp.id)))
 
     const totalCount = oooList.length + wfhList.length
 
