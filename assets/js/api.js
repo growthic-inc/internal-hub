@@ -1974,8 +1974,18 @@ const API = (() => {
     return supabase.from('policy_categories').insert({ name, created_by: createdBy }).select().single()
   }
 
+  async function updatePolicyCategory(id, name) {
+    // .select() so a silently blocked update (0 rows) can be told apart from success
+    return supabase.from('policy_categories').update({ name }).eq('id', id).select()
+  }
+
+  /** Move every policy in one category to another (used before deleting a category) */
+  async function movePoliciesToCategory(fromId, toId) {
+    return supabase.from('policies').update({ category_id: toId }).eq('category_id', fromId).select('id')
+  }
+
   async function deletePolicyCategory(id) {
-    return supabase.from('policy_categories').delete().eq('id', id)
+    return supabase.from('policy_categories').delete().eq('id', id).select('id')
   }
 
   /* ── Policies (Phase 7) ───────────────────────────────────── */
@@ -2290,7 +2300,7 @@ const API = (() => {
     getBadges, getEmployeeBadges, awardBadge, revokeEmployeeBadge,
     getRecentBadgeAwards, getAllEmployeeBadgeSummary,
     getChampionBadges, createChampionBadge, updateChampionBadge, deleteChampionBadge,
-    getPolicyCategories, addPolicyCategory, deletePolicyCategory,
+    getPolicyCategories, addPolicyCategory, updatePolicyCategory, movePoliciesToCategory, deletePolicyCategory,
     getPolicies, createPolicy, updatePolicy, deletePolicy,
     getKnowledgeResources, createKnowledgeResource, updateKnowledgeResource, deleteKnowledgeResource,
     getKnowledgeAccessGrants, grantKnowledgeAccess, revokeKnowledgeAccess,

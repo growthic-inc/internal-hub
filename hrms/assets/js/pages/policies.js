@@ -14,6 +14,8 @@ const PoliciesModule = (() => {
   let _isHR            = false
   let _activeCategory  = null   // null = All
   let _searchQuery     = ''
+  let _renamingCatId   = null   // category row being renamed in the Manage Categories modal
+  let _deletingCatId   = null   // category the "move its policies, then delete" panel is open for
 
   // Form state
   let _editingPolicyId    = null
@@ -429,6 +431,8 @@ const PoliciesModule = (() => {
 
   /* ── Manage Categories Modal ────────────────────────────────── */
   function _openCategoriesModal() {
+    _renamingCatId = null
+    _deletingCatId = null
     Utils.openModal(`
       <div class="modal-header">
         <h3 class="modal-title">Manage Categories</h3>
@@ -453,56 +457,121 @@ const PoliciesModule = (() => {
       </div>
     `, '')
 
-    _bindCategoryModalEvents()
+    _bindCategoryListEvents()
+    _bindAddCategoryEvents()
   }
 
+  const _catPolicyCount = (id) => _policies.filter(p => p.category_id === id).length
+  const _plural = (n) => `${n} ${n === 1 ? 'policy' : 'policies'}`
+  const _CAT_ROW = 'display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg-muted,var(--surface));border:1px solid var(--border);border-radius:6px;'
+
   function _categoriesListHTML() {
+    if (_deletingCatId) {
+      const html = _moveAndDeleteHTML()
+      if (html) return html
+    }
     if (!_categories.length) {
       return `<p style="font-size:13px;color:var(--text-muted);">No categories yet.</p>`
     }
 
     return `<div style="display:flex;flex-direction:column;gap:6px;">` +
       _categories.map(cat => {
-        const inUse = _policies.some(p => p.category_id === cat.id)
+        if (cat.id === _renamingCatId) {
+          return `
+            <div style="${_CAT_ROW}">
+              <input class="form-input" id="pol-rename-input" type="text" maxlength="80"
+                     value="${Utils.escapeHtml(cat.name)}" style="flex:1;min-width:0;">
+              <button class="btn btn-primary btn-sm" id="pol-rename-save" data-cat-id="${cat.id}">Save</button>
+              <button class="btn btn-secondary btn-sm" id="pol-rename-cancel">Cancel</button>
+            </div>`
+        }
+        const n = _catPolicyCount(cat.id)
         return `
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-muted,var(--surface));border:1px solid var(--border);border-radius:6px;">
-            <span style="font-size:14px;">${Utils.escapeHtml(cat.name)}</span>
-            ${!inUse
-              ? `<button class="btn btn-sm pol-del-cat-btn" style="background:transparent;color:var(--danger,#E53E3E);border:1px solid var(--danger,#E53E3E);padding:2px 10px;font-size:12px;" data-cat-id="${cat.id}">Delete</button>`
-              : `<span style="font-size:12px;color:var(--text-muted);">In use</span>`
-            }
+          <div style="${_CAT_ROW}">
+            <span style="font-size:14px;flex:1;min-width:0;">${Utils.escapeHtml(cat.name)}</span>
+            <span style="font-size:12px;color:var(--text-muted);white-space:nowrap;">${_plural(n)}</span>
+            <button class="btn btn-secondary btn-sm pol-ren-cat-btn" style="padding:2px 10px;font-size:12px;" data-cat-id="${cat.id}">Rename</button>
+            <button class="btn btn-sm pol-del-cat-btn" style="background:transparent;color:var(--danger,#E53E3E);border:1px solid var(--danger,#E53E3E);padding:2px 10px;font-size:12px;" data-cat-id="${cat.id}">Delete</button>
           </div>`
       }).join('') +
     `</div>`
   }
 
-  function _bindCategoryModalEvents() {
-    // Delete category buttons
+  /** Step shown when Delete is clicked: asks where the category's policies should go */
+  function _moveAndDeleteHTML() {
+    const cat = _categories.find(c => c.id === _deletingCatId)
+    if (!cat) { _deletingCatId = null; return '' }
+    const n      = _catPolicyCount(cat.id)
+    const others = _categories.filter(c => c.id !== cat.id)
+    const blocked = n > 0 && !others.length
+
+    const body = !n
+      ? `<p style="font-size:13px;color:var(--text-secondary);margin:0;">This category has no policies, so nothing needs to move.</p>`
+      : blocked
+        ? `<p style="font-size:13px;color:var(--text-secondary);margin:0;">This category has <b>${_plural(n)}</b> and there is no other category to move ${n === 1 ? 'it' : 'them'} to. Add another category first, then delete this one.</p>`
+        : `<p style="font-size:13px;color:var(--text-secondary);margin:0 0 10px;">This category has <b>${_plural(n)}</b>. Choose where to move ${n === 1 ? 'it' : 'them'} first. No policy is deleted.</p>
+           <label class="form-label" for="pol-move-target" style="display:block;margin-bottom:6px;">Move to</label>
+           <select class="form-select" id="pol-move-target">
+             ${others.map(c => `<option value="${c.id}">${Utils.escapeHtml(c.name)}</option>`).join('')}
+           </select>`
+
+    return `
+      <div style="padding:14px;border:1px solid var(--danger,#E53E3E);border-radius:8px;background:var(--bg-muted,var(--surface));">
+        <div style="font-size:14px;font-weight:600;margin-bottom:8px;">Delete “${Utils.escapeHtml(cat.name)}”?</div>
+        ${body}
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+          <button class="btn btn-secondary btn-sm" id="pol-del-cancel">Cancel</button>
+          ${blocked ? '' : `<button class="btn btn-sm" id="pol-del-confirm" style="background:var(--danger,#E53E3E);color:#fff;border-color:var(--danger,#E53E3E);">${n ? 'Move and delete' : 'Delete category'}</button>`}
+        </div>
+      </div>`
+  }
+
+  function _showCatError(msg) {
+    const el = document.getElementById('pol-cat-err')
+    if (!el) return
+    el.textContent   = msg || ''
+    el.style.display = msg ? 'block' : 'none'
+  }
+
+  /** Buttons inside the category list — re-bound every time the list is redrawn */
+  function _bindCategoryListEvents() {
     document.querySelectorAll('.pol-del-cat-btn').forEach(btn => {
-      btn.addEventListener('click', () => _deleteCategory(btn.dataset.catId))
+      btn.addEventListener('click', () => { _showCatError(''); _renamingCatId = null; _deletingCatId = btn.dataset.catId; _refreshCatsModal() })
+    })
+    document.querySelectorAll('.pol-ren-cat-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        _showCatError(''); _deletingCatId = null; _renamingCatId = btn.dataset.catId
+        _refreshCatsModal()
+        const input = document.getElementById('pol-rename-input')
+        input?.focus(); input?.select()
+      })
     })
 
-    // Add category
+    const save = document.getElementById('pol-rename-save')
+    save?.addEventListener('click', () => _renameCategory(save.dataset.catId))
+    document.getElementById('pol-rename-input')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter')  save?.click()
+      if (e.key === 'Escape') document.getElementById('pol-rename-cancel')?.click()
+    })
+    document.getElementById('pol-rename-cancel')?.addEventListener('click', () => { _showCatError(''); _renamingCatId = null; _refreshCatsModal() })
+
+    document.getElementById('pol-del-cancel')?.addEventListener('click', () => { _showCatError(''); _deletingCatId = null; _refreshCatsModal() })
+    document.getElementById('pol-del-confirm')?.addEventListener('click', _confirmDeleteCategory)
+  }
+
+  /** "Add new category" — bound once when the modal opens (not on every list redraw) */
+  function _bindAddCategoryEvents() {
     const addBtn   = document.getElementById('pol-add-cat-btn')
     const catInput = document.getElementById('pol-new-cat-input')
-    const catErr   = document.getElementById('pol-cat-err')
 
     addBtn?.addEventListener('click', async () => {
       const name = (catInput?.value || '').trim()
-      catErr.style.display = 'none'
+      _showCatError('')
 
-      if (!name) {
-        catErr.textContent  = 'Category name is required.'
-        catErr.style.display = 'block'
-        return
-      }
+      if (!name) { _showCatError('Category name is required.'); return }
 
       const duplicate = _categories.find(c => c.name.toLowerCase() === name.toLowerCase())
-      if (duplicate) {
-        catErr.textContent  = 'A category with that name already exists.'
-        catErr.style.display = 'block'
-        return
-      }
+      if (duplicate) { _showCatError('A category with that name already exists.'); return }
 
       addBtn.disabled    = true
       addBtn.textContent = 'Adding…'
@@ -512,17 +581,10 @@ const PoliciesModule = (() => {
         if (error) throw error
 
         _categories.push(data)
-        // Also reload policies list in background so category filter updates
-        API.getPolicies().then(r => {
-          _policies = ((r.data || []).filter(p => _isHR || p.published))
-        })
-
         if (catInput) catInput.value = ''
         _refreshCatsModal()
-
       } catch (err) {
-        catErr.textContent  = err.message || 'Failed to add category.'
-        catErr.style.display = 'block'
+        _showCatError(err.message || 'Failed to add category.')
       } finally {
         addBtn.disabled    = false
         addBtn.textContent = 'Add'
@@ -534,28 +596,89 @@ const PoliciesModule = (() => {
     })
   }
 
-  async function _deleteCategory(id) {
-    if (!confirm('Delete this category? Only categories with no policies can be deleted.')) return
+  async function _renameCategory(id) {
+    const cat   = _categories.find(c => c.id === id)
+    const name  = (document.getElementById('pol-rename-input')?.value || '').trim()
+    if (!cat) return
+    _showCatError('')
 
-    const inUse = _policies.some(p => p.category_id === id)
-    if (inUse) {
-      Utils.showToast('Cannot delete a category that has policies assigned to it.', 'error')
+    if (!name) { _showCatError('Category name is required.'); return }
+    if (name === cat.name) { _renamingCatId = null; _refreshCatsModal(); return }
+    if (_categories.some(c => c.id !== id && c.name.toLowerCase() === name.toLowerCase())) {
+      _showCatError('A category with that name already exists.'); return
+    }
+
+    const saveBtn = document.getElementById('pol-rename-save')
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…' }
+
+    const { data, error } = await API.updatePolicyCategory(id, name)
+    if (error || !data?.length) {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save' }
+      _showCatError(error?.message || 'Could not rename the category. You may not have permission to change categories.')
       return
     }
 
-    const { error } = await API.deletePolicyCategory(id)
-    if (error) { Utils.showToast('Failed to delete category', 'error'); return }
+    cat.name = name
+    _policies.forEach(p => { if (p.category_id === id) p.category = { ...(p.category || {}), name } })
+    _renamingCatId = null
+    _refreshCatsModal()
+    _rerenderList()
+    Utils.showToast('Category renamed', 'success')
+  }
+
+  async function _confirmDeleteCategory() {
+    const id  = _deletingCatId
+    const cat = _categories.find(c => c.id === id)
+    if (!cat) return
+    const n      = _catPolicyCount(id)
+    const target = document.getElementById('pol-move-target')?.value || null
+    const dest   = _categories.find(c => c.id === target)
+    if (n && !dest) { _showCatError('Choose a category to move the policies to.'); return }
+
+    const btn = document.getElementById('pol-del-confirm')
+    if (btn) { btn.disabled = true; btn.textContent = 'Working…' }
+    _showCatError('')
+
+    const restore = () => { if (btn) { btn.disabled = false; btn.textContent = n ? 'Move and delete' : 'Delete category' } }
+
+    // 1. Move the policies first, so none is ever left without a category
+    if (n) {
+      const { data, error } = await API.movePoliciesToCategory(id, target)
+      if (error || !data?.length) {
+        restore()
+        _showCatError(error?.message || 'Could not move the policies, so nothing was deleted.')
+        return
+      }
+    }
+
+    // 2. Delete the now-empty category
+    const { data: gone, error: delErr } = await API.deletePolicyCategory(id)
+
+    // 3. Reload policies so the page reflects what is really in the database
+    const pol = await API.getPolicies()
+    if (!pol.error) _policies = (pol.data || []).filter(p => _isHR || p.published)
+
+    if (delErr || !gone?.length) {
+      _deletingCatId = null
+      _refreshCatsModal()
+      _rerenderList()
+      _showCatError(`${n ? `The ${_plural(n)} were moved to “${dest.name}”, but ` : ''}the category could not be deleted${delErr?.message ? `: ${delErr.message}` : '.'}`)
+      return
+    }
 
     _categories = _categories.filter(c => c.id !== id)
     if (_activeCategory === id) _activeCategory = null
+    _deletingCatId = null
     _refreshCatsModal()
+    _rerenderList()
+    Utils.showToast(n ? `Moved ${_plural(n)} to “${dest.name}” and deleted “${cat.name}”` : `Deleted “${cat.name}”`, 'success')
   }
 
   function _refreshCatsModal() {
     const listEl = document.getElementById('pol-cats-list')
     if (!listEl) return
     listEl.innerHTML = _categoriesListHTML()
-    _bindCategoryModalEvents()
+    _bindCategoryListEvents()
 
     // Re-render sidebar in background
     const sidebarEl = document.getElementById('pol-sidebar')
